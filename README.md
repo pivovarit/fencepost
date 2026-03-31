@@ -1,2 +1,8 @@
 # fencepost
-PostgreSQL-backed distributed locking with fencing tokens for Java
+
+Distributed concurrency toolkit for Java + PostgreSQL.
+
+Zero dependencies beyond `java.sql`. Requires Java 11+.
+
+**Under construction.**
+
