@@ -1,0 +1,6 @@
+target/
+example/target/
+.git/
+docs/
+*.md
+src/test/
