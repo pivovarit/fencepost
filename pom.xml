@@ -16,7 +16,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.11.3</junit.version>
         <assertj.version>3.27.7</assertj.version>
-        <awaitility.version>4.2.2</awaitility.version>
+        <awaitility.version>4.3.0</awaitility.version>
         <testcontainers.version>2.0.4</testcontainers.version>
         <mockito.version>5.14.2</mockito.version>
         <postgresql.version>42.7.4</postgresql.version>
