@@ -18,7 +18,7 @@
         <assertj.version>3.27.7</assertj.version>
         <awaitility.version>4.2.2</awaitility.version>
         <testcontainers.version>2.0.4</testcontainers.version>
-        <mockito.version>5.14.2</mockito.version>
+        <mockito.version>5.23.0</mockito.version>
         <postgresql.version>42.7.4</postgresql.version>
     </properties>
 
