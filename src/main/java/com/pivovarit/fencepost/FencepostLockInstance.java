@@ -20,9 +20,10 @@ final class FencepostLockInstance implements FencepostLock {
     private final String tableName;
     private final Consumer<FencepostException> onHeartbeatFailure;
 
-    private volatile Connection connection;
+    volatile Connection connection;
     private volatile FencingToken currentToken;
     private volatile Thread heartbeatThread;
+    private volatile Thread keepaliveThread;
     private volatile long heartbeatWindowMillis;
 
     FencepostLockInstance(String lockName, DataSource dataSource, LockMode lockMode, String tableName, Consumer<FencepostException> onHeartbeatFailure) {
@@ -88,6 +89,9 @@ final class FencepostLockInstance implements FencepostLock {
             }
 
             currentToken = incrementToken(connection, "NULL");
+            if (lockMode instanceof LockMode.Connection && ((LockMode.Connection) lockMode).hasKeepalive()) {
+                startKeepalive((LockMode.Connection) lockMode);
+            }
             return currentToken;
         } catch (Exception e) {
             rollbackAndClose();
@@ -119,6 +123,9 @@ final class FencepostLockInstance implements FencepostLock {
             }
 
             currentToken = incrementToken(connection, "NULL");
+            if (lockMode instanceof LockMode.Connection && ((LockMode.Connection) lockMode).hasKeepalive()) {
+                startKeepalive((LockMode.Connection) lockMode);
+            }
             return currentToken;
         } catch (Exception e) {
             rollbackAndClose();
@@ -148,6 +155,9 @@ final class FencepostLockInstance implements FencepostLock {
             }
 
             currentToken = incrementToken(connection, "NULL");
+            if (lockMode instanceof LockMode.Connection && ((LockMode.Connection) lockMode).hasKeepalive()) {
+                startKeepalive((LockMode.Connection) lockMode);
+            }
             return Optional.of(currentToken);
         } catch (Exception e) {
             rollbackAndClose();
@@ -322,6 +332,7 @@ final class FencepostLockInstance implements FencepostLock {
                 currentToken = null;
             }
         } else {
+            stopKeepalive();
             try {
                 connection.commit();
             } catch (SQLException e) {
@@ -346,6 +357,7 @@ final class FencepostLockInstance implements FencepostLock {
             } catch (Exception ignored) {
             }
         }
+        stopKeepalive();
     }
 
     private void ensureRowExists() {
@@ -453,6 +465,45 @@ final class FencepostLockInstance implements FencepostLock {
                 Thread.currentThread().interrupt();
             }
             heartbeatThread = null;
+        }
+    }
+
+    private void startKeepalive(LockMode.Connection connMode) {
+        keepaliveThread = new Thread(() -> {
+            long intervalMillis = connMode.keepaliveInterval().toMillis();
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    Thread.sleep(intervalMillis);
+                    try (PreparedStatement ps = connection.prepareStatement("SELECT 1")) {
+                        ps.execute();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                } catch (SQLException e) {
+                    currentToken = null;
+                    FencepostException ex = new FencepostException("Keepalive failed for lock: " + lockName, e);
+                    if (onHeartbeatFailure != null) {
+                        onHeartbeatFailure.accept(ex);
+                    }
+                    return;
+                }
+            }
+        });
+        keepaliveThread.setDaemon(true);
+        keepaliveThread.setName("fencepost-keepalive-" + lockName);
+        keepaliveThread.start();
+    }
+
+    private void stopKeepalive() {
+        if (keepaliveThread != null) {
+            keepaliveThread.interrupt();
+            try {
+                keepaliveThread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            keepaliveThread = null;
         }
     }
 

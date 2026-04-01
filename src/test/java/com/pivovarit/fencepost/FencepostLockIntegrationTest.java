@@ -204,6 +204,57 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void keepaliveShouldPreventConnectionTimeout() throws Exception {
+        Fencepost provider = Fencepost.builder(dataSource)
+          .lockMode(LockMode.connection().withKeepalive(Duration.ofMillis(200)))
+          .build();
+
+        FencepostLock lock = provider.forName("keepalive-timeout-test");
+        lock.lock();
+
+        // Set idle_in_transaction_session_timeout on the held connection so it
+        // would normally be killed after 500ms of inactivity in a transaction.
+        // The keepalive fires every 200ms, so the idle timer never reaches 500ms.
+        FencepostLockInstance instance = (FencepostLockInstance) lock;
+        try (var ps = instance.connection.prepareStatement(
+          "SET LOCAL idle_in_transaction_session_timeout = '500ms'")) {
+            ps.execute();
+        }
+
+        Thread.sleep(800);
+
+        try {
+            FencepostLock contender = provider.forName("keepalive-timeout-test");
+            Optional<FencingToken> result = contender.tryLock();
+            assertThat(result).isEmpty();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Test
+    void keepaliveFailureShouldInvalidateToken() throws Exception {
+        AtomicBoolean callbackFired = new AtomicBoolean(false);
+
+        Fencepost provider = Fencepost.builder(dataSource)
+          .lockMode(LockMode.connection().withKeepalive(Duration.ofMillis(200)))
+          .onHeartbeatFailure(ex -> callbackFired.set(true))
+          .build();
+
+        FencepostLock lock = provider.forName("keepalive-failure-test");
+        lock.lock();
+
+        // Forcibly close the held connection so the keepalive SELECT 1 fails
+        FencepostLockInstance instance = (FencepostLockInstance) lock;
+        instance.connection.close();
+
+        await().atMost(Duration.ofSeconds(5)).untilTrue(callbackFired);
+
+        assertThatThrownBy(lock::unlock)
+          .isInstanceOf(LockNotHeldException.class);
+    }
+
+    @Test
     void concurrentLocksShouldProduceOrderedTokens() throws Exception {
         Fencepost provider = Fencepost.builder(dataSource).build();
 

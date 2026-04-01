@@ -4,7 +4,7 @@ import java.time.Duration;
 
 public interface LockMode {
 
-    static LockMode connection() {
+    static Connection connection() {
         return Connection.INSTANCE;
     }
 
@@ -29,9 +29,27 @@ public interface LockMode {
     }
 
     final class Connection implements LockMode {
-        private static final Connection INSTANCE = new Connection();
+        private static final Connection INSTANCE = new Connection(null);
 
-        private Connection() {
+        private final Duration keepaliveInterval;
+
+        private Connection(Duration keepaliveInterval) {
+            this.keepaliveInterval = keepaliveInterval;
+        }
+
+        public Connection withKeepalive(Duration keepaliveInterval) {
+            if (keepaliveInterval.isNegative() || keepaliveInterval.isZero()) {
+                throw new IllegalArgumentException("keepaliveInterval must be positive");
+            }
+            return new Connection(keepaliveInterval);
+        }
+
+        public Duration keepaliveInterval() {
+            return keepaliveInterval;
+        }
+
+        public boolean hasKeepalive() {
+            return keepaliveInterval != null;
         }
     }
 
