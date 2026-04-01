@@ -78,6 +78,7 @@ final class FencepostLockInstance implements FencepostLock {
         try {
             connection = dataSource.getConnection();
             connection.setAutoCommit(false);
+            disableIdleInTransactionTimeout(connection);
 
             ensureRowExists();
 
@@ -99,6 +100,7 @@ final class FencepostLockInstance implements FencepostLock {
         try {
             connection = dataSource.getConnection();
             connection.setAutoCommit(false);
+            disableIdleInTransactionTimeout(connection);
 
             ensureRowExists();
 
@@ -133,6 +135,7 @@ final class FencepostLockInstance implements FencepostLock {
         try {
             connection = dataSource.getConnection();
             connection.setAutoCommit(false);
+            disableIdleInTransactionTimeout(connection);
 
             ensureRowExists();
 
@@ -345,6 +348,12 @@ final class FencepostLockInstance implements FencepostLock {
                 unlock();
             } catch (Exception ignored) {
             }
+        }
+    }
+
+    private void disableIdleInTransactionTimeout(Connection conn) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("SET idle_in_transaction_session_timeout = 0")) {
+            ps.execute();
         }
     }
 
