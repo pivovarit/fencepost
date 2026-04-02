@@ -41,9 +41,134 @@ final class FencepostLockInstance implements FencepostLock {
         return lockMode instanceof LockMode.Expiring;
     }
 
+    private static final int ADVISORY_NAMESPACE = "fencepost".hashCode();
+
+    private boolean isAdvisory() {
+        return lockMode instanceof LockMode.Advisory;
+    }
+
+    private int advisoryKey() {
+        return lockName.hashCode();
+    }
+
+    private static boolean isLockNotAvailable(SQLException e) {
+        return SqlStates.LOCK_NOT_AVAILABLE.equals(e.getSQLState());
+    }
+
+    private FencingToken lockAdvisory() {
+        try {
+            connection = dataSource.getConnection();
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "SELECT pg_advisory_lock(?, ?)")) {
+                ps.setInt(1, ADVISORY_NAMESPACE);
+                ps.setInt(2, advisoryKey());
+                ps.execute();
+            }
+            currentToken = new FencingToken(0);
+            return currentToken;
+        } catch (Exception e) {
+            closeConnection();
+            connection = null;
+            throw (e instanceof FencepostException) ? (FencepostException) e
+                : new FencepostException("Failed to acquire advisory lock: " + lockName, e);
+        }
+    }
+
+    private FencingToken lockAdvisoryWithTimeout(Duration timeout) {
+        try {
+            connection = dataSource.getConnection();
+            try (PreparedStatement set = connection.prepareStatement(
+                    "SET lock_timeout = '" + timeout.toMillis() + "ms'")) {
+                set.execute();
+            }
+            try {
+                try (PreparedStatement ps = connection.prepareStatement(
+                        "SELECT pg_advisory_lock(?, ?)")) {
+                    ps.setInt(1, ADVISORY_NAMESPACE);
+                    ps.setInt(2, advisoryKey());
+                    ps.execute();
+                }
+            } catch (SQLException e) {
+                if (isLockNotAvailable(e)) {
+                    throw new LockAcquisitionTimeoutException(lockName);
+                }
+                throw e;
+            } finally {
+                try (PreparedStatement reset = connection.prepareStatement(
+                        "SET lock_timeout = 0")) {
+                    reset.execute();
+                } catch (SQLException ignored) {
+                }
+            }
+            currentToken = new FencingToken(0);
+            return currentToken;
+        } catch (LockAcquisitionTimeoutException e) {
+            closeConnection();
+            connection = null;
+            throw e;
+        } catch (Exception e) {
+            closeConnection();
+            connection = null;
+            throw (e instanceof FencepostException) ? (FencepostException) e
+                : new FencepostException("Failed to acquire advisory lock: " + lockName, e);
+        }
+    }
+
+    private Optional<FencingToken> tryLockAdvisory() {
+        try {
+            connection = dataSource.getConnection();
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "SELECT pg_try_advisory_lock(?, ?)")) {
+                ps.setInt(1, ADVISORY_NAMESPACE);
+                ps.setInt(2, advisoryKey());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next() || !rs.getBoolean(1)) {
+                        closeConnection();
+                        connection = null;
+                        return Optional.empty();
+                    }
+                }
+            }
+            currentToken = new FencingToken(0);
+            return Optional.of(currentToken);
+        } catch (Exception e) {
+            closeConnection();
+            connection = null;
+            throw (e instanceof FencepostException) ? (FencepostException) e
+                : new FencepostException("Failed to try-lock advisory: " + lockName, e);
+        }
+    }
+
+    private void unlockAdvisory() {
+        try {
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "SELECT pg_advisory_unlock(?, ?)")) {
+                ps.setInt(1, ADVISORY_NAMESPACE);
+                ps.setInt(2, advisoryKey());
+                try (ResultSet rs = ps.executeQuery()) {
+                    rs.next();
+                    if (!rs.getBoolean(1)) {
+                        throw new LockNotHeldException(lockName);
+                    }
+                }
+            }
+        } catch (LockNotHeldException e) {
+            throw e;
+        } catch (SQLException e) {
+            throw new FencepostException("Failed to release advisory lock: " + lockName, e);
+        } finally {
+            closeConnection();
+            connection = null;
+            currentToken = null;
+        }
+    }
+
     @Override
     public FencingToken lock() {
         ensureNotHeld();
+        if (isAdvisory()) {
+            return lockAdvisory();
+        }
         if (isTimestampBased()) {
             return lockTimestampBlocking(null);
         }
@@ -53,6 +178,9 @@ final class FencepostLockInstance implements FencepostLock {
     @Override
     public FencingToken lock(Duration timeout) {
         ensureNotHeld();
+        if (isAdvisory()) {
+            return lockAdvisoryWithTimeout(timeout);
+        }
         if (isTimestampBased()) {
             return lockTimestampBlocking(timeout);
         }
@@ -62,6 +190,9 @@ final class FencepostLockInstance implements FencepostLock {
     @Override
     public Optional<FencingToken> tryLock() {
         ensureNotHeld();
+        if (isAdvisory()) {
+            return tryLockAdvisory();
+        }
         if (isTimestampBased()) {
             return tryLockTimestamp();
         }
@@ -220,6 +351,9 @@ final class FencepostLockInstance implements FencepostLock {
 
     @Override
     public boolean isSuperseded(FencingToken token) {
+        if (isAdvisory()) {
+            throw new UnsupportedOperationException("isSuperseded() is not supported in advisory lock mode");
+        }
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement("SELECT token > ? FROM " + tableName + " WHERE lock_name = ?")) {
             ps.setLong(1, token.value());
@@ -265,6 +399,9 @@ final class FencepostLockInstance implements FencepostLock {
 
     @Override
     public void renew(Duration duration) {
+        if (isAdvisory()) {
+            throw new UnsupportedOperationException("renew() is not supported in advisory lock mode");
+        }
         if (duration.isNegative() || duration.isZero()) {
             throw new IllegalArgumentException("duration must be positive");
         }
@@ -299,6 +436,10 @@ final class FencepostLockInstance implements FencepostLock {
     public void unlock() {
         if (currentToken == null) {
             throw new LockNotHeldException(lockName);
+        }
+        if (isAdvisory()) {
+            unlockAdvisory();
+            return;
         }
         stopHeartbeat();
         Duration quiet = quietPeriod();
