@@ -6,12 +6,12 @@ import java.time.Duration;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-final class ExpiringLockInstance extends TableBasedLock implements RenewableLock {
+final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     private static final long POLL_INTERVAL_MS = 100;
     private static final int HEARTBEAT_MAX_RETRIES = 3;
 
-    private final Duration expiryWindow;
+    private final Duration leaseDuration;
     private final Duration refreshInterval;
     private final Duration quietPeriod;
     private final Consumer<FencepostException> onHeartbeatFailure;
@@ -19,11 +19,11 @@ final class ExpiringLockInstance extends TableBasedLock implements RenewableLock
     private volatile Thread heartbeatThread;
     private volatile long heartbeatWindowMillis;
 
-    ExpiringLockInstance(String lockName, DataSource dataSource, String tableName,
-                         Duration expiryWindow, Duration refreshInterval, Duration quietPeriod,
+    LeaseLockInstance(String lockName, DataSource dataSource, String tableName,
+                         Duration leaseDuration, Duration refreshInterval, Duration quietPeriod,
                          Consumer<FencepostException> onHeartbeatFailure) {
         super(lockName, dataSource, tableName);
-        this.expiryWindow = expiryWindow;
+        this.leaseDuration = leaseDuration;
         this.refreshInterval = refreshInterval;
         this.quietPeriod = quietPeriod;
         this.onHeartbeatFailure = onHeartbeatFailure;
@@ -123,7 +123,7 @@ final class ExpiringLockInstance extends TableBasedLock implements RenewableLock
         try {
             return Jdbc.query(dataSource, sql)
                     .bind(lockedBy)
-                    .bind(expiryWindow.toMillis())
+                    .bind(leaseDuration.toMillis())
                     .bind(lockName)
                     .map(rs -> rs.next() ? Optional.of(new FencingToken(rs.getLong(1))) : Optional.empty());
         } catch (SQLException e) {
@@ -210,7 +210,7 @@ final class ExpiringLockInstance extends TableBasedLock implements RenewableLock
 
     private void startHeartbeat() {
         long token = currentToken.value();
-        heartbeatWindowMillis = expiryWindow.toMillis();
+        heartbeatWindowMillis = leaseDuration.toMillis();
         heartbeatThread = new Thread(() -> {
             long intervalMillis = refreshInterval.toMillis();
             while (!Thread.currentThread().isInterrupted()) {
