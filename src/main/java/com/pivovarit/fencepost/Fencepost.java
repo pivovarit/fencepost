@@ -27,12 +27,12 @@ public final class Fencepost<T extends FencepostLock> {
         return new ConnectionBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
     }
 
-    public static ExpiringBuilder expiring(DataSource dataSource, Duration lockAtMost) {
+    public static LeaseBuilder lease(DataSource dataSource, Duration lockAtMost) {
         Objects.requireNonNull(dataSource, "dataSource must not be null");
         if (lockAtMost.isNegative() || lockAtMost.isZero()) {
             throw new IllegalArgumentException("lockAtMost must be positive");
         }
-        return new ExpiringBuilder(dataSource, lockAtMost);
+        return new LeaseBuilder(dataSource, lockAtMost);
     }
 
     public static final class AdvisoryBuilder {
@@ -70,20 +70,20 @@ public final class Fencepost<T extends FencepostLock> {
         }
     }
 
-    public static final class ExpiringBuilder {
+    public static final class LeaseBuilder {
         private final DataSource dataSource;
-        private final Duration expiryWindow;
+        private final Duration leaseDuration;
         private String tableName = "fencepost_locks";
         private Duration refreshInterval;
         private Duration quietPeriod;
         private Consumer<FencepostException> onHeartbeatFailure;
 
-        private ExpiringBuilder(DataSource dataSource, Duration expiryWindow) {
+        private LeaseBuilder(DataSource dataSource, Duration leaseDuration) {
             this.dataSource = dataSource;
-            this.expiryWindow = expiryWindow;
+            this.leaseDuration = leaseDuration;
         }
 
-        public ExpiringBuilder tableName(String tableName) {
+        public LeaseBuilder tableName(String tableName) {
             Objects.requireNonNull(tableName);
             if (!tableName.matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
                 throw new IllegalArgumentException("Invalid table name: " + tableName);
@@ -92,18 +92,18 @@ public final class Fencepost<T extends FencepostLock> {
             return this;
         }
 
-        public ExpiringBuilder withHeartbeat(Duration refreshInterval) {
+        public LeaseBuilder withHeartbeat(Duration refreshInterval) {
             if (refreshInterval.isNegative() || refreshInterval.isZero()) {
                 throw new IllegalArgumentException("Refresh interval must be positive");
             }
-            if (refreshInterval.compareTo(expiryWindow) >= 0) {
-                throw new IllegalArgumentException("Refresh interval must be less than expiry window");
+            if (refreshInterval.compareTo(leaseDuration) >= 0) {
+                throw new IllegalArgumentException("Refresh interval must be less than lease duration");
             }
             this.refreshInterval = refreshInterval;
             return this;
         }
 
-        public ExpiringBuilder withQuietPeriod(Duration quietPeriod) {
+        public LeaseBuilder withQuietPeriod(Duration quietPeriod) {
             if (quietPeriod.isNegative() || quietPeriod.isZero()) {
                 throw new IllegalArgumentException("quietPeriod must be positive");
             }
@@ -111,18 +111,18 @@ public final class Fencepost<T extends FencepostLock> {
             return this;
         }
 
-        public ExpiringBuilder onHeartbeatFailure(Consumer<FencepostException> handler) {
+        public LeaseBuilder onHeartbeatFailure(Consumer<FencepostException> handler) {
             this.onHeartbeatFailure = Objects.requireNonNull(handler);
             return this;
         }
 
         public Fencepost<RenewableLock> build() {
             String t = this.tableName;
-            Duration ew = this.expiryWindow;
+            Duration ew = this.leaseDuration;
             Duration ri = this.refreshInterval;
             Duration qp = this.quietPeriod;
             Consumer<FencepostException> ohf = this.onHeartbeatFailure;
-            return new Fencepost<>(lockName -> new ExpiringLockInstance(lockName, dataSource, t, ew, ri, qp, ohf));
+            return new Fencepost<>(lockName -> new LeaseLockInstance(lockName, dataSource, t, ew, ri, qp, ohf));
         }
     }
 }
