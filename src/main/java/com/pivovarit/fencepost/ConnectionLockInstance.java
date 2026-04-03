@@ -55,9 +55,9 @@ final class ConnectionLockInstance extends TableBasedLock implements FencedLock 
             connection.setAutoCommit(false);
             ensureRowExists();
 
-            Jdbc.query(connection,
-                    "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE",
-              ResultSet::next, lockName);
+            Jdbc.query(connection, "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE")
+                    .bind(lockName)
+                    .map(ResultSet::next);
 
             currentToken = incrementToken(connection, null);
             return currentToken;
@@ -77,7 +77,9 @@ final class ConnectionLockInstance extends TableBasedLock implements FencedLock 
 
             Jdbc.setStatementTimeout(connection, timeout);
 
-            Jdbc.query(connection,"SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE", ResultSet::next, lockName);
+            Jdbc.query(connection, "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE")
+                    .bind(lockName)
+                    .map(ResultSet::next);
 
             Jdbc.resetStatementTimeout(connection);
 
@@ -100,7 +102,9 @@ final class ConnectionLockInstance extends TableBasedLock implements FencedLock 
             connection.setAutoCommit(false);
             ensureRowExists();
 
-            boolean locked = Jdbc.query(connection,"SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE SKIP LOCKED", ResultSet::next, lockName);
+            boolean locked = Jdbc.query(connection, "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE SKIP LOCKED")
+                    .bind(lockName)
+                    .map(ResultSet::next);
 
             if (!locked) {
                 rollbackAndClose();

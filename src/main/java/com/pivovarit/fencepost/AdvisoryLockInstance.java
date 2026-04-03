@@ -26,7 +26,10 @@ final class AdvisoryLockInstance implements FencepostLock {
         ensureNotHeld();
         try {
             connection = dataSource.getConnection();
-            Jdbc.query(connection, "SELECT pg_advisory_lock(?, ?)", ResultSet::next, ADVISORY_NAMESPACE, advisoryKey());
+            Jdbc.query(connection, "SELECT pg_advisory_lock(?, ?)")
+                    .bind(ADVISORY_NAMESPACE)
+                    .bind(advisoryKey())
+                    .map(ResultSet::next);
             held = true;
         } catch (Exception e) {
             closeConnection();
@@ -43,7 +46,10 @@ final class AdvisoryLockInstance implements FencepostLock {
             connection = dataSource.getConnection();
             Jdbc.setLockTimeout(connection, timeout);
             try {
-                Jdbc.query(connection, "SELECT pg_advisory_lock(?, ?)", ResultSet::next, ADVISORY_NAMESPACE, advisoryKey());
+                Jdbc.query(connection, "SELECT pg_advisory_lock(?, ?)")
+                        .bind(ADVISORY_NAMESPACE)
+                        .bind(advisoryKey())
+                        .map(ResultSet::next);
             } catch (SQLException e) {
                 if (SqlStates.LOCK_NOT_AVAILABLE.equals(e.getSQLState())) {
                     throw new LockAcquisitionTimeoutException(lockName);
@@ -73,7 +79,10 @@ final class AdvisoryLockInstance implements FencepostLock {
         ensureNotHeld();
         try {
             connection = dataSource.getConnection();
-            boolean acquired = Jdbc.query(connection, "SELECT pg_try_advisory_lock(?, ?)",rs -> rs.next() && rs.getBoolean(1), ADVISORY_NAMESPACE, advisoryKey());
+            boolean acquired = Jdbc.query(connection, "SELECT pg_try_advisory_lock(?, ?)")
+                    .bind(ADVISORY_NAMESPACE)
+                    .bind(advisoryKey())
+                    .map(rs -> rs.next() && rs.getBoolean(1));
             if (!acquired) {
                 closeConnection();
                 connection = null;
@@ -95,14 +104,18 @@ final class AdvisoryLockInstance implements FencepostLock {
             throw new LockNotHeldException(lockName);
         }
         try {
-            boolean released = Jdbc.query(connection, "SELECT pg_advisory_unlock(?, ?)",
-                    rs -> {
+            boolean released = Jdbc.query(connection, "SELECT pg_advisory_unlock(?, ?)")
+                    .bind(ADVISORY_NAMESPACE)
+                    .bind(advisoryKey())
+                    .map(rs -> {
                         rs.next();
                         return rs.getBoolean(1);
-                    }, ADVISORY_NAMESPACE, advisoryKey());
+                    });
             if (!released) {
                 throw new LockNotHeldException(lockName);
             }
+        } catch (LockNotHeldException e) {
+            throw e;
         } catch (SQLException e) {
             throw new FencepostException("Failed to release advisory lock: " + lockName, e);
         } finally {
