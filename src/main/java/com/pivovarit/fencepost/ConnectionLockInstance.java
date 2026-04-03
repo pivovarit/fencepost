@@ -2,7 +2,6 @@ package com.pivovarit.fencepost;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -56,13 +55,11 @@ final class ConnectionLockInstance extends TableBasedLock implements FencedLock 
             connection.setAutoCommit(false);
             ensureRowExists();
 
-            try (PreparedStatement ps = connection.prepareStatement(
-                    "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE")) {
-                ps.setString(1, lockName);
-                ps.executeQuery();
-            }
+            Jdbc.query(connection, "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE")
+                    .bind(lockName)
+                    .map(ResultSet::next);
 
-            currentToken = incrementToken(connection, "NULL");
+            currentToken = incrementToken(connection, null);
             return currentToken;
         } catch (Exception e) {
             rollbackAndClose();
@@ -78,23 +75,15 @@ final class ConnectionLockInstance extends TableBasedLock implements FencedLock 
             connection.setAutoCommit(false);
             ensureRowExists();
 
-            try (PreparedStatement ps = connection.prepareStatement(
-                    "SET LOCAL statement_timeout = '" + timeout.toMillis() + "ms'")) {
-                ps.execute();
-            }
+            Jdbc.setStatementTimeout(connection, timeout);
 
-            try (PreparedStatement ps = connection.prepareStatement(
-                    "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE")) {
-                ps.setString(1, lockName);
-                ps.executeQuery();
-            }
+            Jdbc.query(connection, "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE")
+                    .bind(lockName)
+                    .map(ResultSet::next);
 
-            try (PreparedStatement ps = connection.prepareStatement(
-                    "SET LOCAL statement_timeout = 0")) {
-                ps.execute();
-            }
+            Jdbc.resetStatementTimeout(connection);
 
-            currentToken = incrementToken(connection, "NULL");
+            currentToken = incrementToken(connection, null);
             return currentToken;
         } catch (Exception e) {
             rollbackAndClose();
@@ -113,18 +102,16 @@ final class ConnectionLockInstance extends TableBasedLock implements FencedLock 
             connection.setAutoCommit(false);
             ensureRowExists();
 
-            try (PreparedStatement ps = connection.prepareStatement(
-                    "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE SKIP LOCKED")) {
-                ps.setString(1, lockName);
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (!rs.next()) {
-                        rollbackAndClose();
-                        return Optional.empty();
-                    }
-                }
+            boolean locked = Jdbc.query(connection, "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE SKIP LOCKED")
+                    .bind(lockName)
+                    .map(ResultSet::next);
+
+            if (!locked) {
+                rollbackAndClose();
+                return Optional.empty();
             }
 
-            currentToken = incrementToken(connection, "NULL");
+            currentToken = incrementToken(connection, null);
             return Optional.of(currentToken);
         } catch (Exception e) {
             rollbackAndClose();

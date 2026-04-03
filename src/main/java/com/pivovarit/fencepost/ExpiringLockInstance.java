@@ -1,9 +1,6 @@
 package com.pivovarit.fencepost;
 
 import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Optional;
@@ -120,20 +117,15 @@ final class ExpiringLockInstance extends TableBasedLock implements RenewableLock
 
     private Optional<FencingToken> tryAcquireTimestamp() {
         String lockedBy = String.format("%s/%s", HOSTNAME, Thread.currentThread().getName());
-        long millis = expiryWindow.toMillis();
-        String expiresAtExpr = "now() + interval '" + millis + " milliseconds'";
 
-        String sql = String.format(
-                "UPDATE %s SET token = token + 1, locked_by = ?, locked_at = now(), expires_at = %s WHERE lock_name = ? AND (locked_by IS NULL OR expires_at IS NULL OR expires_at <= now()) RETURNING token",
-                tableName, expiresAtExpr);
+        String sql = String.format("UPDATE %s SET token = token + 1, locked_by = ?, locked_at = now(), expires_at = now() + %s WHERE lock_name = ? AND (locked_by IS NULL OR expires_at IS NULL OR expires_at <= now()) RETURNING token", tableName, Jdbc.intervalMillis());
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, lockedBy);
-            ps.setString(2, lockName);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? Optional.of(new FencingToken(rs.getLong(1))) : Optional.empty();
-            }
+        try {
+            return Jdbc.query(dataSource, sql)
+                    .bind(lockedBy)
+                    .bind(expiryWindow.toMillis())
+                    .bind(lockName)
+                    .map(rs -> rs.next() ? Optional.of(new FencingToken(rs.getLong(1))) : Optional.empty());
         } catch (SQLException e) {
             throw new FencepostException("Failed to acquire lock: " + lockName, e);
         }
@@ -152,13 +144,12 @@ final class ExpiringLockInstance extends TableBasedLock implements RenewableLock
         if (currentToken == null) {
             throw new LockNotHeldException(lockName);
         }
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(
-                     "UPDATE " + tableName + " SET expires_at = now() + interval '" + duration.toMillis() + " milliseconds' " +
-                     "WHERE lock_name = ? AND token = ?")) {
-            ps.setString(1, lockName);
-            ps.setLong(2, currentToken.value());
-            int updated = ps.executeUpdate();
+        try {
+            int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET expires_at = now() + %s WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis()))
+                    .bind(duration.toMillis())
+                    .bind(lockName)
+                    .bind(currentToken.value())
+                    .execute();
             if (updated == 0) {
                 currentToken = null;
                 throw new LockNotHeldException(lockName);
@@ -179,17 +170,20 @@ final class ExpiringLockInstance extends TableBasedLock implements RenewableLock
             throw new LockNotHeldException(lockName);
         }
         stopHeartbeat();
-        String expiresAtExpr = quietPeriod != null
-            ? "GREATEST(now(), locked_at + interval '" + quietPeriod.toMillis() + " milliseconds')"
-            : "NULL";
-        String lockedByExpr = quietPeriod != null ? "locked_by" : "NULL";
-        String lockedAtExpr = quietPeriod != null ? "locked_at" : "NULL";
-        try (Connection unlockConn = dataSource.getConnection();
-             PreparedStatement ps = unlockConn.prepareStatement(
-                     "UPDATE " + tableName + " SET locked_by = " + lockedByExpr + ", locked_at = " + lockedAtExpr + ", expires_at = " + expiresAtExpr + " WHERE lock_name = ? AND token = ?")) {
-            ps.setString(1, lockName);
-            ps.setLong(2, currentToken.value());
-            int updated = ps.executeUpdate();
+        try {
+            int updated;
+            if (quietPeriod != null) {
+                updated = Jdbc.update(dataSource, String.format("UPDATE %s SET locked_by = locked_by, locked_at = locked_at, expires_at = GREATEST(now(), locked_at + %s) WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis()))
+                        .bind(quietPeriod.toMillis())
+                        .bind(lockName)
+                        .bind(currentToken.value())
+                        .execute();
+            } else {
+                updated = Jdbc.update(dataSource, String.format("UPDATE %s SET locked_by = NULL, locked_at = NULL, expires_at = NULL WHERE lock_name = ? AND token = ?", tableName))
+                        .bind(lockName)
+                        .bind(currentToken.value())
+                        .execute();
+            }
             if (updated == 0) {
                 throw new LockNotHeldException(lockName);
             }
@@ -244,13 +238,12 @@ final class ExpiringLockInstance extends TableBasedLock implements RenewableLock
     private void refreshWithRetry(long windowMillis, long token) throws SQLException, InterruptedException {
         SQLException lastException = null;
         for (int attempt = 0; attempt < HEARTBEAT_MAX_RETRIES; attempt++) {
-            try (Connection hbConn = dataSource.getConnection();
-                 PreparedStatement ps = hbConn.prepareStatement(
-                         String.format("UPDATE %s SET expires_at = now() + interval '%d milliseconds' WHERE lock_name = ? AND token = ?",
-                                 tableName, windowMillis))) {
-                ps.setString(1, lockName);
-                ps.setLong(2, token);
-                int updated = ps.executeUpdate();
+            try {
+                int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET expires_at = now() + %s WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis()))
+                        .bind(windowMillis)
+                        .bind(lockName)
+                        .bind(token)
+                        .execute();
                 if (updated == 0) {
                     throw new SQLException("Lock lost — token no longer matches");
                 }
