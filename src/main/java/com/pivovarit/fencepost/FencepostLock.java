@@ -1,23 +1,32 @@
 package com.pivovarit.fencepost;
 
 import java.time.Duration;
-import java.util.Optional;
 
 public interface FencepostLock extends AutoCloseable {
 
-    FencingToken lock();
+    void lock();
 
-    FencingToken lock(Duration timeout);
+    void lock(Duration timeout);
 
-    Optional<FencingToken> tryLock();
+    boolean tryLock();
 
-    void withLock(ThrowingConsumer<FencingToken> action);
+    default void withLock(Runnable action) {
+        lock();
+        try {
+            action.run();
+        } finally {
+            unlock();
+        }
+    }
 
-    void withLock(Duration timeout, ThrowingConsumer<FencingToken> action);
-
-    boolean isSuperseded(FencingToken token);
-
-    void renew(Duration duration);
+    default void withLock(Duration timeout, Runnable action) {
+        lock(timeout);
+        try {
+            action.run();
+        } finally {
+            unlock();
+        }
+    }
 
     void unlock();
 

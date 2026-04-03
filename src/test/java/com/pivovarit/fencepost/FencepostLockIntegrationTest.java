@@ -53,10 +53,10 @@ class FencepostLockIntegrationTest {
 
     @Test
     void shouldAcquireAndReleaseLock() {
-        Fencepost provider = Fencepost.builder(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.connection(dataSource).build();
 
-        FencepostLock lock = provider.forName("test-lock");
-        FencingToken token = lock.lock();
+        FencedLock lock = provider.forName("test-lock");
+        FencingToken token = lock.fencedLock();
 
         assertThat(token).isNotNull();
         assertThat(token.value()).isGreaterThan(0);
@@ -66,13 +66,12 @@ class FencepostLockIntegrationTest {
 
     @Test
     void shouldReturnStrictlyIncreasingTokens() {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .build();
+        Fencepost<FencedLock> provider = Fencepost.connection(dataSource).build();
 
         long previousValue = 0;
         for (int i = 0; i < 10; i++) {
-            FencepostLock lock = provider.forName("token-test");
-            FencingToken token = lock.lock();
+            FencedLock lock = provider.forName("token-test");
+            FencingToken token = lock.fencedLock();
             assertThat(token.value()).isGreaterThan(previousValue);
             previousValue = token.value();
             lock.unlock();
@@ -81,15 +80,14 @@ class FencepostLockIntegrationTest {
 
     @Test
     void tryLockShouldReturnEmptyWhenHeld() {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .build();
+        Fencepost<FencedLock> provider = Fencepost.connection(dataSource).build();
 
-        FencepostLock holder = provider.forName("contended-lock");
-        holder.lock();
+        FencedLock holder = provider.forName("contended-lock");
+        holder.fencedLock();
 
         try {
-            FencepostLock contender = provider.forName("contended-lock");
-            Optional<FencingToken> result = contender.tryLock();
+            FencedLock contender = provider.forName("contended-lock");
+            Optional<FencingToken> result = contender.tryFencedLock();
             assertThat(result).isEmpty();
         } finally {
             holder.unlock();
@@ -98,17 +96,17 @@ class FencepostLockIntegrationTest {
 
     @Test
     void lockShouldBlockUntilReleased() throws Exception {
-        Fencepost provider = Fencepost.builder(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.connection(dataSource).build();
 
-        FencepostLock holder = provider.forName("blocking-test");
-        FencingToken firstToken = holder.lock();
+        FencedLock holder = provider.forName("blocking-test");
+        FencingToken firstToken = holder.fencedLock();
 
         CountDownLatch acquired = new CountDownLatch(1);
         AtomicReference<FencingToken> secondToken = new AtomicReference<>();
 
         Thread contender = new Thread(() -> {
-            FencepostLock lock = provider.forName("blocking-test");
-            secondToken.set(lock.lock());
+            FencedLock lock = provider.forName("blocking-test");
+            secondToken.set(lock.fencedLock());
             acquired.countDown();
             lock.unlock();
         });
@@ -124,14 +122,14 @@ class FencepostLockIntegrationTest {
 
     @Test
     void lockWithTimeoutShouldThrowOnTimeout() {
-        Fencepost provider = Fencepost.builder(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.connection(dataSource).build();
 
-        FencepostLock holder = provider.forName("timeout-test");
-        holder.lock();
+        FencedLock holder = provider.forName("timeout-test");
+        holder.fencedLock();
 
         try {
-            FencepostLock contender = provider.forName("timeout-test");
-            assertThatThrownBy(() -> contender.lock(Duration.ofMillis(500)))
+            FencedLock contender = provider.forName("timeout-test");
+            assertThatThrownBy(() -> contender.fencedLock(Duration.ofMillis(500)))
               .isInstanceOf(LockAcquisitionTimeoutException.class);
         } finally {
             holder.unlock();
@@ -140,65 +138,24 @@ class FencepostLockIntegrationTest {
 
     @Test
     void unlockWhenNotHeldShouldThrow() {
-        Fencepost provider = Fencepost.builder(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.connection(dataSource).build();
 
-        FencepostLock lock = provider.forName("not-held");
+        FencedLock lock = provider.forName("not-held");
         assertThatThrownBy(lock::unlock)
           .isInstanceOf(LockNotHeldException.class);
     }
 
     @Test
-    void ttlExpiredLockShouldBeAcquirable() throws Exception {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(1)))
-          .build();
-
-        FencepostLock holder = provider.forName("ttl-test");
-        FencingToken firstToken = holder.lock();
-        holder.unlock();
-
-        try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "UPDATE fencepost_locks SET expires_at = now() - interval '1 second' WHERE lock_name = 'ttl-test'"
-            );
-        }
-
-        FencepostLock second = provider.forName("ttl-test");
-        FencingToken secondToken = second.lock();
-        assertThat(secondToken.value()).isGreaterThan(firstToken.value());
-        second.unlock();
-    }
-
-    @Test
-    void heartbeatShouldExtendExpiry() throws Exception {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(2), Duration.ofSeconds(1)))
-          .build();
-
-        FencepostLock lock = provider.forName("heartbeat-test");
-        lock.lock();
-
-        long initialExpiresAt = getExpiresAtEpoch("heartbeat-test");
-
-        Thread.sleep(1500);
-
-        long updatedExpiresAt = getExpiresAtEpoch("heartbeat-test");
-        assertThat(updatedExpiresAt).isGreaterThan(initialExpiresAt);
-
-        lock.unlock();
-    }
-
-    @Test
     void tryWithResourcesShouldReleaseLock() {
-        Fencepost provider = Fencepost.builder(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.connection(dataSource).build();
 
         FencingToken firstToken;
-        try (FencepostLock lock = provider.forName("auto-close")) {
-            firstToken = lock.lock();
+        try (FencedLock lock = provider.forName("auto-close")) {
+            firstToken = lock.fencedLock();
         }
 
-        FencepostLock second = provider.forName("auto-close");
-        Optional<FencingToken> secondToken = second.tryLock();
+        FencedLock second = provider.forName("auto-close");
+        Optional<FencingToken> secondToken = second.tryFencedLock();
         assertThat(secondToken).isPresent();
         assertThat(secondToken.get().value()).isGreaterThan(firstToken.value());
         second.unlock();
@@ -206,7 +163,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void concurrentLocksShouldProduceOrderedTokens() throws Exception {
-        Fencepost provider = Fencepost.builder(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.connection(dataSource).build();
 
         List<Long> tokens = new CopyOnWriteArrayList<>();
         int iterations = 10;
@@ -214,8 +171,8 @@ class FencepostLockIntegrationTest {
 
         Runnable worker = () -> {
             for (int i = 0; i < iterations; i++) {
-                FencepostLock lock = provider.forName("contention-test");
-                FencingToken token = lock.lock();
+                FencedLock lock = provider.forName("contention-test");
+                FencingToken token = lock.fencedLock();
                 tokens.add(token.value());
                 lock.unlock();
             }
@@ -233,86 +190,86 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
-    void withLockShouldAcquireRunAndRelease() {
-        Fencepost provider = Fencepost.builder(dataSource).build();
+    void withFencedLockShouldAcquireRunAndRelease() {
+        Fencepost<FencedLock> provider = Fencepost.connection(dataSource).build();
 
-        FencepostLock lock = provider.forName("withlock-test");
+        FencedLock lock = provider.forName("withlock-test");
         AtomicReference<FencingToken> capturedToken = new AtomicReference<>();
 
-        lock.withLock(capturedToken::set);
+        lock.withFencedLock(capturedToken::set);
 
         assertThat(capturedToken.get()).isNotNull();
         assertThat(capturedToken.get().value()).isGreaterThan(0);
 
-        FencepostLock second = provider.forName("withlock-test");
-        Optional<FencingToken> secondToken = second.tryLock();
+        FencedLock second = provider.forName("withlock-test");
+        Optional<FencingToken> secondToken = second.tryFencedLock();
         assertThat(secondToken).isPresent();
         second.unlock();
     }
 
     @Test
-    void withLockWithTimeoutShouldAcquireRunAndRelease() {
-        Fencepost provider = Fencepost.builder(dataSource).build();
+    void withFencedLockWithTimeoutShouldAcquireRunAndRelease() {
+        Fencepost<FencedLock> provider = Fencepost.connection(dataSource).build();
 
-        FencepostLock lock = provider.forName("withlock-timeout-test");
+        FencedLock lock = provider.forName("withlock-timeout-test");
         AtomicReference<FencingToken> capturedToken = new AtomicReference<>();
 
-        lock.withLock(Duration.ofSeconds(5), capturedToken::set);
+        lock.withFencedLock(Duration.ofSeconds(5), capturedToken::set);
 
         assertThat(capturedToken.get()).isNotNull();
         assertThat(capturedToken.get().value()).isGreaterThan(0);
 
-        FencepostLock second = provider.forName("withlock-timeout-test");
-        Optional<FencingToken> secondToken = second.tryLock();
+        FencedLock second = provider.forName("withlock-timeout-test");
+        Optional<FencingToken> secondToken = second.tryFencedLock();
         assertThat(secondToken).isPresent();
         second.unlock();
     }
 
     @Test
-    void withLockShouldPropagateUncheckedExceptionAndRelease() {
-        Fencepost provider = Fencepost.builder(dataSource).build();
+    void withFencedLockShouldPropagateUncheckedExceptionAndRelease() {
+        Fencepost<FencedLock> provider = Fencepost.connection(dataSource).build();
 
-        FencepostLock lock = provider.forName("withlock-unchecked-test");
+        FencedLock lock = provider.forName("withlock-unchecked-test");
 
-        assertThatThrownBy(() -> lock.withLock(token -> {
+        assertThatThrownBy(() -> lock.withFencedLock(token -> {
             throw new IllegalArgumentException("boom");
         }))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessage("boom");
 
-        FencepostLock second = provider.forName("withlock-unchecked-test");
-        Optional<FencingToken> secondToken = second.tryLock();
+        FencedLock second = provider.forName("withlock-unchecked-test");
+        Optional<FencingToken> secondToken = second.tryFencedLock();
         assertThat(secondToken).isPresent();
         second.unlock();
     }
 
     @Test
-    void withLockShouldWrapCheckedExceptionAndRelease() {
-        Fencepost provider = Fencepost.builder(dataSource).build();
+    void withFencedLockShouldWrapCheckedExceptionAndRelease() {
+        Fencepost<FencedLock> provider = Fencepost.connection(dataSource).build();
 
-        FencepostLock lock = provider.forName("withlock-checked-test");
+        FencedLock lock = provider.forName("withlock-checked-test");
 
-        assertThatThrownBy(() -> lock.withLock(token -> {
+        assertThatThrownBy(() -> lock.withFencedLock(token -> {
             throw new java.io.IOException("disk full");
         }))
           .isInstanceOf(FencepostException.class)
           .hasCauseInstanceOf(java.io.IOException.class);
 
-        FencepostLock second = provider.forName("withlock-checked-test");
-        Optional<FencingToken> secondToken = second.tryLock();
+        FencedLock second = provider.forName("withlock-checked-test");
+        Optional<FencingToken> secondToken = second.tryFencedLock();
         assertThat(secondToken).isPresent();
         second.unlock();
     }
 
     @Test
-    void withLockWhileHeldShouldThrow() {
-        Fencepost provider = Fencepost.builder(dataSource).build();
+    void withFencedLockWhileHeldShouldThrow() {
+        Fencepost<FencedLock> provider = Fencepost.connection(dataSource).build();
 
-        FencepostLock lock = provider.forName("withlock-guard-test");
-        lock.lock();
+        FencedLock lock = provider.forName("withlock-guard-test");
+        lock.fencedLock();
 
         try {
-            assertThatThrownBy(() -> lock.withLock(token -> {}))
+            assertThatThrownBy(() -> lock.withFencedLock(token -> {}))
               .isInstanceOf(IllegalStateException.class)
               .hasMessageContaining("withlock-guard-test");
         } finally {
@@ -321,13 +278,50 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
-    void renewShouldExtendExpiry() throws Exception {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(2)))
-          .build();
+    void ttlExpiredLockShouldBeAcquirable() throws Exception {
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(1)).build();
 
-        FencepostLock lock = provider.forName("renew-test");
-        lock.lock();
+        RenewableLock holder = provider.forName("ttl-test");
+        FencingToken firstToken = holder.fencedLock();
+        holder.unlock();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute(
+              "UPDATE fencepost_locks SET expires_at = now() - interval '1 second' WHERE lock_name = 'ttl-test'"
+            );
+        }
+
+        RenewableLock second = provider.forName("ttl-test");
+        FencingToken secondToken = second.fencedLock();
+        assertThat(secondToken.value()).isGreaterThan(firstToken.value());
+        second.unlock();
+    }
+
+    @Test
+    void heartbeatShouldExtendExpiry() throws Exception {
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(2))
+            .withHeartbeat(Duration.ofSeconds(1))
+            .build();
+
+        RenewableLock lock = provider.forName("heartbeat-test");
+        lock.fencedLock();
+
+        long initialExpiresAt = getExpiresAtEpoch("heartbeat-test");
+
+        Thread.sleep(1500);
+
+        long updatedExpiresAt = getExpiresAtEpoch("heartbeat-test");
+        assertThat(updatedExpiresAt).isGreaterThan(initialExpiresAt);
+
+        lock.unlock();
+    }
+
+    @Test
+    void renewShouldExtendExpiry() throws Exception {
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(2)).build();
+
+        RenewableLock lock = provider.forName("renew-test");
+        lock.fencedLock();
 
         long initialExpiry = getExpiresAtEpoch("renew-test");
 
@@ -341,12 +335,12 @@ class FencepostLockIntegrationTest {
 
     @Test
     void renewShouldUpdateHeartbeatWindow() throws Exception {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(2), Duration.ofSeconds(1)))
-          .build();
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(2))
+            .withHeartbeat(Duration.ofSeconds(1))
+            .build();
 
-        FencepostLock lock = provider.forName("renew-heartbeat-test");
-        lock.lock();
+        RenewableLock lock = provider.forName("renew-heartbeat-test");
+        lock.fencedLock();
 
         lock.renew(Duration.ofSeconds(60));
 
@@ -361,23 +355,19 @@ class FencepostLockIntegrationTest {
 
     @Test
     void renewWhenNotHeldShouldThrow() {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(2)))
-          .build();
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(2)).build();
 
-        FencepostLock lock = provider.forName("renew-not-held");
+        RenewableLock lock = provider.forName("renew-not-held");
         assertThatThrownBy(() -> lock.renew(Duration.ofSeconds(5)))
           .isInstanceOf(LockNotHeldException.class);
     }
 
     @Test
     void renewWithZeroDurationShouldThrow() {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(2)))
-          .build();
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(2)).build();
 
-        FencepostLock lock = provider.forName("renew-zero");
-        lock.lock();
+        RenewableLock lock = provider.forName("renew-zero");
+        lock.fencedLock();
 
         try {
             assertThatThrownBy(() -> lock.renew(Duration.ZERO))
@@ -389,12 +379,10 @@ class FencepostLockIntegrationTest {
 
     @Test
     void renewWithNegativeDurationShouldThrow() {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(2)))
-          .build();
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(2)).build();
 
-        FencepostLock lock = provider.forName("renew-negative");
-        lock.lock();
+        RenewableLock lock = provider.forName("renew-negative");
+        lock.fencedLock();
 
         try {
             assertThatThrownBy(() -> lock.renew(Duration.ofSeconds(-1)))
@@ -406,12 +394,10 @@ class FencepostLockIntegrationTest {
 
     @Test
     void isSupersededShouldReturnFalseForCurrentToken() {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(10)))
-          .build();
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(10)).build();
 
-        FencepostLock lock = provider.forName("superseded-test");
-        FencingToken token = lock.lock();
+        RenewableLock lock = provider.forName("superseded-test");
+        FencingToken token = lock.fencedLock();
 
         assertThat(lock.isSuperseded(token)).isFalse();
 
@@ -420,16 +406,14 @@ class FencepostLockIntegrationTest {
 
     @Test
     void isSupersededShouldReturnTrueForOldToken() {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(10)))
-          .build();
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(10)).build();
 
-        FencepostLock lock1 = provider.forName("superseded-test-2");
-        FencingToken oldToken = lock1.lock();
+        RenewableLock lock1 = provider.forName("superseded-test-2");
+        FencingToken oldToken = lock1.fencedLock();
         lock1.unlock();
 
-        FencepostLock lock2 = provider.forName("superseded-test-2");
-        lock2.lock();
+        RenewableLock lock2 = provider.forName("superseded-test-2");
+        lock2.fencedLock();
 
         assertThat(lock2.isSuperseded(oldToken)).isTrue();
 
@@ -438,11 +422,9 @@ class FencepostLockIntegrationTest {
 
     @Test
     void isSupersededShouldThrowWhenRowMissing() {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(10)))
-          .build();
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(10)).build();
 
-        FencepostLock lock = provider.forName("nonexistent-lock");
+        RenewableLock lock = provider.forName("nonexistent-lock");
 
         assertThatThrownBy(() -> lock.isSuperseded(new FencingToken(1)))
           .isInstanceOf(FencepostException.class)
@@ -451,22 +433,21 @@ class FencepostLockIntegrationTest {
 
     @Test
     void quietPeriodShouldPreventImmediateReacquisition() throws Exception {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(10))
-            .withQuietPeriod(Duration.ofSeconds(3)))
-          .build();
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(10))
+            .withQuietPeriod(Duration.ofSeconds(3))
+            .build();
 
-        FencepostLock lock = provider.forName("quiet-test");
-        lock.lock();
+        RenewableLock lock = provider.forName("quiet-test");
+        lock.fencedLock();
         lock.unlock();
 
-        FencepostLock lock2 = provider.forName("quiet-test");
-        assertThat(lock2.tryLock()).isEmpty();
+        RenewableLock lock2 = provider.forName("quiet-test");
+        assertThat(lock2.tryFencedLock()).isEmpty();
 
         Thread.sleep(3_500);
 
-        FencepostLock lock3 = provider.forName("quiet-test");
-        assertThat(lock3.tryLock()).isPresent();
+        RenewableLock lock3 = provider.forName("quiet-test");
+        assertThat(lock3.tryFencedLock()).isPresent();
         lock3.unlock();
     }
 
@@ -475,16 +456,16 @@ class FencepostLockIntegrationTest {
         AtomicBoolean callbackFired = new AtomicBoolean(false);
         AtomicReference<FencepostException> callbackError = new AtomicReference<>();
 
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(2), Duration.ofSeconds(1)))
-          .onHeartbeatFailure(ex -> {
-              callbackFired.set(true);
-              callbackError.set(ex);
-          })
-          .build();
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(2))
+            .withHeartbeat(Duration.ofSeconds(1))
+            .onHeartbeatFailure(ex -> {
+                callbackFired.set(true);
+                callbackError.set(ex);
+            })
+            .build();
 
-        FencepostLock lock = provider.forName("heartbeat-callback-test");
-        lock.lock();
+        RenewableLock lock = provider.forName("heartbeat-callback-test");
+        lock.fencedLock();
 
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
@@ -503,13 +484,13 @@ class FencepostLockIntegrationTest {
     void heartbeatFailureShouldInvalidateCurrentToken() throws Exception {
         AtomicBoolean callbackFired = new AtomicBoolean(false);
 
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(2), Duration.ofSeconds(1)))
-          .onHeartbeatFailure(ex -> callbackFired.set(true))
-          .build();
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(2))
+            .withHeartbeat(Duration.ofSeconds(1))
+            .onHeartbeatFailure(ex -> callbackFired.set(true))
+            .build();
 
-        FencepostLock lock = provider.forName("heartbeat-invalidate-test");
-        lock.lock();
+        RenewableLock lock = provider.forName("heartbeat-invalidate-test");
+        lock.fencedLock();
 
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
@@ -525,12 +506,10 @@ class FencepostLockIntegrationTest {
 
     @Test
     void lockWhileHeldShouldThrow() {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(10)))
-          .build();
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(10)).build();
 
-        FencepostLock lock = provider.forName("double-lock-test");
-        lock.lock();
+        RenewableLock lock = provider.forName("double-lock-test");
+        lock.fencedLock();
 
         try {
             assertThatThrownBy(lock::lock)
@@ -543,12 +522,10 @@ class FencepostLockIntegrationTest {
 
     @Test
     void tryLockWhileHeldShouldThrow() {
-        Fencepost provider = Fencepost.builder(dataSource)
-          .lockMode(LockMode.expiring(Duration.ofSeconds(10)))
-          .build();
+        Fencepost<RenewableLock> provider = Fencepost.expiring(dataSource, Duration.ofSeconds(10)).build();
 
-        FencepostLock lock = provider.forName("double-trylock-test");
-        lock.lock();
+        RenewableLock lock = provider.forName("double-trylock-test");
+        lock.fencedLock();
 
         try {
             assertThatThrownBy(lock::tryLock)
@@ -561,56 +538,40 @@ class FencepostLockIntegrationTest {
 
     @Test
     void advisoryLockShouldAcquireAndRelease() {
-        Fencepost provider = Fencepost.builder(dataSource)
-            .lockMode(LockMode.advisory())
-            .build();
+        Fencepost<FencepostLock> provider = Fencepost.advisory(dataSource).build();
 
         FencepostLock lock = provider.forName("advisory-basic");
-        FencingToken token = lock.lock();
-
-        assertThat(token).isNotNull();
-        assertThat(token.value()).isEqualTo(0);
-
+        lock.lock();
         lock.unlock();
     }
 
     @Test
-    void advisoryTryLockShouldReturnEmptyWhenHeld() {
-        Fencepost provider = Fencepost.builder(dataSource)
-            .lockMode(LockMode.advisory())
-            .build();
+    void advisoryTryLockShouldReturnFalseWhenHeld() {
+        Fencepost<FencepostLock> provider = Fencepost.advisory(dataSource).build();
 
         FencepostLock holder = provider.forName("advisory-contended");
         holder.lock();
 
         try {
             FencepostLock contender = provider.forName("advisory-contended");
-            Optional<FencingToken> result = contender.tryLock();
-            assertThat(result).isEmpty();
+            assertThat(contender.tryLock()).isFalse();
         } finally {
             holder.unlock();
         }
     }
 
     @Test
-    void advisoryTryLockShouldReturnPresentWhenFree() {
-        Fencepost provider = Fencepost.builder(dataSource)
-            .lockMode(LockMode.advisory())
-            .build();
+    void advisoryTryLockShouldReturnTrueWhenFree() {
+        Fencepost<FencepostLock> provider = Fencepost.advisory(dataSource).build();
 
         FencepostLock lock = provider.forName("advisory-free");
-        Optional<FencingToken> result = lock.tryLock();
-
-        assertThat(result).isPresent();
-        assertThat(result.get().value()).isEqualTo(0);
+        assertThat(lock.tryLock()).isTrue();
         lock.unlock();
     }
 
     @Test
     void advisoryLockWithTimeoutShouldThrowOnTimeout() {
-        Fencepost provider = Fencepost.builder(dataSource)
-            .lockMode(LockMode.advisory())
-            .build();
+        Fencepost<FencepostLock> provider = Fencepost.advisory(dataSource).build();
 
         FencepostLock holder = provider.forName("advisory-timeout");
         holder.lock();
@@ -625,80 +586,37 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
-    void advisoryIsSupersededShouldThrowUnsupportedOperationException() {
-        Fencepost provider = Fencepost.builder(dataSource)
-            .lockMode(LockMode.advisory())
-            .build();
-
-        FencepostLock lock = provider.forName("advisory-superseded");
-        lock.lock();
-
-        try {
-            assertThatThrownBy(() -> lock.isSuperseded(new FencingToken(0)))
-                .isInstanceOf(UnsupportedOperationException.class);
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    @Test
-    void advisoryRenewShouldThrowUnsupportedOperationException() {
-        Fencepost provider = Fencepost.builder(dataSource)
-            .lockMode(LockMode.advisory())
-            .build();
-
-        FencepostLock lock = provider.forName("advisory-renew");
-        lock.lock();
-
-        try {
-            assertThatThrownBy(() -> lock.renew(Duration.ofSeconds(5)))
-                .isInstanceOf(UnsupportedOperationException.class);
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    @Test
     void advisoryWithLockShouldAcquireRunAndRelease() {
-        Fencepost provider = Fencepost.builder(dataSource)
-            .lockMode(LockMode.advisory())
-            .build();
+        Fencepost<FencepostLock> provider = Fencepost.advisory(dataSource).build();
 
         FencepostLock lock = provider.forName("advisory-withlock");
-        AtomicReference<FencingToken> capturedToken = new AtomicReference<>();
+        AtomicBoolean ran = new AtomicBoolean(false);
 
-        lock.withLock(capturedToken::set);
+        lock.withLock(() -> ran.set(true));
 
-        assertThat(capturedToken.get()).isNotNull();
-        assertThat(capturedToken.get().value()).isEqualTo(0);
+        assertThat(ran.get()).isTrue();
 
         FencepostLock second = provider.forName("advisory-withlock");
-        Optional<FencingToken> secondResult = second.tryLock();
-        assertThat(secondResult).isPresent();
+        assertThat(second.tryLock()).isTrue();
         second.unlock();
     }
 
     @Test
     void advisoryTryWithResourcesShouldReleaseLock() {
-        Fencepost provider = Fencepost.builder(dataSource)
-            .lockMode(LockMode.advisory())
-            .build();
+        Fencepost<FencepostLock> provider = Fencepost.advisory(dataSource).build();
 
         try (FencepostLock lock = provider.forName("advisory-auto-close")) {
             lock.lock();
         }
 
         FencepostLock second = provider.forName("advisory-auto-close");
-        Optional<FencingToken> result = second.tryLock();
-        assertThat(result).isPresent();
+        assertThat(second.tryLock()).isTrue();
         second.unlock();
     }
 
     @Test
     void advisoryLockShouldBlockUntilReleased() throws Exception {
-        Fencepost provider = Fencepost.builder(dataSource)
-            .lockMode(LockMode.advisory())
-            .build();
+        Fencepost<FencepostLock> provider = Fencepost.advisory(dataSource).build();
 
         FencepostLock holder = provider.forName("advisory-blocking");
         holder.lock();
@@ -722,9 +640,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void advisoryConcurrentLocksShouldNotOverlap() throws Exception {
-        Fencepost provider = Fencepost.builder(dataSource)
-            .lockMode(LockMode.advisory())
-            .build();
+        Fencepost<FencepostLock> provider = Fencepost.advisory(dataSource).build();
 
         AtomicBoolean overlap = new AtomicBoolean(false);
         AtomicBoolean inside = new AtomicBoolean(false);
