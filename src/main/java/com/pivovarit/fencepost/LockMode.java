@@ -4,7 +4,10 @@ import java.time.Duration;
 
 public interface LockMode {
 
-    static LockMode connection() {
+    interface TableBased extends LockMode {}
+    interface TableFree extends LockMode {}
+
+    static LockMode.Connection connection() {
         return Connection.INSTANCE;
     }
 
@@ -28,14 +31,18 @@ public interface LockMode {
         return new Expiring(expiryWindow, refreshInterval, null);
     }
 
-    final class Connection implements LockMode {
+    static LockMode.Advisory advisory() {
+        return Advisory.INSTANCE;
+    }
+
+    final class Connection implements TableBased {
         private static final Connection INSTANCE = new Connection();
 
         private Connection() {
         }
     }
 
-    final class Expiring implements LockMode {
+    final class Expiring implements TableBased {
         private final Duration expiryWindow;
         private final Duration refreshInterval;
         private final Duration quietPeriod;
@@ -67,6 +74,13 @@ public interface LockMode {
                 throw new IllegalArgumentException("quietPeriod must be positive");
             }
             return new Expiring(this.expiryWindow, this.refreshInterval, quietPeriod);
+        }
+    }
+
+    final class Advisory implements TableFree {
+        static final Advisory INSTANCE = new Advisory();
+
+        private Advisory() {
         }
     }
 }

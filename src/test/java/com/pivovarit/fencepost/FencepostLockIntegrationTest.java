@@ -46,7 +46,8 @@ class FencepostLockIntegrationTest {
     @BeforeEach
     void createTable() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute("DROP TABLE IF EXISTS fencepost_locks; CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE)");
+            conn.createStatement()
+              .execute("DROP TABLE IF EXISTS fencepost_locks; CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE)");
         }
     }
 
@@ -556,6 +557,199 @@ class FencepostLockIntegrationTest {
         } finally {
             lock.unlock();
         }
+    }
+
+    @Test
+    void advisoryLockShouldAcquireAndRelease() {
+        Fencepost provider = Fencepost.builder(dataSource)
+            .lockMode(LockMode.advisory())
+            .build();
+
+        FencepostLock lock = provider.forName("advisory-basic");
+        FencingToken token = lock.lock();
+
+        assertThat(token).isNotNull();
+        assertThat(token.value()).isEqualTo(0);
+
+        lock.unlock();
+    }
+
+    @Test
+    void advisoryTryLockShouldReturnEmptyWhenHeld() {
+        Fencepost provider = Fencepost.builder(dataSource)
+            .lockMode(LockMode.advisory())
+            .build();
+
+        FencepostLock holder = provider.forName("advisory-contended");
+        holder.lock();
+
+        try {
+            FencepostLock contender = provider.forName("advisory-contended");
+            Optional<FencingToken> result = contender.tryLock();
+            assertThat(result).isEmpty();
+        } finally {
+            holder.unlock();
+        }
+    }
+
+    @Test
+    void advisoryTryLockShouldReturnPresentWhenFree() {
+        Fencepost provider = Fencepost.builder(dataSource)
+            .lockMode(LockMode.advisory())
+            .build();
+
+        FencepostLock lock = provider.forName("advisory-free");
+        Optional<FencingToken> result = lock.tryLock();
+
+        assertThat(result).isPresent();
+        assertThat(result.get().value()).isEqualTo(0);
+        lock.unlock();
+    }
+
+    @Test
+    void advisoryLockWithTimeoutShouldThrowOnTimeout() {
+        Fencepost provider = Fencepost.builder(dataSource)
+            .lockMode(LockMode.advisory())
+            .build();
+
+        FencepostLock holder = provider.forName("advisory-timeout");
+        holder.lock();
+
+        try {
+            FencepostLock contender = provider.forName("advisory-timeout");
+            assertThatThrownBy(() -> contender.lock(Duration.ofMillis(500)))
+                .isInstanceOf(LockAcquisitionTimeoutException.class);
+        } finally {
+            holder.unlock();
+        }
+    }
+
+    @Test
+    void advisoryIsSupersededShouldThrowUnsupportedOperationException() {
+        Fencepost provider = Fencepost.builder(dataSource)
+            .lockMode(LockMode.advisory())
+            .build();
+
+        FencepostLock lock = provider.forName("advisory-superseded");
+        lock.lock();
+
+        try {
+            assertThatThrownBy(() -> lock.isSuperseded(new FencingToken(0)))
+                .isInstanceOf(UnsupportedOperationException.class);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Test
+    void advisoryRenewShouldThrowUnsupportedOperationException() {
+        Fencepost provider = Fencepost.builder(dataSource)
+            .lockMode(LockMode.advisory())
+            .build();
+
+        FencepostLock lock = provider.forName("advisory-renew");
+        lock.lock();
+
+        try {
+            assertThatThrownBy(() -> lock.renew(Duration.ofSeconds(5)))
+                .isInstanceOf(UnsupportedOperationException.class);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Test
+    void advisoryWithLockShouldAcquireRunAndRelease() {
+        Fencepost provider = Fencepost.builder(dataSource)
+            .lockMode(LockMode.advisory())
+            .build();
+
+        FencepostLock lock = provider.forName("advisory-withlock");
+        AtomicReference<FencingToken> capturedToken = new AtomicReference<>();
+
+        lock.withLock(capturedToken::set);
+
+        assertThat(capturedToken.get()).isNotNull();
+        assertThat(capturedToken.get().value()).isEqualTo(0);
+
+        FencepostLock second = provider.forName("advisory-withlock");
+        Optional<FencingToken> secondResult = second.tryLock();
+        assertThat(secondResult).isPresent();
+        second.unlock();
+    }
+
+    @Test
+    void advisoryTryWithResourcesShouldReleaseLock() {
+        Fencepost provider = Fencepost.builder(dataSource)
+            .lockMode(LockMode.advisory())
+            .build();
+
+        try (FencepostLock lock = provider.forName("advisory-auto-close")) {
+            lock.lock();
+        }
+
+        FencepostLock second = provider.forName("advisory-auto-close");
+        Optional<FencingToken> result = second.tryLock();
+        assertThat(result).isPresent();
+        second.unlock();
+    }
+
+    @Test
+    void advisoryLockShouldBlockUntilReleased() throws Exception {
+        Fencepost provider = Fencepost.builder(dataSource)
+            .lockMode(LockMode.advisory())
+            .build();
+
+        FencepostLock holder = provider.forName("advisory-blocking");
+        holder.lock();
+
+        CountDownLatch acquired = new CountDownLatch(1);
+
+        Thread contender = new Thread(() -> {
+            FencepostLock lock = provider.forName("advisory-blocking");
+            lock.lock();
+            acquired.countDown();
+            lock.unlock();
+        });
+        contender.start();
+
+        Thread.sleep(200);
+        assertThat(acquired.getCount()).isEqualTo(1);
+
+        holder.unlock();
+        assertThat(acquired.await(5, TimeUnit.SECONDS)).isTrue();
+    }
+
+    @Test
+    void advisoryConcurrentLocksShouldNotOverlap() throws Exception {
+        Fencepost provider = Fencepost.builder(dataSource)
+            .lockMode(LockMode.advisory())
+            .build();
+
+        AtomicBoolean overlap = new AtomicBoolean(false);
+        AtomicBoolean inside = new AtomicBoolean(false);
+        int iterations = 10;
+        CountDownLatch done = new CountDownLatch(2);
+
+        Runnable worker = () -> {
+            for (int i = 0; i < iterations; i++) {
+                FencepostLock lock = provider.forName("advisory-concurrent");
+                lock.lock();
+                if (inside.getAndSet(true)) {
+                    overlap.set(true);
+                }
+                inside.set(false);
+                lock.unlock();
+            }
+            done.countDown();
+        };
+
+        Thread t1 = new Thread(worker);
+        Thread t2 = new Thread(worker);
+        t1.start();
+        t2.start();
+        assertThat(done.await(30, TimeUnit.SECONDS)).isTrue();
+        assertThat(overlap.get()).isFalse();
     }
 
     private long getExpiresAtEpoch(String lockName) throws SQLException {
