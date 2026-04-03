@@ -3,7 +3,6 @@ package com.pivovarit.fencepost;
 import javax.sql.DataSource;
 import java.net.InetAddress;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -32,55 +31,42 @@ abstract class TableBasedLock {
     }
 
     void ensureRowExists() {
-        try (Connection autoCommitConn = dataSource.getConnection()) {
-            autoCommitConn.setAutoCommit(true);
-            boolean exists;
-            try (PreparedStatement ps = autoCommitConn.prepareStatement(
-                    String.format("SELECT 1 FROM %s WHERE lock_name = ?", tableName))) {
-                ps.setString(1, lockName);
-                try (ResultSet rs = ps.executeQuery()) {
-                    exists = rs.next();
-                }
-            }
+        try (Connection conn = dataSource.getConnection()) {
+            conn.setAutoCommit(true);
+            boolean exists = Jdbc.query(conn, String.format("SELECT 1 FROM %s WHERE lock_name = ?", tableName), ResultSet::next, lockName);
             if (!exists) {
-                try (PreparedStatement ps = autoCommitConn.prepareStatement(
-                        "INSERT INTO " + tableName + " (lock_name) VALUES (?) ON CONFLICT DO NOTHING")) {
-                    ps.setString(1, lockName);
-                    ps.executeUpdate();
-                }
+                Jdbc.update(conn,
+                        "INSERT INTO " + tableName + " (lock_name) VALUES (?) ON CONFLICT DO NOTHING",
+                        lockName);
             }
         } catch (SQLException e) {
             throw new FencepostException("Failed to ensure lock row exists: " + lockName, e);
         }
     }
 
-    FencingToken incrementToken(Connection conn, String expiresAtExpr) throws SQLException {
+    FencingToken incrementToken(Connection conn, Duration expiry) throws SQLException {
         String lockedBy = HOSTNAME + "/" + Thread.currentThread().getName();
-        String sql = String.format(
-                "UPDATE %s SET token = token + 1, locked_by = ?, locked_at = now(), expires_at = %s WHERE lock_name = ? RETURNING token",
-                tableName, expiresAtExpr);
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, lockedBy);
-            ps.setString(2, lockName);
-            try (ResultSet rs = ps.executeQuery()) {
+        if (expiry != null) {
+            String sql = String.format("UPDATE %s SET token = token + 1, locked_by = ?, locked_at = now(), expires_at = now() + %s WHERE lock_name = ? RETURNING token", tableName, Jdbc.intervalMillis());
+            return Jdbc.query(conn, sql, rs -> {
                 rs.next();
                 return new FencingToken(rs.getLong(1));
-            }
+            }, lockedBy, expiry.toMillis(), lockName);
         }
+        String sql = String.format("UPDATE %s SET token = token + 1, locked_by = ?, locked_at = now(), expires_at = NULL WHERE lock_name = ? RETURNING token", tableName);       return Jdbc.query(conn, sql, rs -> {
+            rs.next();
+            return new FencingToken(rs.getLong(1));
+        }, lockedBy, lockName);
     }
 
     boolean checkSuperseded(FencingToken token) {
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(
-                     "SELECT token > ? FROM " + tableName + " WHERE lock_name = ?")) {
-            ps.setLong(1, token.value());
-            ps.setString(2, lockName);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) {
-                    throw new FencepostException("Lock row not found: " + lockName);
-                }
-                return rs.getBoolean(1);
-            }
+        try {
+            return Jdbc.query(dataSource, String.format("SELECT token > ? FROM %s WHERE lock_name = ?", tableName),rs -> {
+                        if (!rs.next()) {
+                            throw new FencepostException("Lock row not found: " + lockName);
+                        }
+                        return rs.getBoolean(1);
+                    }, token.value(), lockName);
         } catch (SQLException e) {
             throw new FencepostException("Failed to check token for lock: " + lockName, e);
         }
