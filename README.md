@@ -141,6 +141,17 @@ try {
 lock.renew(Duration.ofSeconds(30));
 ```
 
+## Docker Compose Example
+
+The `examples/docker-compose` directory contains a ready-to-run demo where three container instances compete to increment a shared counter in PostgreSQL.
+
+```
+cd examples/docker-compose
+docker compose up --build
+```
+
+The output shows each instance racing to acquire the lock. Winners increment the counter; losers skip. At the end of each phase, the final counter value confirms that no updates were lost.
+
 ## Important: PostgreSQL Clock Behavior
 
 PostgreSQL's `clock_timestamp()` / `now()` relies on the system clock, which is **not monotonic** and is subject to clock skew (e.g., NTP adjustments, VM clock drift, leap second handling). This means that timestamp-based lease expiry can, in rare cases, behave unexpectedly - a lease may appear to expire early or late if the database server's clock jumps.
