@@ -22,6 +22,109 @@ Fencepost provides three lock strategies, all backed by PostgreSQL:
 
 - **Lease** - does not hold a connection or transaction. Acquires the lock by writing a timestamp to a table and releases the connection immediately. The lock is held purely via a TTL (`expires_at`) - if a holder crashes, the lock automatically becomes available after the lease duration. An optional heartbeat thread renews the lease periodically to prevent expiry during long-running work. Supports a quiet period to enforce a minimum gap between consecutive acquisitions. Best suited for long-running tasks where occupying a connection pool slot is not acceptable.
 
+## Examples
+
+### Advisory Lock
+
+The simplest option — no table setup required. Holds a database connection for the duration of the lock:
+
+```java
+Fencepost<FencepostLock> fencepost = Fencepost.advisoryLock(dataSource).build();
+FencepostLock lock = fencepost.forName("my-resource");
+
+// option 1: explicit lock/unlock
+lock.lock();
+try {
+    // critical section
+} finally {
+    lock.unlock();
+}
+
+// option 2: with timeout
+lock.lock(Duration.ofSeconds(5));
+try {
+    // critical section
+} finally {
+    lock.unlock();
+}
+
+// option 3: non-blocking
+if (lock.tryLock()) {
+    try {
+        // critical section
+    } finally {
+        lock.unlock();
+    }
+}
+
+// option 4: convenience wrapper
+lock.withLock(() -> {
+    // critical section
+});
+```
+
+### Session Lock
+
+Table-based lock held via `SELECT ... FOR UPDATE`. Issues fencing tokens to protect against stale holders:
+
+```java
+Fencepost<FencedLock> fencepost = Fencepost.sessionLock(dataSource)
+    .tableName("my_locks") // optional, defaults to "fencepost_locks"
+    .build();
+
+FencedLock lock = fencepost.forName("my-resource");
+
+// acquire with fencing token
+FencingToken token = lock.fencedLock();
+try {
+    // pass token to external systems to reject stale writes
+    externalStore.write(data, token.value());
+} finally {
+    lock.unlock();
+}
+
+// non-blocking with fencing token
+Optional<FencingToken> maybeToken = lock.tryFencedLock();
+maybeToken.ifPresent(t -> {
+    try {
+        externalStore.write(data, t.value());
+    } finally {
+        lock.unlock();
+    }
+});
+
+// convenience wrapper with token access
+lock.withFencedLock(token -> {
+    externalStore.write(data, token.value());
+});
+```
+
+### Lease Lock
+
+Timestamp-based lock that releases the connection immediately. Best for long-running tasks:
+
+```java
+Fencepost<RenewableLock> fencepost = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30))
+    .tableName("my_locks")                  // optional
+    .withHeartbeat(Duration.ofSeconds(10))   // auto-renew before expiry
+    .withQuietPeriod(Duration.ofSeconds(5))  // min gap between acquisitions
+    .onHeartbeatFailure(e -> log.error("heartbeat failed", e))
+    .build();
+
+RenewableLock lock = fencepost.forName("my-resource");
+
+// heartbeat thread keeps the lease alive automatically
+FencingToken token = lock.fencedLock();
+try {
+    longRunningTask(token);
+} finally {
+    lock.unlock();
+}
+
+// manual renewal (when not using heartbeat)
+lock.renew(Duration.ofSeconds(30));
+```
+
 ## Important: PostgreSQL Clock Behavior
 
 PostgreSQL's `clock_timestamp()` / `now()` relies on the system clock, which is **not monotonic** and is subject to clock skew (e.g., NTP adjustments, VM clock drift, leap second handling). This means that timestamp-based lease expiry can, in rare cases, behave unexpectedly - a lease may appear to expire early or late if the database server's clock jumps.
