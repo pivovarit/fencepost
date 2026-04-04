@@ -53,7 +53,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void shouldAcquireAndReleaseLock() {
-        Fencepost<FencedLock> provider = Fencepost.connectionLock(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         FencedLock lock = provider.forName("test-lock");
         FencingToken token = lock.fencedLock();
@@ -66,7 +66,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void shouldReturnStrictlyIncreasingTokens() {
-        Fencepost<FencedLock> provider = Fencepost.connectionLock(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         long previousValue = 0;
         for (int i = 0; i < 10; i++) {
@@ -80,7 +80,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void tryLockShouldReturnEmptyWhenHeld() {
-        Fencepost<FencedLock> provider = Fencepost.connectionLock(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         FencedLock holder = provider.forName("contended-lock");
         holder.fencedLock();
@@ -96,7 +96,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void lockShouldBlockUntilReleased() throws Exception {
-        Fencepost<FencedLock> provider = Fencepost.connectionLock(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         FencedLock holder = provider.forName("blocking-test");
         FencingToken firstToken = holder.fencedLock();
@@ -122,7 +122,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void lockWithTimeoutShouldThrowOnTimeout() {
-        Fencepost<FencedLock> provider = Fencepost.connectionLock(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         FencedLock holder = provider.forName("timeout-test");
         holder.fencedLock();
@@ -138,7 +138,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void unlockWhenNotHeldShouldThrow() {
-        Fencepost<FencedLock> provider = Fencepost.connectionLock(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         FencedLock lock = provider.forName("not-held");
         assertThatThrownBy(lock::unlock)
@@ -147,7 +147,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void tryWithResourcesShouldReleaseLock() {
-        Fencepost<FencedLock> provider = Fencepost.connectionLock(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         FencingToken firstToken;
         try (FencedLock lock = provider.forName("auto-close")) {
@@ -163,7 +163,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void concurrentLocksShouldProduceOrderedTokens() throws Exception {
-        Fencepost<FencedLock> provider = Fencepost.connectionLock(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         List<Long> tokens = new CopyOnWriteArrayList<>();
         int iterations = 10;
@@ -191,7 +191,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void withFencedLockShouldAcquireRunAndRelease() {
-        Fencepost<FencedLock> provider = Fencepost.connectionLock(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         FencedLock lock = provider.forName("withlock-test");
         AtomicReference<FencingToken> capturedToken = new AtomicReference<>();
@@ -209,7 +209,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void withFencedLockWithTimeoutShouldAcquireRunAndRelease() {
-        Fencepost<FencedLock> provider = Fencepost.connectionLock(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         FencedLock lock = provider.forName("withlock-timeout-test");
         AtomicReference<FencingToken> capturedToken = new AtomicReference<>();
@@ -227,7 +227,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void withFencedLockShouldPropagateUncheckedExceptionAndRelease() {
-        Fencepost<FencedLock> provider = Fencepost.connectionLock(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         FencedLock lock = provider.forName("withlock-unchecked-test");
 
@@ -245,7 +245,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void withFencedLockShouldWrapCheckedExceptionAndRelease() {
-        Fencepost<FencedLock> provider = Fencepost.connectionLock(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         FencedLock lock = provider.forName("withlock-checked-test");
 
@@ -263,7 +263,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void withFencedLockWhileHeldShouldThrow() {
-        Fencepost<FencedLock> provider = Fencepost.connectionLock(dataSource).build();
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         FencedLock lock = provider.forName("withlock-guard-test");
         lock.fencedLock();
