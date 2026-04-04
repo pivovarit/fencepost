@@ -8,9 +8,10 @@ import java.time.Duration;
 
 final class AdvisoryLockInstance implements AdvisoryLock {
 
-    private static final int ADVISORY_NAMESPACE = 2025588817; // "fencepost".hashCode();
+    private static final String ADVISORY_NAMESPACE = "fencepost:";
 
     private final String lockName;
+    private final long advisoryKey;
     private final DataSource dataSource;
 
     private volatile Connection connection;
@@ -18,6 +19,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
 
     AdvisoryLockInstance(String lockName, DataSource dataSource) {
         this.lockName = lockName;
+        this.advisoryKey = fnv1a64(ADVISORY_NAMESPACE + lockName);
         this.dataSource = dataSource;
     }
 
@@ -26,9 +28,8 @@ final class AdvisoryLockInstance implements AdvisoryLock {
         ensureNotHeld();
         try {
             connection = dataSource.getConnection();
-            Jdbc.query(connection, "SELECT pg_advisory_lock(?, ?)")
-              .bind(ADVISORY_NAMESPACE)
-              .bind(advisoryKey())
+            Jdbc.query(connection, "SELECT pg_advisory_lock(?)")
+              .bind(advisoryKey)
               .map(ResultSet::next);
             held = true;
         } catch (Exception e) {
@@ -45,9 +46,8 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             connection = dataSource.getConnection();
             Jdbc.setLockTimeout(connection, timeout);
             try {
-                Jdbc.query(connection, "SELECT pg_advisory_lock(?, ?)")
-                  .bind(ADVISORY_NAMESPACE)
-                  .bind(advisoryKey())
+                Jdbc.query(connection, "SELECT pg_advisory_lock(?)")
+                  .bind(advisoryKey)
                   .map(ResultSet::next);
             } catch (SQLException e) {
                 if (SqlStates.LOCK_NOT_AVAILABLE.equals(e.getSQLState())) {
@@ -77,9 +77,8 @@ final class AdvisoryLockInstance implements AdvisoryLock {
         ensureNotHeld();
         try {
             connection = dataSource.getConnection();
-            boolean acquired = Jdbc.query(connection, "SELECT pg_try_advisory_lock(?, ?)")
-              .bind(ADVISORY_NAMESPACE)
-              .bind(advisoryKey())
+            boolean acquired = Jdbc.query(connection, "SELECT pg_try_advisory_lock(?)")
+              .bind(advisoryKey)
               .map(rs -> rs.next() && rs.getBoolean(1));
             if (!acquired) {
                 closeConnection();
@@ -101,9 +100,8 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             throw new LockNotHeldException(lockName);
         }
         try {
-            boolean released = Jdbc.query(connection, "SELECT pg_advisory_unlock(?, ?)")
-              .bind(ADVISORY_NAMESPACE)
-              .bind(advisoryKey())
+            boolean released = Jdbc.query(connection, "SELECT pg_advisory_unlock(?)")
+              .bind(advisoryKey)
               .map(rs -> {
                   rs.next();
                   return rs.getBoolean(1);
@@ -136,8 +134,13 @@ final class AdvisoryLockInstance implements AdvisoryLock {
         }
     }
 
-    private int advisoryKey() {
-        return lockName.hashCode();
+    private static long fnv1a64(String s) {
+        long hash = 0xcbf29ce484222325L;
+        for (int i = 0; i < s.length(); i++) {
+            hash ^= s.charAt(i);
+            hash *= 0x100000001b3L;
+        }
+        return hash;
     }
 
     private void closeConnection() {
