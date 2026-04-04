@@ -206,7 +206,6 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                     Thread.currentThread().interrupt();
                     return;
                 } catch (SQLException e) {
-                    currentToken = null;
                     FencepostException ex = new FencepostException("Heartbeat failed for lock: " + lockName, e);
                     if (onHeartbeatFailure != null) {
                         onHeartbeatFailure.accept(ex);
