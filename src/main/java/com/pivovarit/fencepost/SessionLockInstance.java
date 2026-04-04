@@ -16,40 +16,25 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     }
 
     @Override
-    public void lock() {
-        baseLock();
-    }
-
-    @Override
-    public void lock(Duration timeout) {
-        baseLock(timeout);
-    }
-
-    @Override
-    public boolean tryLock() {
-        return baseTryLock();
-    }
-
-    @Override
-    public FencingToken fencedLock() {
+    public FencingToken lock() {
         ensureNotHeld();
-        return doFencedLock();
+        return doLock();
     }
 
     @Override
-    public FencingToken fencedLock(Duration timeout) {
+    public FencingToken lock(Duration timeout) {
         ensureNotHeld();
-        return doFencedLock(timeout);
+        return doLock(timeout);
     }
 
     @Override
-    public Optional<FencingToken> tryFencedLock() {
+    public Optional<FencingToken> tryLock() {
         ensureNotHeld();
-        return doTryFencedLock();
+        return doTryLock();
     }
 
     @Override
-    FencingToken doFencedLock() {
+    FencingToken doLock() {
         try {
             connection = dataSource.getConnection();
             connection.setAutoCommit(false);
@@ -69,7 +54,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     }
 
     @Override
-    FencingToken doFencedLock(Duration timeout) {
+    FencingToken doLock(Duration timeout) {
         try {
             connection = dataSource.getConnection();
             connection.setAutoCommit(false);
@@ -96,7 +81,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     }
 
     @Override
-    Optional<FencingToken> doTryFencedLock() {
+    Optional<FencingToken> doTryLock() {
         try {
             connection = dataSource.getConnection();
             connection.setAutoCommit(false);

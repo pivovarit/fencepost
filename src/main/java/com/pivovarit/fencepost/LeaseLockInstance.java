@@ -30,50 +30,35 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     }
 
     @Override
-    public void lock() {
-        baseLock();
-    }
-
-    @Override
-    public void lock(Duration timeout) {
-        baseLock(timeout);
-    }
-
-    @Override
-    public boolean tryLock() {
-        return baseTryLock();
-    }
-
-    @Override
-    public FencingToken fencedLock() {
+    public FencingToken lock() {
         ensureNotHeld();
-        return doFencedLock();
+        return doLock();
     }
 
     @Override
-    public FencingToken fencedLock(Duration timeout) {
+    public FencingToken lock(Duration timeout) {
         ensureNotHeld();
-        return doFencedLock(timeout);
+        return doLock(timeout);
     }
 
     @Override
-    public Optional<FencingToken> tryFencedLock() {
+    public Optional<FencingToken> tryLock() {
         ensureNotHeld();
-        return doTryFencedLock();
+        return doTryLock();
     }
 
     @Override
-    FencingToken doFencedLock() {
+    FencingToken doLock() {
         return lockTimestampBlocking(null);
     }
 
     @Override
-    FencingToken doFencedLock(Duration timeout) {
+    FencingToken doLock(Duration timeout) {
         return lockTimestampBlocking(timeout);
     }
 
     @Override
-    Optional<FencingToken> doTryFencedLock() {
+    Optional<FencingToken> doTryLock() {
         ensureRowExists();
         Optional<FencingToken> result = tryAcquireTimestamp();
         if (result.isPresent()) {

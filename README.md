@@ -29,8 +29,8 @@ Fencepost provides three lock strategies, all backed by PostgreSQL:
 The simplest option — no table setup required. Holds a database connection for the duration of the lock:
 
 ```java
-Fencepost<FencepostLock> fencepost = Fencepost.advisoryLock(dataSource).build();
-FencepostLock lock = fencepost.forName("my-resource");
+Fencepost<Lock> fencepost = Fencepost.advisoryLock(dataSource).build();
+Lock lock = fencepost.forName("my-resource");
 
 // option 1: explicit lock/unlock
 lock.lock();
@@ -75,7 +75,7 @@ Fencepost<FencedLock> fencepost = Fencepost.sessionLock(dataSource)
 FencedLock lock = fencepost.forName("my-resource");
 
 // acquire with fencing token
-FencingToken token = lock.fencedLock();
+FencingToken token = lock.lock();
 try {
     // pass token to external systems to reject stale writes
     externalStore.write(data, token.value());
@@ -84,7 +84,7 @@ try {
 }
 
 // non-blocking with fencing token
-Optional<FencingToken> maybeToken = lock.tryFencedLock();
+Optional<FencingToken> maybeToken = lock.tryLock();
 maybeToken.ifPresent(t -> {
     try {
         externalStore.write(data, t.value());
@@ -94,7 +94,7 @@ maybeToken.ifPresent(t -> {
 });
 
 // convenience wrapper with token access
-lock.withFencedLock(token -> {
+lock.withLock(token -> {
     externalStore.write(data, token.value());
 });
 ```
@@ -114,7 +114,7 @@ Fencepost<RenewableLock> fencepost = Fencepost.leaseLock(dataSource, Duration.of
 RenewableLock lock = fencepost.forName("my-resource");
 
 // heartbeat thread keeps the lease alive automatically
-FencingToken token = lock.fencedLock();
+FencingToken token = lock.lock();
 try {
     longRunningTask(token);
 } finally {

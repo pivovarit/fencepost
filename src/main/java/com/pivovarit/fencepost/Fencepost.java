@@ -42,7 +42,7 @@ public final class Fencepost<T extends FencepostLock> {
             this.dataSource = dataSource;
         }
 
-        public Fencepost<FencepostLock> build() {
+        public Fencepost<Lock> build() {
             return new Fencepost<>(lockName -> new AdvisoryLockInstance(lockName, dataSource));
         }
     }

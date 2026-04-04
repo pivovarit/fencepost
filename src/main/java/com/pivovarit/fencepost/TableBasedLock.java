@@ -83,24 +83,9 @@ abstract class TableBasedLock {
         }
     }
 
-    void baseLock() {
-        ensureNotHeld();
-        doFencedLock();
-    }
-
-    void baseLock(Duration timeout) {
-        ensureNotHeld();
-        doFencedLock(timeout);
-    }
-
-    boolean baseTryLock() {
-        ensureNotHeld();
-        return doTryFencedLock().isPresent();
-    }
-
-    abstract FencingToken doFencedLock();
-    abstract FencingToken doFencedLock(Duration timeout);
-    abstract Optional<FencingToken> doTryFencedLock();
+    abstract FencingToken doLock();
+    abstract FencingToken doLock(Duration timeout);
+    abstract Optional<FencingToken> doTryLock();
 
     static boolean isStatementTimeout(SQLException e) {
         return SqlStates.QUERY_CANCELLED.equals(e.getSQLState());
