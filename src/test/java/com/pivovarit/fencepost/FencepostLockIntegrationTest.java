@@ -668,6 +668,44 @@ class FencepostLockIntegrationTest {
         assertThat(overlap.get()).isFalse();
     }
 
+    @Test
+    void sessionLockShouldBecomeAcquirableAfterConnectionDrop() throws Exception {
+        Fencepost<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
+
+        FencedLock holder = provider.forName("conn-drop-session");
+        holder.fencedLock();
+
+        terminateBackends("idle in transaction");
+
+        FencedLock contender = provider.forName("conn-drop-session");
+        assertThat(contender.tryFencedLock()).isPresent();
+        contender.unlock();
+
+        assertThatThrownBy(holder::unlock).isInstanceOf(FencepostException.class);
+    }
+
+    @Test
+    void advisoryLockShouldBecomeAcquirableAfterConnectionDrop() throws Exception {
+        Fencepost<FencepostLock> provider = Fencepost.advisoryLock(dataSource).build();
+
+        FencepostLock holder = provider.forName("conn-drop-advisory");
+        holder.lock();
+
+        terminateBackends("idle");
+
+        FencepostLock contender = provider.forName("conn-drop-advisory");
+        assertThat(contender.tryLock()).isTrue();
+        contender.unlock();
+
+        assertThatThrownBy(holder::unlock).isInstanceOf(FencepostException.class);
+    }
+
+    private void terminateBackends(String state) throws SQLException {
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute(String.format("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = '%s' AND pid != pg_backend_pid()", state));
+        }
+    }
+
     private long getExpiresAtEpoch(String lockName) throws SQLException {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement("SELECT extract(epoch from expires_at) FROM fencepost_locks WHERE lock_name = ?")) {
