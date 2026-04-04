@@ -23,8 +23,8 @@ public final class Fencepost<T extends FencepostLock> {
         return new AdvisoryBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
     }
 
-    public static ConnectionBuilder connectionLock(DataSource dataSource) {
-        return new ConnectionBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
+    public static SessionBuilder sessionLock(DataSource dataSource) {
+        return new SessionBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
     }
 
     public static LeaseBuilder leaseLock(DataSource dataSource, Duration lockAtMost) {
@@ -47,15 +47,15 @@ public final class Fencepost<T extends FencepostLock> {
         }
     }
 
-    public static final class ConnectionBuilder {
+    public static final class SessionBuilder {
         private final DataSource dataSource;
         private String tableName = "fencepost_locks";
 
-        private ConnectionBuilder(DataSource dataSource) {
+        private SessionBuilder(DataSource dataSource) {
             this.dataSource = dataSource;
         }
 
-        public ConnectionBuilder tableName(String tableName) {
+        public SessionBuilder tableName(String tableName) {
             Objects.requireNonNull(tableName);
             if (!tableName.matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
                 throw new IllegalArgumentException("Invalid table name: " + tableName);
@@ -66,7 +66,7 @@ public final class Fencepost<T extends FencepostLock> {
 
         public Fencepost<FencedLock> build() {
             String t = this.tableName;
-            return new Fencepost<>(lockName -> new ConnectionLockInstance(lockName, dataSource, t));
+            return new Fencepost<>(lockName -> new SessionLockInstance(lockName, dataSource, t));
         }
     }
 

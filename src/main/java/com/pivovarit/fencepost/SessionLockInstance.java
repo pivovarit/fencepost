@@ -7,11 +7,11 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Optional;
 
-final class ConnectionLockInstance extends TableBasedLock implements FencedLock {
+final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     private volatile Connection connection;
 
-    ConnectionLockInstance(String lockName, DataSource dataSource, String tableName) {
+    SessionLockInstance(String lockName, DataSource dataSource, String tableName) {
         super(lockName, dataSource, tableName);
     }
 
