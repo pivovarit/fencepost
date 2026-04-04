@@ -22,6 +22,22 @@ Fencepost provides three lock strategies, all backed by PostgreSQL:
 
 - **Lease** - does not hold a connection or transaction. Acquires the lock by writing a timestamp to a table and releases the connection immediately. The lock is held purely via a TTL (`expires_at`) - if a holder crashes, the lock automatically becomes available after the lease duration. An optional heartbeat thread renews the lease periodically to prevent expiry during long-running work. Supports a quiet period to enforce a minimum gap between consecutive acquisitions. Best suited for long-running tasks where occupying a connection pool slot is not acceptable.
 
+## Table Setup
+
+Session and lease locks require a table. Advisory locks don't need any setup.
+
+```sql
+CREATE TABLE fencepost_locks (
+    lock_name   TEXT PRIMARY KEY,
+    token       BIGINT NOT NULL DEFAULT 0,
+    locked_by   TEXT,
+    locked_at   TIMESTAMP WITH TIME ZONE,
+    expires_at  TIMESTAMP WITH TIME ZONE
+);
+```
+
+The table name defaults to `fencepost_locks` but can be customized via `.tableName("my_locks")` on the builder.
+
 ## Examples
 
 ### Advisory Lock
