@@ -4,19 +4,10 @@ import javax.sql.DataSource;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
-public final class Fencepost<T extends FencepostLock> {
+public final class Fencepost {
 
-    private final Function<String, T> lockFactory;
-
-    private Fencepost(Function<String, T> lockFactory) {
-        this.lockFactory = lockFactory;
-    }
-
-    public T forName(String lockName) {
-        Objects.requireNonNull(lockName, "lockName must not be null");
-        return lockFactory.apply(lockName);
+    private Fencepost() {
     }
 
     public static AdvisoryBuilder advisoryLock(DataSource dataSource) {
@@ -42,8 +33,8 @@ public final class Fencepost<T extends FencepostLock> {
             this.dataSource = dataSource;
         }
 
-        public Fencepost<Lock> build() {
-            return new Fencepost<>(lockName -> new AdvisoryLockInstance(lockName, dataSource));
+        public Factory<AdvisoryLock> build() {
+            return new Factory<>(lockName -> new AdvisoryLockInstance(lockName, dataSource));
         }
     }
 
@@ -64,9 +55,9 @@ public final class Fencepost<T extends FencepostLock> {
             return this;
         }
 
-        public Fencepost<FencedLock> build() {
+        public Factory<FencedLock> build() {
             String t = this.tableName;
-            return new Fencepost<>(lockName -> new SessionLockInstance(lockName, dataSource, t));
+            return new Factory<>(lockName -> new SessionLockInstance(lockName, dataSource, t));
         }
     }
 
@@ -116,8 +107,8 @@ public final class Fencepost<T extends FencepostLock> {
             return this;
         }
 
-        public Fencepost<RenewableLock> build() {
-            return new Fencepost<>(lockName -> new LeaseLockInstance(lockName, dataSource,
+        public Factory<RenewableLock> build() {
+            return new Factory<>(lockName -> new LeaseLockInstance(lockName, dataSource,
               this.tableName,
               this.leaseDuration,
               this.refreshInterval,

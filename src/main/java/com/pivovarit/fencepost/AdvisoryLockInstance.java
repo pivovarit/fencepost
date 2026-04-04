@@ -6,7 +6,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 
-final class AdvisoryLockInstance implements Lock {
+final class AdvisoryLockInstance implements AdvisoryLock {
 
     private static final int ADVISORY_NAMESPACE = 2025588817; // "fencepost".hashCode();
 

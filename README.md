@@ -45,7 +45,7 @@ The table name defaults to `fencepost_locks` but can be customized via `.tableNa
 The simplest option — no table setup required. Holds a database connection for the duration of the lock:
 
 ```java
-Fencepost<Lock> fencepost = Fencepost.advisoryLock(dataSource).build();
+Factory<Lock> fencepost = Fencepost.advisoryLock(dataSource).build();
 Lock lock = fencepost.forName("my-resource");
 
 // option 1: explicit lock/unlock
@@ -84,7 +84,7 @@ lock.withLock(() -> {
 Table-based lock held via `SELECT ... FOR UPDATE`. Issues fencing tokens to protect against stale holders:
 
 ```java
-Fencepost<FencedLock> fencepost = Fencepost.sessionLock(dataSource)
+Factory<FencedLock> fencepost = Fencepost.sessionLock(dataSource)
     .tableName("my_locks") // optional, defaults to "fencepost_locks"
     .build();
 
@@ -120,7 +120,7 @@ lock.withLock(token -> {
 Timestamp-based lock that releases the connection immediately. Best for long-running tasks:
 
 ```java
-Fencepost<RenewableLock> fencepost = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30))
+Factory<RenewableLock> fencepost = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30))
     .tableName("my_locks")                  // optional
     .withHeartbeat(Duration.ofSeconds(10))   // auto-renew before expiry
     .withQuietPeriod(Duration.ofSeconds(5))  // min gap between acquisitions
