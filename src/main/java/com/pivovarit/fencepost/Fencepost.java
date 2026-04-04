@@ -19,15 +19,15 @@ public final class Fencepost<T extends FencepostLock> {
         return lockFactory.apply(lockName);
     }
 
-    public static AdvisoryBuilder advisory(DataSource dataSource) {
+    public static AdvisoryBuilder advisoryLock(DataSource dataSource) {
         return new AdvisoryBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
     }
 
-    public static ConnectionBuilder connection(DataSource dataSource) {
+    public static ConnectionBuilder connectionLock(DataSource dataSource) {
         return new ConnectionBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
     }
 
-    public static LeaseBuilder lease(DataSource dataSource, Duration lockAtMost) {
+    public static LeaseBuilder leaseLock(DataSource dataSource, Duration lockAtMost) {
         Objects.requireNonNull(dataSource, "dataSource must not be null");
         if (lockAtMost.isNegative() || lockAtMost.isZero()) {
             throw new IllegalArgumentException("lockAtMost must be positive");
