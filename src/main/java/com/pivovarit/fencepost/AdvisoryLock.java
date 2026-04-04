@@ -2,7 +2,7 @@ package com.pivovarit.fencepost;
 
 import java.time.Duration;
 
-public interface Lock extends FencepostLock {
+public interface AdvisoryLock extends FencepostLock {
 
     void lock();
 

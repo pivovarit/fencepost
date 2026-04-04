@@ -230,7 +230,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                         .bind(token)
                         .execute();
                 if (updated == 0) {
-                    throw new SQLException("Lock lost — token no longer matches");
+                    throw new SQLException("Lock lost - token no longer matches");
                 }
                 return;
             } catch (SQLException e) {
