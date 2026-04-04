@@ -117,12 +117,12 @@ public final class Fencepost<T extends FencepostLock> {
         }
 
         public Fencepost<RenewableLock> build() {
-            String t = this.tableName;
-            Duration ew = this.leaseDuration;
-            Duration ri = this.refreshInterval;
-            Duration qp = this.quietPeriod;
-            Consumer<FencepostException> ohf = this.onHeartbeatFailure;
-            return new Fencepost<>(lockName -> new LeaseLockInstance(lockName, dataSource, t, ew, ri, qp, ohf));
+            return new Fencepost<>(lockName -> new LeaseLockInstance(lockName, dataSource,
+              this.tableName,
+              this.leaseDuration,
+              this.refreshInterval,
+              this.quietPeriod,
+              this.onHeartbeatFailure));
         }
     }
 }
