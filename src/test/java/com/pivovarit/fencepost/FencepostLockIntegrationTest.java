@@ -702,9 +702,7 @@ class FencepostLockIntegrationTest {
 
     private void terminateBackends(String state) throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = '" + state + "' AND pid != pg_backend_pid()"
-            );
+            conn.createStatement().execute(String.format("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = '%s' AND pid != pg_backend_pid()", state));
         }
     }
 
