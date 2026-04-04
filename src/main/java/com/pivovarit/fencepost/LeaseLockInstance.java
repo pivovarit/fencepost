@@ -145,7 +145,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             throw new LockNotHeldException(lockName);
         }
         try {
-            int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET expires_at = now() + %s WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis()))
+            int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET expires_at = GREATEST(expires_at, now() + %s) WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis()))
                     .bind(duration.toMillis())
                     .bind(lockName)
                     .bind(currentToken.value())
@@ -239,7 +239,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         SQLException lastException = null;
         for (int attempt = 0; attempt < HEARTBEAT_MAX_RETRIES; attempt++) {
             try {
-                int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET expires_at = now() + %s WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis()))
+                int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET expires_at = GREATEST(expires_at, now() + %s) WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis()))
                         .bind(windowMillis)
                         .bind(lockName)
                         .bind(token)
