@@ -5,14 +5,14 @@ import java.util.Optional;
 
 public interface FencedLock extends FencepostLock {
 
-    FencingToken fencedLock();
+    FencingToken lock();
 
-    FencingToken fencedLock(Duration timeout);
+    FencingToken lock(Duration timeout);
 
-    Optional<FencingToken> tryFencedLock();
+    Optional<FencingToken> tryLock();
 
-    default void withFencedLock(ThrowingConsumer<FencingToken> action) {
-        FencingToken token = fencedLock();
+    default void withLock(ThrowingConsumer<FencingToken> action) {
+        FencingToken token = lock();
         try {
             action.accept(token);
         } catch (RuntimeException e) {
@@ -24,8 +24,8 @@ public interface FencedLock extends FencepostLock {
         }
     }
 
-    default void withFencedLock(Duration timeout, ThrowingConsumer<FencingToken> action) {
-        FencingToken token = fencedLock(timeout);
+    default void withLock(Duration timeout, ThrowingConsumer<FencingToken> action) {
+        FencingToken token = lock(timeout);
         try {
             action.accept(token);
         } catch (RuntimeException e) {
