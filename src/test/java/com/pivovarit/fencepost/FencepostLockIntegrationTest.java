@@ -452,6 +452,26 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void quietPeriodShouldClearLockedAtOnUnlock() throws Exception {
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10))
+            .withQuietPeriod(Duration.ofSeconds(3))
+            .build();
+
+        RenewableLock lock = provider.forName("quiet-clear-test");
+        lock.lock();
+        lock.unlock();
+
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.createStatement().executeQuery(
+               "SELECT locked_by, locked_at, expires_at FROM fencepost_locks WHERE lock_name = 'quiet-clear-test'")) {
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("locked_by")).isNotNull();
+            assertThat(rs.getTimestamp("locked_at")).isNull();
+            assertThat(rs.getTimestamp("expires_at")).isNotNull();
+        }
+    }
+
+    @Test
     void onHeartbeatFailureShouldBeCalledWhenLockIsStolen() throws Exception {
         AtomicBoolean callbackFired = new AtomicBoolean(false);
         AtomicReference<FencepostException> callbackError = new AtomicReference<>();
