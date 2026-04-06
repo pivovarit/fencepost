@@ -6,6 +6,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 
+/**
+ * Not thread-safe. Each instance should be used by a single thread at a time.
+ * For concurrent access, use separate {@link AdvisoryLock} instances.
+ */
 final class AdvisoryLockInstance implements AdvisoryLock {
 
     private static final String ADVISORY_NAMESPACE = "fencepost:";
@@ -14,8 +18,8 @@ final class AdvisoryLockInstance implements AdvisoryLock {
     private final long advisoryKey;
     private final DataSource dataSource;
 
-    private volatile Connection connection;
-    private volatile boolean held;
+    private Connection connection;
+    private boolean held;
 
     AdvisoryLockInstance(String lockName, DataSource dataSource) {
         this.lockName = lockName;
