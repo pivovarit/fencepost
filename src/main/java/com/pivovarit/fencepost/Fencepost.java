@@ -67,6 +67,7 @@ public final class Fencepost {
         private String tableName = "fencepost_locks";
         private Duration refreshInterval;
         private Duration quietPeriod;
+        private Duration pollInterval;
         private Consumer<FencepostException> onHeartbeatFailure;
 
         private LeaseBuilder(DataSource dataSource, Duration leaseDuration) {
@@ -102,6 +103,14 @@ public final class Fencepost {
             return this;
         }
 
+        public LeaseBuilder withPollInterval(Duration pollInterval) {
+            if (pollInterval.isNegative() || pollInterval.isZero()) {
+                throw new IllegalArgumentException("Poll interval must be positive");
+            }
+            this.pollInterval = pollInterval;
+            return this;
+        }
+
         public LeaseBuilder onHeartbeatFailure(Consumer<FencepostException> handler) {
             this.onHeartbeatFailure = Objects.requireNonNull(handler);
             return this;
@@ -113,6 +122,7 @@ public final class Fencepost {
               this.leaseDuration,
               this.refreshInterval,
               this.quietPeriod,
+              this.pollInterval,
               this.onHeartbeatFailure));
         }
     }
