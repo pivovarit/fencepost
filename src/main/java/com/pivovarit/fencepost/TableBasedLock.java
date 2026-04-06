@@ -33,17 +33,16 @@ abstract class TableBasedLock {
     void ensureRowExists() {
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(true);
-            boolean exists = Jdbc.query(conn, String.format("SELECT 1 FROM %s WHERE lock_name = ?", tableName))
-                    .bind(lockName)
-                    .map(ResultSet::next);
-            if (!exists) {
-                Jdbc.update(conn, "INSERT INTO " + tableName + " (lock_name) VALUES (?) ON CONFLICT DO NOTHING")
-                        .bind(lockName)
-                        .execute();
-            }
+            ensureRowExists(conn);
         } catch (SQLException e) {
             throw new FencepostException("Failed to ensure lock row exists: " + lockName, e);
         }
+    }
+
+    void ensureRowExists(Connection conn) throws SQLException {
+        Jdbc.update(conn, "INSERT INTO " + tableName + " (lock_name) VALUES (?) ON CONFLICT DO NOTHING")
+                .bind(lockName)
+                .execute();
     }
 
     FencingToken incrementToken(Connection conn, Duration expiry) throws SQLException {

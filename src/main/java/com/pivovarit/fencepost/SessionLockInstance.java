@@ -37,8 +37,8 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     FencingToken doLock() {
         try {
             connection = dataSource.getConnection();
+            ensureRowExists(connection);
             connection.setAutoCommit(false);
-            ensureRowExists();
 
             Jdbc.query(connection, "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE")
                     .bind(lockName)
@@ -57,8 +57,8 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     FencingToken doLock(Duration timeout) {
         try {
             connection = dataSource.getConnection();
+            ensureRowExists(connection);
             connection.setAutoCommit(false);
-            ensureRowExists();
 
             Jdbc.setStatementTimeout(connection, timeout);
 
@@ -84,8 +84,8 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     Optional<FencingToken> doTryLock() {
         try {
             connection = dataSource.getConnection();
+            ensureRowExists(connection);
             connection.setAutoCommit(false);
-            ensureRowExists();
 
             boolean locked = Jdbc.query(connection, "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE SKIP LOCKED")
                     .bind(lockName)
