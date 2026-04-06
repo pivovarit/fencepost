@@ -298,9 +298,9 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
-    void heartbeatShouldExtendExpiry() throws Exception {
+    void autoRenewShouldExtendExpiry() throws Exception {
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(2))
-            .withHeartbeat(Duration.ofSeconds(1))
+            .withAutoRenew(Duration.ofSeconds(1))
             .build();
 
         RenewableLock lock = provider.forName("heartbeat-test");
@@ -334,9 +334,9 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
-    void renewShouldUpdateHeartbeatWindow() throws Exception {
+    void renewShouldUpdateAutoRenewWindow() throws Exception {
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(2))
-            .withHeartbeat(Duration.ofSeconds(1))
+            .withAutoRenew(Duration.ofSeconds(1))
             .build();
 
         RenewableLock lock = provider.forName("renew-heartbeat-test");
@@ -472,13 +472,13 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
-    void onHeartbeatFailureShouldBeCalledWhenLockIsStolen() throws Exception {
+    void onAutoRenewFailureShouldBeCalledWhenLockIsStolen() throws Exception {
         AtomicBoolean callbackFired = new AtomicBoolean(false);
         AtomicReference<FencepostException> callbackError = new AtomicReference<>();
 
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(2))
-            .withHeartbeat(Duration.ofSeconds(1))
-            .onHeartbeatFailure(ex -> {
+            .withAutoRenew(Duration.ofSeconds(1))
+            .onAutoRenewFailure(ex -> {
                 callbackFired.set(true);
                 callbackError.set(ex);
             })
@@ -501,12 +501,12 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
-    void heartbeatFailureShouldInvalidateCurrentToken() throws Exception {
+    void autoRenewFailureShouldInvalidateCurrentToken() throws Exception {
         AtomicBoolean callbackFired = new AtomicBoolean(false);
 
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(2))
-            .withHeartbeat(Duration.ofSeconds(1))
-            .onHeartbeatFailure(ex -> callbackFired.set(true))
+            .withAutoRenew(Duration.ofSeconds(1))
+            .onAutoRenewFailure(ex -> callbackFired.set(true))
             .build();
 
         RenewableLock lock = provider.forName("heartbeat-invalidate-test");
@@ -525,13 +525,13 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
-    void unlockShouldStillBePossibleAfterHeartbeatFailure() throws Exception {
+    void unlockShouldStillBePossibleAfterAutoRenewFailure() throws Exception {
         AtomicBoolean callbackFired = new AtomicBoolean(false);
         AtomicReference<Long> acquiredToken = new AtomicReference<>();
 
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(5))
-            .withHeartbeat(Duration.ofSeconds(1))
-            .onHeartbeatFailure(ex -> callbackFired.set(true))
+            .withAutoRenew(Duration.ofSeconds(1))
+            .onAutoRenewFailure(ex -> callbackFired.set(true))
             .build();
 
         RenewableLock lock = provider.forName("heartbeat-unlock-test");

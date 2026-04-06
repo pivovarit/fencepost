@@ -71,7 +71,7 @@ public final class Fencepost {
         private Duration refreshInterval;
         private Duration quietPeriod;
         private Duration pollInterval;
-        private Consumer<FencepostException> onHeartbeatFailure;
+        private Consumer<FencepostException> onAutoRenewFailure;
 
         private LeaseBuilder(DataSource dataSource, Duration leaseDuration) {
             this.dataSource = dataSource;
@@ -87,7 +87,7 @@ public final class Fencepost {
             return this;
         }
 
-        public LeaseBuilder withHeartbeat(Duration refreshInterval) {
+        public LeaseBuilder withAutoRenew(Duration refreshInterval) {
             if (refreshInterval.isNegative() || refreshInterval.isZero()) {
                 throw new IllegalArgumentException("Refresh interval must be positive");
             }
@@ -114,8 +114,8 @@ public final class Fencepost {
             return this;
         }
 
-        public LeaseBuilder onHeartbeatFailure(Consumer<FencepostException> handler) {
-            this.onHeartbeatFailure = Objects.requireNonNull(handler);
+        public LeaseBuilder onAutoRenewFailure(Consumer<FencepostException> handler) {
+            this.onAutoRenewFailure = Objects.requireNonNull(handler);
             return this;
         }
 
@@ -126,7 +126,7 @@ public final class Fencepost {
               this.refreshInterval,
               this.quietPeriod,
               this.pollInterval,
-              this.onHeartbeatFailure));
+              this.onAutoRenewFailure));
         }
     }
 }
