@@ -3,7 +3,6 @@ package com.pivovarit.fencepost;
 import javax.sql.DataSource;
 import java.net.InetAddress;
 import java.sql.Connection;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Optional;
@@ -31,16 +30,10 @@ abstract class TableBasedLock {
     }
 
     void ensureRowExists() {
-        try (Connection conn = dataSource.getConnection()) {
-            conn.setAutoCommit(true);
-            boolean exists = Jdbc.query(conn, String.format("SELECT 1 FROM %s WHERE lock_name = ?", tableName))
+        try {
+            Jdbc.update(dataSource, "INSERT INTO " + tableName + " (lock_name) VALUES (?) ON CONFLICT DO NOTHING")
                     .bind(lockName)
-                    .map(ResultSet::next);
-            if (!exists) {
-                Jdbc.update(conn, "INSERT INTO " + tableName + " (lock_name) VALUES (?) ON CONFLICT DO NOTHING")
-                        .bind(lockName)
-                        .execute();
-            }
+                    .execute();
         } catch (SQLException e) {
             throw new FencepostException("Failed to ensure lock row exists: " + lockName, e);
         }
