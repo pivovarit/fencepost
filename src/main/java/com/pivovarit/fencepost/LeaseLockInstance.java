@@ -59,7 +59,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     @Override
     Optional<FencingToken> doTryLock() {
-        ensureRowExists();
+        ensureRowExists(dataSource);
         Optional<FencingToken> result = tryAcquireTimestamp();
         if (result.isPresent()) {
             currentToken = result.get();
@@ -75,7 +75,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             ? System.nanoTime() + timeout.toNanos()
             : Long.MAX_VALUE;
 
-        ensureRowExists();
+        ensureRowExists(dataSource);
 
         while (true) {
             Optional<FencingToken> result = tryAcquireTimestamp();

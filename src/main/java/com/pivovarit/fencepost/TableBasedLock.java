@@ -29,9 +29,17 @@ abstract class TableBasedLock {
         }
     }
 
-    void ensureRowExists() {
+    void ensureRowExists(DataSource ds) {
+        try (Connection conn = ds.getConnection()) {
+            ensureRowExists(conn);
+        } catch (SQLException e) {
+            throw new FencepostException("Failed to ensure lock row exists: " + lockName, e);
+        }
+    }
+
+    void ensureRowExists(Connection conn) {
         try {
-            Jdbc.update(dataSource, "INSERT INTO " + tableName + " (lock_name) VALUES (?) ON CONFLICT DO NOTHING")
+            Jdbc.update(conn, "INSERT INTO " + tableName + " (lock_name) VALUES (?) ON CONFLICT DO NOTHING")
                     .bind(lockName)
                     .execute();
         } catch (SQLException e) {
