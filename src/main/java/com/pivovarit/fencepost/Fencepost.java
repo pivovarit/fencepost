@@ -4,8 +4,11 @@ import javax.sql.DataSource;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 public final class Fencepost {
+
+    private static final Pattern TABLE_NAME_PATTERN = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)*");
 
     private Fencepost() {
     }
@@ -48,7 +51,7 @@ public final class Fencepost {
 
         public SessionBuilder tableName(String tableName) {
             Objects.requireNonNull(tableName);
-            if (!tableName.matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
+            if (!TABLE_NAME_PATTERN.matcher(tableName).matches()) {
                 throw new IllegalArgumentException("Invalid table name: " + tableName);
             }
             this.tableName = tableName;
@@ -77,7 +80,7 @@ public final class Fencepost {
 
         public LeaseBuilder tableName(String tableName) {
             Objects.requireNonNull(tableName);
-            if (!tableName.matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
+            if (!TABLE_NAME_PATTERN.matcher(tableName).matches()) {
                 throw new IllegalArgumentException("Invalid table name: " + tableName);
             }
             this.tableName = tableName;
