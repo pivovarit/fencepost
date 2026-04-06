@@ -8,12 +8,13 @@ import java.util.function.Consumer;
 
 final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
-    private static final long POLL_INTERVAL_MS = 100;
+    private static final long DEFAULT_POLL_INTERVAL_MS = 100;
     private static final int HEARTBEAT_MAX_RETRIES = 3;
 
     private final Duration leaseDuration;
     private final Duration refreshInterval;
     private final Duration quietPeriod;
+    private final long pollIntervalMs;
     private final Consumer<FencepostException> onHeartbeatFailure;
 
     private volatile Thread heartbeatThread;
@@ -21,11 +22,13 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     LeaseLockInstance(String lockName, DataSource dataSource, String tableName,
                          Duration leaseDuration, Duration refreshInterval, Duration quietPeriod,
+                         Duration pollInterval,
                          Consumer<FencepostException> onHeartbeatFailure) {
         super(lockName, dataSource, tableName);
         this.leaseDuration = leaseDuration;
         this.refreshInterval = refreshInterval;
         this.quietPeriod = quietPeriod;
+        this.pollIntervalMs = pollInterval != null ? pollInterval.toMillis() : DEFAULT_POLL_INTERVAL_MS;
         this.onHeartbeatFailure = onHeartbeatFailure;
     }
 
@@ -92,7 +95,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             }
 
             try {
-                Thread.sleep(POLL_INTERVAL_MS);
+                Thread.sleep(pollIntervalMs);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new FencepostException("Interrupted while waiting for lock: " + lockName);
