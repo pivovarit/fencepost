@@ -92,8 +92,8 @@ public class FencepostExample {
 
     private static void leaseLockExample(DataSource dataSource) {
         Factory<RenewableLock> factory = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10))
-          .withHeartbeat(Duration.ofSeconds(3))
-          .onHeartbeatFailure(e -> log("[lease]    heartbeat failed: " + e.getMessage()))
+          .withAutoRenew(Duration.ofSeconds(3))
+          .onAutoRenewFailure(e -> log("[lease]    auto-renew failed: " + e.getMessage()))
           .build();
 
         for (int round = 1; round <= ROUNDS; round++) {
