@@ -196,7 +196,7 @@ class FencepostLockIntegrationTest {
         FencedLock lock = provider.forName("withlock-test");
         AtomicReference<FencingToken> capturedToken = new AtomicReference<>();
 
-        lock.withLock(capturedToken::set);
+        lock.runLocked(capturedToken::set);
 
         assertThat(capturedToken.get()).isNotNull();
         assertThat(capturedToken.get().value()).isGreaterThan(0);
@@ -214,7 +214,7 @@ class FencepostLockIntegrationTest {
         FencedLock lock = provider.forName("withlock-timeout-test");
         AtomicReference<FencingToken> capturedToken = new AtomicReference<>();
 
-        lock.withLock(Duration.ofSeconds(5), capturedToken::set);
+        lock.runLocked(Duration.ofSeconds(5), capturedToken::set);
 
         assertThat(capturedToken.get()).isNotNull();
         assertThat(capturedToken.get().value()).isGreaterThan(0);
@@ -231,7 +231,7 @@ class FencepostLockIntegrationTest {
 
         FencedLock lock = provider.forName("withlock-unchecked-test");
 
-        assertThatThrownBy(() -> lock.withLock(token -> {
+        assertThatThrownBy(() -> lock.runLocked(token -> {
             throw new IllegalArgumentException("boom");
         }))
           .isInstanceOf(IllegalArgumentException.class)
@@ -249,7 +249,7 @@ class FencepostLockIntegrationTest {
 
         FencedLock lock = provider.forName("withlock-checked-test");
 
-        assertThatThrownBy(() -> lock.withLock(token -> {
+        assertThatThrownBy(() -> lock.runLocked(token -> {
             throw new java.io.IOException("disk full");
         }))
           .isInstanceOf(FencepostException.class)
@@ -269,7 +269,7 @@ class FencepostLockIntegrationTest {
         lock.lock();
 
         try {
-            assertThatThrownBy(() -> lock.withLock(token -> {}))
+            assertThatThrownBy(() -> lock.runLocked(token -> {}))
               .isInstanceOf(IllegalStateException.class)
               .hasMessageContaining("withlock-guard-test");
         } finally {
@@ -642,17 +642,115 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void supplyLockedShouldReturnValue() {
+        Factory<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
+
+        FencedLock lock = provider.forName("supplylocked-return-test");
+
+        long result = lock.supplyLocked(token -> token.value());
+
+        assertThat(result).isGreaterThan(0);
+
+        FencedLock second = provider.forName("supplylocked-return-test");
+        Optional<FencingToken> secondToken = second.tryLock();
+        assertThat(secondToken).isPresent();
+        second.unlock();
+    }
+
+    @Test
+    void supplyLockedWithTimeoutShouldReturnValue() {
+        Factory<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
+
+        FencedLock lock = provider.forName("supplylocked-return-timeout-test");
+
+        long result = lock.supplyLocked(Duration.ofSeconds(5), token -> token.value());
+
+        assertThat(result).isGreaterThan(0);
+
+        FencedLock second = provider.forName("supplylocked-return-timeout-test");
+        Optional<FencingToken> secondToken = second.tryLock();
+        assertThat(secondToken).isPresent();
+        second.unlock();
+    }
+
+    @Test
+    void supplyLockedShouldPropagateUncheckedExceptionAndRelease() {
+        Factory<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
+
+        FencedLock lock = provider.forName("supplylocked-unchecked-test");
+
+        assertThatThrownBy(() -> lock.supplyLocked(token -> {
+            throw new IllegalArgumentException("boom");
+        }))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("boom");
+
+        FencedLock second = provider.forName("supplylocked-unchecked-test");
+        Optional<FencingToken> secondToken = second.tryLock();
+        assertThat(secondToken).isPresent();
+        second.unlock();
+    }
+
+    @Test
+    void supplyLockedShouldWrapCheckedExceptionAndRelease() {
+        Factory<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
+
+        FencedLock lock = provider.forName("supplylocked-checked-test");
+
+        assertThatThrownBy(() -> lock.supplyLocked(token -> {
+            throw new java.io.IOException("disk full");
+        }))
+          .isInstanceOf(FencepostException.class)
+          .hasCauseInstanceOf(java.io.IOException.class);
+
+        FencedLock second = provider.forName("supplylocked-checked-test");
+        Optional<FencingToken> secondToken = second.tryLock();
+        assertThat(secondToken).isPresent();
+        second.unlock();
+    }
+
+    @Test
     void advisoryWithLockShouldAcquireRunAndRelease() {
         Factory<AdvisoryLock> provider = Fencepost.advisoryLock(dataSource).build();
 
         AdvisoryLock lock = provider.forName("advisory-withlock");
         AtomicBoolean ran = new AtomicBoolean(false);
 
-        lock.withLock(() -> ran.set(true));
+        lock.runLocked(() -> ran.set(true));
 
         assertThat(ran.get()).isTrue();
 
         AdvisoryLock second = provider.forName("advisory-withlock");
+        assertThat(second.tryLock()).isTrue();
+        second.unlock();
+    }
+
+    @Test
+    void advisorySupplyLockedShouldReturnValue() {
+        Factory<AdvisoryLock> provider = Fencepost.advisoryLock(dataSource).build();
+
+        AdvisoryLock lock = provider.forName("advisory-supplylocked-return");
+
+        String result = lock.supplyLocked(() -> "hello");
+
+        assertThat(result).isEqualTo("hello");
+
+        AdvisoryLock second = provider.forName("advisory-supplylocked-return");
+        assertThat(second.tryLock()).isTrue();
+        second.unlock();
+    }
+
+    @Test
+    void advisorySupplyLockedWithTimeoutShouldReturnValue() {
+        Factory<AdvisoryLock> provider = Fencepost.advisoryLock(dataSource).build();
+
+        AdvisoryLock lock = provider.forName("advisory-supplylocked-return-timeout");
+
+        String result = lock.supplyLocked(Duration.ofSeconds(5), () -> "hello");
+
+        assertThat(result).isEqualTo("hello");
+
+        AdvisoryLock second = provider.forName("advisory-supplylocked-return-timeout");
         assertThat(second.tryLock()).isTrue();
         second.unlock();
     }

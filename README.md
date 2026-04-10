@@ -74,7 +74,7 @@ if (lock.tryLock()) {
 }
 
 // option 4: convenience wrapper
-lock.withLock(() -> {
+lock.runLocked(() -> {
     // critical section
 });
 ```
@@ -110,7 +110,7 @@ maybeToken.ifPresent(t -> {
 });
 
 // convenience wrapper with token access
-lock.withLock(token -> {
+lock.runLocked(token -> {
     externalStore.write(data, token.value());
 });
 ```
