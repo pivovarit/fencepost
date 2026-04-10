@@ -14,13 +14,13 @@ Fencepost provides three lock strategies, all backed by PostgreSQL:
 |------|-----------|:---:|:---:|:---:|
 | `advisory` | PostgreSQL advisory locks | - | - | + |
 | `session` | Table-based, `SELECT ... FOR UPDATE` | + | - | + |
-| `lease` | Table-based, timestamp TTL + heartbeat | + | + | - |
+| `lease` | Table-based, timestamp TTL + auto-renew | + | + | - |
 
 - **Advisory** - leverages PostgreSQL's built-in advisory locks. No table or schema setup required. Holds a database connection for the duration of the lock. Released automatically on disconnect. Simple and lightweight, but provides no fencing tokens, so it can't protect against stale holders writing to external systems.
 
 - **Session** - uses a dedicated table with `SELECT ... FOR UPDATE` to hold the lock within an open transaction. Issues monotonically increasing fencing tokens on each acquisition. The token lets downstream systems reject writes from holders that have been superseded. Holds a connection for the duration of the lock - if the process crashes, the connection is closed and the lock is released.
 
-- **Lease** - does not hold a connection or transaction. Acquires the lock by writing a timestamp to a table and releases the connection immediately. The lock is held purely via a TTL (`expires_at`) - if a holder crashes, the lock automatically becomes available after the lease duration. An optional heartbeat thread renews the lease periodically to prevent expiry during long-running work. Supports a quiet period to enforce a minimum gap between consecutive acquisitions. Best suited for long-running tasks where occupying a connection pool slot is not acceptable.
+- **Lease** - does not hold a connection or transaction. Acquires the lock by writing a timestamp to a table and releases the connection immediately. The lock is held purely via a TTL (`expires_at`) - if a holder crashes, the lock automatically becomes available after the lease duration. An optional auto-renew thread extends the lease periodically to prevent expiry during long-running work. Supports a quiet period to enforce a minimum gap between consecutive acquisitions. Best suited for long-running tasks where occupying a connection pool slot is not acceptable.
 
 ## Table Setup
 
@@ -122,14 +122,14 @@ Timestamp-based lock that releases the connection immediately. Best for long-run
 ```java
 Factory<RenewableLock> fencepost = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30))
     .tableName("my_locks")                  // optional
-    .withHeartbeat(Duration.ofSeconds(10))   // auto-renew before expiry
+    .withAutoRenew(Duration.ofSeconds(10))    // auto-renew before expiry
     .withQuietPeriod(Duration.ofSeconds(5))  // min gap between acquisitions
-    .onHeartbeatFailure(e -> log.error("heartbeat failed", e))
+    .onAutoRenewFailure(e -> log.error("auto-renew failed", e))
     .build();
 
 RenewableLock lock = fencepost.forName("my-resource");
 
-// heartbeat thread keeps the lease alive automatically
+// auto-renew thread keeps the lease alive automatically
 FencingToken token = lock.lock();
 try {
     longRunningTask(token);
@@ -137,7 +137,7 @@ try {
     lock.unlock();
 }
 
-// manual renewal (when not using heartbeat)
+// manual renewal (when not using auto-renew)
 lock.renew(Duration.ofSeconds(30));
 ```
 

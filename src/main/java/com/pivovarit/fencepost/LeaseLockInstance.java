@@ -9,27 +9,27 @@ import java.util.function.Consumer;
 final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     private static final long DEFAULT_POLL_INTERVAL_MS = 100;
-    private static final int HEARTBEAT_MAX_RETRIES = 3;
+    private static final int AUTO_RENEW_MAX_RETRIES = 3;
 
     private final Duration leaseDuration;
     private final Duration refreshInterval;
     private final Duration quietPeriod;
     private final long pollIntervalMs;
-    private final Consumer<FencepostException> onHeartbeatFailure;
+    private final Consumer<FencepostException> onAutoRenewFailure;
 
-    private volatile Thread heartbeatThread;
-    private volatile long heartbeatWindowMillis;
+    private volatile Thread autoRenewThread;
+    private volatile long autoRenewWindowMillis;
 
     LeaseLockInstance(String lockName, DataSource dataSource, String tableName,
                          Duration leaseDuration, Duration refreshInterval, Duration quietPeriod,
                          Duration pollInterval,
-                         Consumer<FencepostException> onHeartbeatFailure) {
+                         Consumer<FencepostException> onAutoRenewFailure) {
         super(lockName, dataSource, tableName);
         this.leaseDuration = leaseDuration;
         this.refreshInterval = refreshInterval;
         this.quietPeriod = quietPeriod;
         this.pollIntervalMs = pollInterval != null ? pollInterval.toMillis() : DEFAULT_POLL_INTERVAL_MS;
-        this.onHeartbeatFailure = onHeartbeatFailure;
+        this.onAutoRenewFailure = onAutoRenewFailure;
     }
 
     @Override
@@ -66,8 +66,8 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         Optional<FencingToken> result = tryAcquireTimestamp();
         if (result.isPresent()) {
             currentToken = result.get();
-            if (hasHeartbeat()) {
-                startHeartbeat();
+            if (hasAutoRenew()) {
+                startAutoRenew();
             }
         }
         return result;
@@ -84,8 +84,8 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             Optional<FencingToken> result = tryAcquireTimestamp();
             if (result.isPresent()) {
                 currentToken = result.get();
-                if (hasHeartbeat()) {
-                    startHeartbeat();
+                if (hasAutoRenew()) {
+                    startAutoRenew();
                 }
                 return currentToken;
             }
@@ -142,8 +142,8 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                 currentToken = null;
                 throw new LockNotHeldException(lockName);
             }
-            if (heartbeatThread != null) {
-                heartbeatWindowMillis = duration.toMillis();
+            if (autoRenewThread != null) {
+                autoRenewWindowMillis = duration.toMillis();
             }
         } catch (LockNotHeldException e) {
             throw e;
@@ -157,7 +157,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         if (currentToken == null) {
             throw new LockNotHeldException(lockName);
         }
-        stopHeartbeat();
+        stopAutoRenew();
         try {
             int updated;
             if (quietPeriod != null) {
@@ -192,39 +192,39 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         }
     }
 
-    private boolean hasHeartbeat() {
+    private boolean hasAutoRenew() {
         return refreshInterval != null;
     }
 
-    private void startHeartbeat() {
+    private void startAutoRenew() {
         long token = currentToken.value();
-        heartbeatWindowMillis = leaseDuration.toMillis();
-        heartbeatThread = new Thread(() -> {
+        autoRenewWindowMillis = leaseDuration.toMillis();
+        autoRenewThread = new Thread(() -> {
             long intervalMillis = refreshInterval.toMillis();
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     Thread.sleep(intervalMillis);
-                    refreshWithRetry(heartbeatWindowMillis, token);
+                    refreshWithRetry(autoRenewWindowMillis, token);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
                 } catch (SQLException e) {
-                    FencepostException ex = new FencepostException("Heartbeat failed for lock: " + lockName, e);
-                    if (onHeartbeatFailure != null) {
-                        onHeartbeatFailure.accept(ex);
+                    FencepostException ex = new FencepostException("Auto-renew failed for lock: " + lockName, e);
+                    if (onAutoRenewFailure != null) {
+                        onAutoRenewFailure.accept(ex);
                     }
                     return;
                 }
             }
         });
-        heartbeatThread.setDaemon(true);
-        heartbeatThread.setName("fencepost-heartbeat-" + lockName);
-        heartbeatThread.start();
+        autoRenewThread.setDaemon(true);
+        autoRenewThread.setName("fencepost-auto-renew-" + lockName);
+        autoRenewThread.start();
     }
 
     private void refreshWithRetry(long windowMillis, long token) throws SQLException, InterruptedException {
         SQLException lastException = null;
-        for (int attempt = 0; attempt < HEARTBEAT_MAX_RETRIES; attempt++) {
+        for (int attempt = 0; attempt < AUTO_RENEW_MAX_RETRIES; attempt++) {
             try {
                 int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET expires_at = GREATEST(expires_at, now() + %s) WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis()))
                         .bind(windowMillis)
@@ -237,7 +237,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                 return;
             } catch (SQLException e) {
                 lastException = e;
-                if (attempt < HEARTBEAT_MAX_RETRIES - 1) {
+                if (attempt < AUTO_RENEW_MAX_RETRIES - 1) {
                     Thread.sleep(100L * (attempt + 1));
                 }
             }
@@ -245,15 +245,15 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         throw lastException;
     }
 
-    private void stopHeartbeat() {
-        if (heartbeatThread != null) {
-            heartbeatThread.interrupt();
+    private void stopAutoRenew() {
+        if (autoRenewThread != null) {
+            autoRenewThread.interrupt();
             try {
-                heartbeatThread.join();
+                autoRenewThread.join();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-            heartbeatThread = null;
+            autoRenewThread = null;
         }
     }
 }
