@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        java: [ '11', '17', '21', '25', '26-ea' ]
+        java: [ '11', '17', '21', '25', '26' ]
         architecture: [ 'x64' ]
     name: Build with JDK ${{ matrix.java }} on ${{ matrix.architecture }}
     steps:
