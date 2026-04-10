@@ -49,7 +49,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Run docker-compose example
-        run: docker compose -f examples/docker-compose/docker-compose.yml up --build --abort-on-container-exit
+        run: |
+          cd examples/docker-compose
+          docker compose up --build -d
+          docker compose wait advisory session lease
+          docker compose down
 
   deploy-snapshot:
     runs-on: ubuntu-latest
