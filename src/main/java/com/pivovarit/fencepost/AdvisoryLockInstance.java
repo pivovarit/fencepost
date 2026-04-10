@@ -23,7 +23,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
 
     AdvisoryLockInstance(String lockName, DataSource dataSource) {
         this.lockName = lockName;
-        this.advisoryKey = fnv1a64(ADVISORY_NAMESPACE + lockName);
+        this.advisoryKey = HashUtils.fnv1a64(ADVISORY_NAMESPACE + lockName);
         this.dataSource = dataSource;
     }
 
@@ -136,15 +136,6 @@ final class AdvisoryLockInstance implements AdvisoryLock {
         if (held) {
             throw new IllegalStateException("Lock already held: " + lockName);
         }
-    }
-
-    private static long fnv1a64(String s) {
-        long hash = 0xcbf29ce484222325L;
-        for (int i = 0; i < s.length(); i++) {
-            hash ^= s.charAt(i);
-            hash *= 0x100000001b3L;
-        }
-        return hash;
     }
 
     private void closeConnection() {

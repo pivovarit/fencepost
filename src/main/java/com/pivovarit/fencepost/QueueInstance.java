@@ -113,7 +113,7 @@ final class QueueInstance implements Queue {
     }
 
     private String channelName() {
-        return "fencepost_q_" + fnv1a64("fencepost:" + queueName);
+        return "fencepost_q_" + HashUtils.fnv1a64("fencepost:" + queueName);
     }
 
     private void notify_() {
@@ -174,15 +174,6 @@ final class QueueInstance implements Queue {
             }
             listenerConnection = null;
         }
-    }
-
-    private static long fnv1a64(String s) {
-        long hash = 0xcbf29ce484222325L;
-        for (int i = 0; i < s.length(); i++) {
-            hash ^= s.charAt(i);
-            hash *= 0x100000001b3L;
-        }
-        return hash;
     }
 
 }
