@@ -11,7 +11,7 @@ public interface FencedLock extends FencepostLock {
 
     Optional<FencingToken> tryLock();
 
-    default void withLock(ThrowingConsumer<FencingToken> action) {
+    default void runLocked(ThrowingConsumer<FencingToken> action) {
         FencingToken token = lock();
         try {
             action.accept(token);
@@ -24,10 +24,36 @@ public interface FencedLock extends FencepostLock {
         }
     }
 
-    default void withLock(Duration timeout, ThrowingConsumer<FencingToken> action) {
+    default <T> T supplyLocked(ThrowingFunction<FencingToken, T> action) {
+        FencingToken token = lock();
+        try {
+            return action.apply(token);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new FencepostException("Action failed while holding lock", e);
+        } finally {
+            unlock();
+        }
+    }
+
+    default void runLocked(Duration timeout, ThrowingConsumer<FencingToken> action) {
         FencingToken token = lock(timeout);
         try {
             action.accept(token);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new FencepostException("Action failed while holding lock", e);
+        } finally {
+            unlock();
+        }
+    }
+
+    default <T> T supplyLocked(Duration timeout, ThrowingFunction<FencingToken, T> action) {
+        FencingToken token = lock(timeout);
+        try {
+            return action.apply(token);
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
