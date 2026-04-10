@@ -3,7 +3,7 @@ package com.pivovarit.fencepost;
 import java.util.Objects;
 import java.util.function.Function;
 
-public final class Factory<T extends FencepostLock> {
+public final class Factory<T> {
 
     private final Function<String, T> lockFactory;
 

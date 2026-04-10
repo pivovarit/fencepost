@@ -129,4 +129,54 @@ public final class Fencepost {
               this.onAutoRenewFailure));
         }
     }
+
+    public static QueueBuilder queue(DataSource dataSource) {
+        return new QueueBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
+    }
+
+    public static final class QueueBuilder {
+        private final DataSource dataSource;
+        private String tableName = "fencepost_queue";
+        private Duration visibilityTimeout;
+        private long pollIntervalMs = 100;
+
+        private QueueBuilder(DataSource dataSource) {
+            this.dataSource = dataSource;
+        }
+
+        public QueueBuilder tableName(String tableName) {
+            Objects.requireNonNull(tableName);
+            if (!TABLE_NAME_PATTERN.matcher(tableName).matches()) {
+                throw new IllegalArgumentException("Invalid table name: " + tableName);
+            }
+            this.tableName = tableName;
+            return this;
+        }
+
+        public QueueBuilder visibilityTimeout(Duration visibilityTimeout) {
+            if (visibilityTimeout.isNegative() || visibilityTimeout.isZero()) {
+                throw new IllegalArgumentException("visibilityTimeout must be positive");
+            }
+            this.visibilityTimeout = visibilityTimeout;
+            return this;
+        }
+
+        public QueueBuilder pollInterval(Duration pollInterval) {
+            if (pollInterval.isNegative() || pollInterval.isZero()) {
+                throw new IllegalArgumentException("pollInterval must be positive");
+            }
+            this.pollIntervalMs = pollInterval.toMillis();
+            return this;
+        }
+
+        public Factory<Queue> build() {
+            if (visibilityTimeout == null) {
+                throw new IllegalStateException("visibilityTimeout must be set");
+            }
+            String t = this.tableName;
+            Duration vt = this.visibilityTimeout;
+            long pi = this.pollIntervalMs;
+            return new Factory<>(queueName -> new QueueInstance(queueName, dataSource, t, vt, pi));
+        }
+    }
 }
