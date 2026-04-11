@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fencepost Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      background: #f5f5f5;
+      color: #222;
+      font-size: 14px;
+    }
+
+    header {
+      background: #1a1a2e;
+      color: #fff;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.5px; }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .controls label { font-size: 13px; opacity: 0.85; }
+
+    .controls select, .controls button {
+      font-size: 13px;
+      padding: 4px 10px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .controls select { background: #fff; color: #222; }
+
+    #pauseBtn {
+      background: #e0a800;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    #pauseBtn.paused { background: #28a745; }
+
+    .live-indicator {
+      font-size: 13px;
+      color: #28a745;
+      font-weight: 600;
+      transition: color 0.3s;
+    }
+
+    .live-indicator.disconnected { color: #e0a800; }
+
+    main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+
+    .section { margin-bottom: 32px; }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #555;
+      margin-bottom: 10px;
+      border-bottom: 2px solid #ddd;
+      padding-bottom: 6px;
+    }
+
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #1a1a2e;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 6px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      margin-bottom: 18px;
+    }
+
+    .back-btn:hover { background: #2e2e5e; }
+
+    .detail-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    .stats-bar {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 12px 20px;
+      min-width: 120px;
+      text-align: center;
+    }
+
+    .stat-card .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+
+    .stat-card .stat-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: #888;
+      margin-top: 2px;
+      letter-spacing: 0.5px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    thead { background: #1a1a2e; color: #fff; }
+
+    th {
+      text-align: left;
+      padding: 10px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    td {
+      padding: 9px 14px;
+      border-bottom: 1px solid #f0f0f0;
+      vertical-align: middle;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    tbody tr.clickable { cursor: pointer; }
+    tbody tr.clickable:hover { background: #f0f4ff; }
+
+    .status-held { color: #c00; font-weight: 700; }
+    .status-free { color: #2a7a2a; }
+    .status-expired { color: #888; }
+
+    .empty-msg {
+      padding: 20px;
+      color: #aaa;
+      font-style: italic;
+      text-align: center;
+      background: #fff;
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+
+    .error-msg {
+      padding: 12px 18px;
+      background: #fff0f0;
+      border: 1px solid #f5c6cb;
+      color: #721c24;
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+
+    .mono { font-family: monospace; font-size: 12px; word-break: break-all; }
+
+    .status-in_flight { color: #c00; font-weight: 600; }
+    .status-visible { color: #2a7a2a; }
+    .status-delayed { color: #888; font-style: italic; }
+
+    .payload-box {
+      background: #fafafa;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 16px;
+      font-family: monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 400px;
+      overflow: auto;
+    }
+
+    #view-overview, #view-lock, #view-queue, #view-message { display: none; }
+    #view-overview.active, #view-lock.active, #view-queue.active, #view-message.active { display: block; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Fencepost Dashboard</h1>
+  <div class="controls">
+    <span id="liveIndicator" class="live-indicator" title="Server-Sent Events">&#9679; Live</span>
+    <button id="pauseBtn">Pause</button>
+  </div>
+</header>
+
+<main>
+  <div id="errorBanner" class="error-msg" style="display:none;"></div>
+
+  <!-- OVERVIEW -->
+  <div id="view-overview">
+    <div id="locks-section" class="section" style="display:none;">
+      <div class="section-title">Locks</div>
+      <div id="locks-body"></div>
+    </div>
+    <div id="queues-section" class="section" style="display:none;">
+      <div class="section-title">Queues</div>
+      <div id="queues-body"></div>
+    </div>
+  </div>
+
+  <!-- LOCK DETAIL -->
+  <div id="view-lock">
+    <button class="back-btn" onclick="window.__back()">&#8592; Back</button>
+    <div class="detail-title" id="lock-detail-title"></div>
+    <div id="lock-detail-body"></div>
+  </div>
+
+  <!-- QUEUE DETAIL -->
+  <div id="view-queue">
+    <button class="back-btn" onclick="window.__back()">&#8592; Back</button>
+    <div class="detail-title" id="queue-detail-title"></div>
+    <div id="queue-stats-bar" class="stats-bar"></div>
+    <div class="section-title" style="margin-bottom:10px;">Messages</div>
+    <div id="queue-detail-body"></div>
+  </div>
+
+  <!-- MESSAGE DETAIL -->
+  <div id="view-message">
+    <button class="back-btn" id="message-back-btn">&#8592; Back</button>
+    <div class="detail-title" id="message-detail-title"></div>
+    <div id="message-detail-body"></div>
+  </div>
+</main>
+
+<script>
+  // ─── State ───────────────────────────────────────────────────────────────
+  let currentView = { type: 'overview' };
+  let paused = false;
+  let intervalId = null;
+  let status = { locks_enabled: false, queues_enabled: false };
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────
+  function lockStatus(lock) {
+    if (!lock.locked_by && !lock.is_held) {
+      return '<span class="status-free">free</span>';
+    }
+    if (lock.expires_at) {
+      const exp = new Date(lock.expires_at);
+      if (exp < new Date()) {
+        return '<span class="status-expired">expired</span>';
+      }
+    }
+    return '<span class="status-held">held</span>';
+  }
+
+  function formatAge(seconds) {
+    if (seconds === null || seconds === undefined) return '-';
+    if (seconds < 60) return seconds + 's';
+    if (seconds < 3600) return Math.floor(seconds / 60) + 'm';
+    return (seconds / 3600).toFixed(1) + 'h';
+  }
+
+  function formatTime(ts) {
+    if (!ts) return '-';
+    try { return new Date(ts).toLocaleString(); } catch { return ts; }
+  }
+
+  function h(str) {
+    if (str === null || str === undefined) return '-';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function jsonAttr(value) {
+    return JSON.stringify(value)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ─── API calls ───────────────────────────────────────────────────────────
+  async function apiFetch(path) {
+    const r = await fetch(path);
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + path);
+    return r.json();
+  }
+
+  // ─── Navigation ──────────────────────────────────────────────────────────
+  function showView(name) {
+    document.querySelectorAll('#view-overview, #view-lock, #view-queue, #view-message')
+      .forEach(el => el.classList.remove('active'));
+    document.getElementById('view-' + name).classList.add('active');
+  }
+
+  window.__showLock = function(name) {
+    currentView = { type: 'lock', name };
+    document.getElementById('lock-detail-title').textContent = 'Lock: ' + name;
+    showView('lock');
+    refreshCurrentView();
+  };
+
+  window.__showQueue = function(name) {
+    currentView = { type: 'queue', name };
+    document.getElementById('queue-detail-title').textContent = 'Queue: ' + name;
+    showView('queue');
+    refreshCurrentView();
+  };
+
+  window.__showMessage = function(queueName, id) {
+    currentView = { type: 'message', queueName, id };
+    document.getElementById('message-detail-title').textContent = 'Message #' + id;
+    document.getElementById('message-back-btn').onclick = function() { window.__showQueue(queueName); };
+    showView('message');
+    refreshCurrentView();
+  };
+
+  window.__back = function() {
+    currentView = { type: 'overview' };
+    showView('overview');
+    refreshCurrentView();
+  };
+
+  // ─── Render helpers ──────────────────────────────────────────────────────
+  function renderLocksTable(locks) {
+    if (!locks || locks.length === 0) {
+      return '<div class="empty-msg">No locks found.</div>';
+    }
+    let rows = locks.map(l => `
+      <tr class="clickable" onclick="window.__showLock(${jsonAttr(l.name)})">
+        <td>${h(l.name)}</td>
+        <td class="mono">${h(l.token)}</td>
+        <td>${h(l.locked_by)}</td>
+        <td>${formatTime(l.locked_at)}</td>
+        <td>${formatTime(l.expires_at)}</td>
+        <td>${lockStatus(l)}</td>
+      </tr>`).join('');
+    return `<table>
+      <thead><tr>
+        <th>Name</th><th>Token</th><th>Locked By</th>
+        <th>Locked At</th><th>Expires At</th><th>Status</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+
+  function renderQueuesTable(queues) {
+    if (!queues || queues.length === 0) {
+      return '<div class="empty-msg">No queues found.</div>';
+    }
+    let rows = queues.map(q => `
+      <tr class="clickable" onclick="window.__showQueue(${jsonAttr(q.name)})">
+        <td>${h(q.name)}</td>
+        <td>${h(q.total)}</td>
+        <td>${h(q.visible)}</td>
+        <td>${h(q.in_flight)}</td>
+        <td>${formatAge(q.oldest_age_seconds)}</td>
+      </tr>`).join('');
+    return `<table>
+      <thead><tr>
+        <th>Name</th><th>Total Messages</th><th>Visible</th>
+        <th>In-Flight</th><th>Oldest Age</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+
+  function renderLockDetail(lock) {
+    return `<table>
+      <thead><tr><th>Field</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Token</td><td class="mono">${h(lock.token)}</td></tr>
+        <tr><td>Locked By</td><td>${h(lock.locked_by)}</td></tr>
+        <tr><td>Locked At</td><td>${formatTime(lock.locked_at)}</td></tr>
+        <tr><td>Expires At</td><td>${formatTime(lock.expires_at)}</td></tr>
+        <tr><td>Status</td><td>${lockStatus(lock)}</td></tr>
+      </tbody>
+    </table>`;
+  }
+
+  function renderQueueStats(q) {
+    return `
+      <div class="stat-card"><div class="stat-value">${h(q.total)}</div><div class="stat-label">Total</div></div>
+      <div class="stat-card"><div class="stat-value">${h(q.visible)}</div><div class="stat-label">Visible</div></div>
+      <div class="stat-card"><div class="stat-value">${h(q.in_flight)}</div><div class="stat-label">In-Flight</div></div>
+      <div class="stat-card"><div class="stat-value">${formatAge(q.oldest_age_seconds)}</div><div class="stat-label">Oldest Age</div></div>
+    `;
+  }
+
+  function messageStatus(m) {
+    if (m.status === 'in_flight') return '<span class="status-in_flight">in-flight</span>';
+    if (m.status === 'delayed') return '<span class="status-delayed">delayed</span>';
+    return '<span class="status-visible">visible</span>';
+  }
+
+  function renderQueueMessages(queueName, messages) {
+    if (!messages || messages.length === 0) {
+      return '<div class="empty-msg">No messages.</div>';
+    }
+    let rows = messages.map(m => `
+      <tr class="clickable" onclick="window.__showMessage(${jsonAttr(queueName)}, ${m.id})">
+        <td class="mono">${h(m.id)}</td>
+        <td class="mono">${h(m.payload_preview)}</td>
+        <td>${messageStatus(m)}</td>
+        <td>${h(m.picked_by)}</td>
+        <td>${h(m.attempts)}</td>
+        <td>${formatTime(m.created_at)}</td>
+      </tr>`).join('');
+    return `<table>
+      <thead><tr>
+        <th>ID</th><th>Payload</th><th>Status</th>
+        <th>Picked By</th><th>Attempts</th><th>Created At</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+
+  function renderMessageDetail(m) {
+    return `<table>
+      <thead><tr><th>Field</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>ID</td><td class="mono">${h(m.id)}</td></tr>
+        <tr><td>Status</td><td>${messageStatus(m)}</td></tr>
+        <tr><td>Picked By</td><td>${h(m.picked_by)}</td></tr>
+        <tr><td>Attempts</td><td>${h(m.attempts)}</td></tr>
+        <tr><td>Created At</td><td>${formatTime(m.created_at)}</td></tr>
+        <tr><td>Visible At</td><td>${formatTime(m.visible_at)}</td></tr>
+      </tbody>
+    </table>
+    <div class="section-title" style="margin-top:20px; margin-bottom:10px;">Payload</div>
+    <div class="payload-box">${h(m.payload)}</div>`;
+  }
+
+  // ─── Refresh logic ───────────────────────────────────────────────────────
+  function showError(msg) {
+    const el = document.getElementById('errorBanner');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function clearError() {
+    document.getElementById('errorBanner').style.display = 'none';
+  }
+
+  async function refreshOverview() {
+    try {
+      const promises = [];
+      if (status.locks_enabled) promises.push(apiFetch('/api/locks'));
+      else promises.push(Promise.resolve(null));
+      if (status.queues_enabled) promises.push(apiFetch('/api/queues'));
+      else promises.push(Promise.resolve(null));
+
+      const [locks, queues] = await Promise.all(promises);
+      clearError();
+
+      const locksSection = document.getElementById('locks-section');
+      const queuesSection = document.getElementById('queues-section');
+
+      if (status.locks_enabled && locks !== null) {
+        locksSection.style.display = '';
+        document.getElementById('locks-body').innerHTML = renderLocksTable(locks);
+      }
+      if (status.queues_enabled && queues !== null) {
+        queuesSection.style.display = '';
+        document.getElementById('queues-body').innerHTML = renderQueuesTable(queues);
+      }
+    } catch (e) {
+      showError('Failed to load overview: ' + e.message);
+    }
+  }
+
+  async function refreshLockDetail(name) {
+    try {
+      const lock = await apiFetch('/api/locks/' + encodeURIComponent(name));
+      clearError();
+      document.getElementById('lock-detail-body').innerHTML = renderLockDetail(lock);
+    } catch (e) {
+      showError('Failed to load lock detail: ' + e.message);
+    }
+  }
+
+  async function refreshQueueDetail(name) {
+    try {
+      const q = await apiFetch('/api/queues/' + encodeURIComponent(name));
+      clearError();
+      document.getElementById('queue-stats-bar').innerHTML = renderQueueStats(q);
+      document.getElementById('queue-detail-body').innerHTML = renderQueueMessages(name, q.messages);
+    } catch (e) {
+      showError('Failed to load queue detail: ' + e.message);
+    }
+  }
+
+  async function refreshMessageDetail(queueName, id) {
+    try {
+      const m = await apiFetch('/api/queues/' + encodeURIComponent(queueName) + '/messages/' + id);
+      clearError();
+      document.getElementById('message-detail-body').innerHTML = renderMessageDetail(m);
+    } catch (e) {
+      showError('Failed to load message detail: ' + e.message);
+    }
+  }
+
+  async function refreshCurrentView() {
+    if (currentView.type === 'overview') {
+      await refreshOverview();
+    } else if (currentView.type === 'lock') {
+      await refreshLockDetail(currentView.name);
+    } else if (currentView.type === 'queue') {
+      await refreshQueueDetail(currentView.name);
+    } else if (currentView.type === 'message') {
+      await refreshMessageDetail(currentView.queueName, currentView.id);
+    }
+  }
+
+  // ─── SSE + Polling fallback ────────────────────────────────────────────────
+  let evtSource = null;
+  const FALLBACK_POLL_MS = 5000;
+
+  function connectSse() {
+    if (evtSource) return;
+    const indicator = document.getElementById('liveIndicator');
+    evtSource = new EventSource('/api/events');
+    evtSource.onmessage = function(e) {
+      if (e.data === 'connected') {
+        indicator.textContent = '\u25CF Live';
+        indicator.classList.remove('disconnected');
+        indicator.title = 'Server-Sent Events';
+        stopPolling();
+        return;
+      }
+      if (!paused) refreshCurrentView();
+    };
+    evtSource.onerror = function() {
+      indicator.textContent = '\u25CF Polling';
+      indicator.classList.add('disconnected');
+      indicator.title = 'SSE disconnected, polling as fallback';
+      evtSource.close();
+      evtSource = null;
+      startPolling();
+      setTimeout(connectSse, 5000);
+    };
+  }
+
+  function startPolling() {
+    if (intervalId) return;
+    intervalId = setInterval(function() { if (!paused) refreshCurrentView(); }, FALLBACK_POLL_MS);
+  }
+
+  function stopPolling() {
+    if (intervalId) {
+      clearInterval(intervalId);
+      intervalId = null;
+    }
+  }
+
+  // ─── Controls ─────────────────────────────────────────────────────────────
+  document.getElementById('pauseBtn').addEventListener('click', function() {
+    paused = !paused;
+    this.textContent = paused ? 'Resume' : 'Pause';
+    this.classList.toggle('paused', paused);
+  });
+
+  // ─── Init ─────────────────────────────────────────────────────────────────
+  async function init() {
+    try {
+      status = await apiFetch('/api/status');
+    } catch (e) {
+      showError('Failed to load status: ' + e.message);
+    }
+    showView('overview');
+    await refreshCurrentView();
+    connectSse();
+  }
+
+  init();
+</script>
+</body>
+</html>

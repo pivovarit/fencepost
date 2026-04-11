@@ -16,15 +16,15 @@ final class Jdbc {
     }
 
     @FunctionalInterface
-    interface ResultSetMapper<T> {
+    public interface ResultSetMapper<T> {
         T map(ResultSet rs) throws SQLException;
     }
 
-    static Query query(DataSource ds, String sql) {
+    public static Query query(DataSource ds, String sql) {
         return new Query(ds, null, sql);
     }
 
-    static Query query(Connection conn, String sql) {
+    public static Query query(Connection conn, String sql) {
         return new Query(null, conn, sql);
     }
 
