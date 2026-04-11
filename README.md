@@ -108,7 +108,7 @@ Fencepost includes a PostgreSQL-backed message queue with at-least-once delivery
 CREATE TABLE fencepost_queue (
     id            BIGSERIAL PRIMARY KEY,
     queue_name    TEXT NOT NULL,
-    payload       TEXT NOT NULL,
+    payload       BYTEA NOT NULL,
     type          TEXT,
     headers       JSONB,
     visible_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
@@ -128,12 +128,12 @@ Factory<Queue> fencepost = Fencepost.queue(dataSource)
 
 Queue queue = fencepost.forName("my-queue");
 
-queue.enqueue("hello");
-queue.enqueue("delayed hello", Duration.ofSeconds(10));
+queue.enqueue("hello".getBytes());
+queue.enqueue("delayed hello".getBytes(), Duration.ofSeconds(10));
 
 // enqueue with type and headers
-queue.enqueue("{\"to\":\"user@example.com\"}", "send-email.v1", Map.of("priority", "high"));
-queue.enqueue("{\"to\":\"user@example.com\"}", "send-email.v1", Map.of("priority", "high"), Duration.ofSeconds(10));
+queue.enqueue("{\"to\":\"user@example.com\"}".getBytes(), "send-email.v1", Map.of("priority", "high"));
+queue.enqueue("{\"to\":\"user@example.com\"}".getBytes(), "send-email.v1", Map.of("priority", "high"), Duration.ofSeconds(10));
 
 Message msg = queue.dequeue();           // blocking (LISTEN/NOTIFY)
 Message msg = queue.dequeue(Duration.ofSeconds(5)); // with timeout

@@ -14,6 +14,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Optional;
@@ -132,7 +133,7 @@ public class FencepostExample {
 
         for (int i = 1; i <= ROUNDS; i++) {
             String payload = "task-" + i + "-from-" + NODE;
-            queue.enqueue(payload);
+            queue.enqueue(payload.getBytes(StandardCharsets.UTF_8));
             log("[queue]    enqueued: " + payload);
         }
 
@@ -144,10 +145,11 @@ public class FencepostExample {
                     log("[queue]    no more messages");
                     break;
                 }
-                log("[queue]    dequeued: " + msg.payload() + " (attempt #" + msg.attempts() + ")");
+                String payloadStr = new String(msg.payload(), StandardCharsets.UTF_8);
+                log("[queue]    dequeued: " + payloadStr + " (attempt #" + msg.attempts() + ")");
                 sleep(500);
                 msg.ack();
-                log("[queue]    acked: " + msg.payload());
+                log("[queue]    acked: " + payloadStr);
             }
         }
 
@@ -218,7 +220,7 @@ public class FencepostExample {
                 "CREATE TABLE IF NOT EXISTS fencepost_queue ("
                 + "id          BIGSERIAL PRIMARY KEY,"
                 + "queue_name  TEXT NOT NULL,"
-                + "payload     TEXT NOT NULL,"
+                + "payload     BYTEA NOT NULL,"
                 + "type        TEXT,"
                 + "headers     JSONB,"
                 + "created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),"

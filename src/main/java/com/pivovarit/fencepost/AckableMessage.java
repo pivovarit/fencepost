@@ -12,7 +12,7 @@ final class AckableMessage implements Message {
     private enum State {ACTIVE, ACKED, NACKED, CLOSED}
 
     private final long id;
-    private final String payload;
+    private final byte[] payload;
     private final String type;
     private final Map<String, String> headers;
     private final int attempts;
@@ -21,7 +21,7 @@ final class AckableMessage implements Message {
 
     private State state = State.ACTIVE;
 
-    AckableMessage(long id, String payload, String type, Map<String, String> headers, int attempts, DataSource dataSource, String tableName) {
+    AckableMessage(long id, byte[] payload, String type, Map<String, String> headers, int attempts, DataSource dataSource, String tableName) {
         this.id = id;
         this.payload = payload;
         this.type = type;
@@ -37,7 +37,7 @@ final class AckableMessage implements Message {
     }
 
     @Override
-    public String payload() {
+    public byte[] payload() {
         return payload;
     }
 

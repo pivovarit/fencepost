@@ -6,7 +6,7 @@ public interface Message extends AutoCloseable {
 
     long id();
 
-    String payload();
+    byte[] payload();
 
     String type();
 

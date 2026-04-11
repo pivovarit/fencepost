@@ -34,22 +34,22 @@ final class FencepostQueue implements Queue {
     }
 
     @Override
-    public void enqueue(String payload) {
+    public void enqueue(byte[] payload) {
         enqueue(payload, null, null, Duration.ZERO);
     }
 
     @Override
-    public void enqueue(String payload, Duration delay) {
+    public void enqueue(byte[] payload, Duration delay) {
         enqueue(payload, null, null, delay);
     }
 
     @Override
-    public void enqueue(String payload, String type, Map<String, String> headers) {
+    public void enqueue(byte[] payload, String type, Map<String, String> headers) {
         enqueue(payload, type, headers, Duration.ZERO);
     }
 
     @Override
-    public void enqueue(String payload, String type, Map<String, String> headers, Duration delay) {
+    public void enqueue(byte[] payload, String type, Map<String, String> headers, Duration delay) {
         if (delay.isNegative()) {
             throw new IllegalArgumentException("delay must not be negative");
         }
@@ -86,12 +86,12 @@ final class FencepostQueue implements Queue {
               .bind(queueName)
               .map(rs -> {
                   if (!rs.next()) {
-                      return Optional.<Message>empty();
+                      return Optional.empty();
                   }
                   long id = rs.getLong(1);
                   logger.debug("dequeued message id={} from queue '{}'", id, queueName);
-                  return Optional.<Message>of(new AckableMessage(
-                    id, rs.getString(2), rs.getString(3), HeadersCodec.fromJson(rs.getString(4)), rs.getInt(5),
+                  return Optional.of(new AckableMessage(
+                    id, rs.getBytes(2), rs.getString(3), HeadersCodec.fromJson(rs.getString(4)), rs.getInt(5),
                     dataSource, tableName));
               });
         } catch (SQLException e) {
