@@ -11,6 +11,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import com.pivovarit.fencepost.Fencepost;
+import com.pivovarit.fencepost.Message;
+import com.pivovarit.fencepost.Queue;
+
 import javax.sql.DataSource;
 import java.io.IOException;
 import java.net.HttpURLConnection;
@@ -18,6 +22,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -292,21 +297,58 @@ class FencepostDashboardTest {
               "('inventory-sync', 3, NULL, NULL, NULL)," +
               "('report-generation', 12, 'worker-2/pool-1', now() - interval '10 minutes', now() - interval '5 minutes')"
             );
-            conn.createStatement().execute(
-              "INSERT INTO fencepost_queue (queue_name, payload, picked_by, attempts, visible_at) VALUES " +
-              "('emails', 'send welcome email to user-42', 'mailer-1', 1, now() + interval '30 seconds')," +
-              "('emails', 'send password reset to user-99', 'mailer-2', 3, now() + interval '1 minute')," +
-              "('emails', 'send invoice #1234', NULL, 0, now())," +
-              "('emails', 'send newsletter batch-7', NULL, 0, now())," +
-              "('notifications', 'push alert order-shipped-555', 'push-worker-1', 2, now() + interval '20 seconds')," +
-              "('notifications', 'push alert order-delivered-333', NULL, 0, now())"
-            );
+        }
+
+        var factory = Fencepost.queue(dataSource)
+          .visibilityTimeout(Duration.ofSeconds(30))
+          .build();
+
+        Thread producer = new Thread(() -> {
+            Queue q = factory.forName("emails");
+            int i = 0;
+            while (!Thread.currentThread().isInterrupted()) {
+                q.enqueue("email-task-" + (++i));
+                sleep(500);
+            }
+            q.close();
+        }, "producer");
+
+        Thread[] consumers = new Thread[3];
+        for (int c = 0; c < consumers.length; c++) {
+            int id = c + 1;
+            consumers[c] = new Thread(() -> {
+                Queue q = factory.forName("emails");
+                while (!Thread.currentThread().isInterrupted()) {
+                    try (Message msg = q.tryDequeue().orElse(null)) {
+                        if (msg != null) {
+                            sleep(3000);
+                            msg.ack();
+                        } else {
+                            sleep(500);
+                        }
+                    }
+                }
+                q.close();
+            }, "consumer-" + id);
+        }
+
+        producer.start();
+        for (Thread consumer : consumers) {
+            consumer.start();
         }
 
         dashboard = new FencepostDashboard(dataSource);
         dashboard.start(3388);
         System.out.println("Dashboard running at http://localhost:3388");
         Thread.currentThread().join();
+    }
+
+    private static void sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private String httpGet(String url) throws IOException {
