@@ -7,6 +7,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Optional;
 
 final class FencepostQueue implements Queue {
@@ -32,20 +33,32 @@ final class FencepostQueue implements Queue {
 
     @Override
     public void enqueue(String payload) {
-        enqueue(payload, Duration.ZERO);
+        enqueue(payload, null, null, Duration.ZERO);
     }
 
     @Override
     public void enqueue(String payload, Duration delay) {
+        enqueue(payload, null, null, delay);
+    }
+
+    @Override
+    public void enqueue(String payload, String type, Map<String, String> headers) {
+        enqueue(payload, type, headers, Duration.ZERO);
+    }
+
+    @Override
+    public void enqueue(String payload, String type, Map<String, String> headers, Duration delay) {
         if (delay.isNegative()) {
             throw new IllegalArgumentException("delay must not be negative");
         }
         try {
             Jdbc.update(dataSource, String.format(
-                "INSERT INTO %s (queue_name, payload, visible_at) VALUES (?, ?, now() + %s)",
+                "INSERT INTO %s (queue_name, payload, type, headers, visible_at) VALUES (?, ?, ?, ?::jsonb, now() + %s)",
                 tableName, Jdbc.intervalMillis()))
               .bind(queueName)
               .bind(payload)
+              .bind(type)
+              .bind(HeadersCodec.toJson(headers))
               .bind(delay.toMillis())
               .execute();
             logger.debug("enqueued message to queue '{}'", queueName);
@@ -61,7 +74,7 @@ final class FencepostQueue implements Queue {
         String sql = String.format(
             "UPDATE %s SET visible_at = now() + %s, picked_by = ?, attempts = attempts + 1 "
               + "WHERE id = (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now() "
-              + "ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, payload, attempts",
+              + "ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, payload, type, headers, attempts",
             tableName, Jdbc.intervalMillis(), tableName);
 
         try {
@@ -76,7 +89,7 @@ final class FencepostQueue implements Queue {
                   long id = rs.getLong(1);
                   logger.debug("dequeued message id={} from queue '{}'", id, queueName);
                   return Optional.<Message>of(new MessageInstance(
-                    id, rs.getString(2), rs.getInt(3),
+                    id, rs.getString(2), rs.getString(3), HeadersCodec.fromJson(rs.getString(4)), rs.getInt(5),
                     dataSource, tableName));
               });
         } catch (SQLException e) {

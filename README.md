@@ -109,6 +109,8 @@ CREATE TABLE fencepost_queue (
     id            BIGSERIAL PRIMARY KEY,
     queue_name    TEXT NOT NULL,
     payload       TEXT NOT NULL,
+    type          TEXT,
+    headers       JSONB,
     visible_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     picked_by     TEXT,
     attempts      INT NOT NULL DEFAULT 0

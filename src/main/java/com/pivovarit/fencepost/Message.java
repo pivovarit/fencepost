@@ -1,10 +1,16 @@
 package com.pivovarit.fencepost;
 
+import java.util.Map;
+
 public interface Message extends AutoCloseable {
 
     long id();
 
     String payload();
+
+    String type();
+
+    Map<String, String> headers();
 
     int attempts();
 

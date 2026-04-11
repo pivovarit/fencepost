@@ -2,6 +2,8 @@ package com.pivovarit.fencepost;
 
 import javax.sql.DataSource;
 import java.sql.SQLException;
+import java.util.Collections;
+import java.util.Map;
 
 final class MessageInstance implements Message {
 
@@ -9,15 +11,19 @@ final class MessageInstance implements Message {
 
     private final long id;
     private final String payload;
+    private final String type;
+    private final Map<String, String> headers;
     private final int attempts;
     private final DataSource dataSource;
     private final String tableName;
 
     private State state = State.ACTIVE;
 
-    MessageInstance(long id, String payload, int attempts, DataSource dataSource, String tableName) {
+    MessageInstance(long id, String payload, String type, Map<String, String> headers, int attempts, DataSource dataSource, String tableName) {
         this.id = id;
         this.payload = payload;
+        this.type = type;
+        this.headers = headers != null ? Collections.unmodifiableMap(headers) : Map.of();
         this.attempts = attempts;
         this.dataSource = dataSource;
         this.tableName = tableName;
@@ -31,6 +37,16 @@ final class MessageInstance implements Message {
     @Override
     public String payload() {
         return payload;
+    }
+
+    @Override
+    public String type() {
+        return type;
+    }
+
+    @Override
+    public Map<String, String> headers() {
+        return headers;
     }
 
     @Override
