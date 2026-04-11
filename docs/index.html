@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>fencepost - distributed concurrency toolkit for Java + PostgreSQL</title>
-  <meta name="description" content="Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies - advisory, session, and lease - all backed by PostgreSQL. Zero dependencies beyond java.sql." />
+  <meta name="description" content="Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies, a PostgreSQL-backed message queue, and zero dependencies beyond java.sql." />
 
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
@@ -17,14 +17,14 @@
   <meta property="og:url"         content="https://fencepost.pivovarit.com/" />
   <meta property="og:site_name"   content="fencepost" />
   <meta property="og:title"       content="fencepost - distributed concurrency toolkit for Java + PostgreSQL" />
-  <meta property="og:description" content="Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies - advisory, session, and lease - all backed by PostgreSQL. Zero dependencies beyond java.sql." />
+  <meta property="og:description" content="Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies, a PostgreSQL-backed message queue, and zero dependencies beyond java.sql." />
   <meta property="og:image"       content="https://fencepost.pivovarit.com/social.png" />
 
   <!-- Twitter Card -->
   <meta name="twitter:card"        content="summary_large_image" />
   <meta name="twitter:url"         content="https://fencepost.pivovarit.com/" />
   <meta name="twitter:title"       content="fencepost - distributed concurrency toolkit for Java + PostgreSQL" />
-  <meta name="twitter:description" content="Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies - advisory, session, and lease - all backed by PostgreSQL. Zero dependencies beyond java.sql." />
+  <meta name="twitter:description" content="Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies, a PostgreSQL-backed message queue, and zero dependencies beyond java.sql." />
   <meta name="twitter:image"       content="https://fencepost.pivovarit.com/social.png" />
 
   <!-- Schema.org structured data -->
@@ -34,7 +34,7 @@
     "@type": "SoftwareApplication",
     "name": "fencepost",
     "url": "https://fencepost.pivovarit.com/",
-    "description": "Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies - advisory, session, and lease - all backed by PostgreSQL. Zero dependencies beyond java.sql.",
+    "description": "Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies, a PostgreSQL-backed message queue, and zero dependencies beyond java.sql.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Any",
     "softwareVersion": "latest",
@@ -601,6 +601,7 @@
     <a href="#" class="nav-brand"><span class="f-accent">f</span>encepost</a>
     <ul class="nav-links">
       <li><a href="#lock-types">Lock Types</a></li>
+      <li><a href="#queue">Queue</a></li>
     </ul>
     <a href="https://github.com/pivovarit/fencepost" class="nav-github" target="_blank" rel="noopener">
       <svg class="icon-gh" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -625,7 +626,7 @@
     </h1>
     <p class="hero-subtitle">Distributed concurrency toolkit for Java + PostgreSQL.</p>
     <p class="hero-desc">
-      Three lock strategies - advisory, session, and lease - all backed by PostgreSQL. Zero dependencies beyond <code>java.sql</code>.
+      Three lock strategies, a PostgreSQL-backed message queue, and zero dependencies beyond <code>java.sql</code>.
     </p>
     <div class="hero-ctas">
       <a href="#lock-types" class="btn-primary">
@@ -680,6 +681,48 @@
           <span class="feature-badge badge-green">fencing tokens</span>
           <span class="feature-badge badge-violet">auto-expiry</span>
           <span class="feature-badge badge-violet">heartbeat</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Queue ──────────────────────────────────────────────────────────────── -->
+<section id="queue" style="border-top: 1px solid var(--border2);">
+  <div class="container">
+    <div class="section-head">
+      <p class="section-label">Message queue</p>
+      <h2 class="section-title">PostgreSQL-backed queue.</h2>
+      <p class="section-desc">At-least-once delivery with visibility timeouts, delayed messages, and LISTEN/NOTIFY-based blocking dequeue.</p>
+    </div>
+
+    <div class="features-grid" style="grid-template-columns: repeat(3, 1fr);">
+      <div class="feature-card reveal reveal-delay-1">
+        <div class="feature-icon">ack</div>
+        <h3 class="feature-title">at-least-once</h3>
+        <p class="feature-desc">Messages stay invisible during processing. Explicit <code>ack()</code> deletes the message; <code>nack()</code> makes it visible again immediately.</p>
+        <div class="feature-badges">
+          <span class="feature-badge badge-green">ack / nack</span>
+          <span class="feature-badge badge-violet">retry tracking</span>
+        </div>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-2">
+        <div class="feature-icon">blk</div>
+        <h3 class="feature-title">blocking dequeue</h3>
+        <p class="feature-desc">Uses PostgreSQL <code>LISTEN/NOTIFY</code> to wake consumers instantly when messages arrive. Falls back to polling.</p>
+        <div class="feature-badges">
+          <span class="feature-badge badge-green">LISTEN/NOTIFY</span>
+          <span class="feature-badge badge-yellow">poll fallback</span>
+        </div>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-3">
+        <div class="feature-icon">dly</div>
+        <h3 class="feature-title">delayed messages</h3>
+        <p class="feature-desc">Enqueue messages with a delay - they become visible only after the specified duration has elapsed.</p>
+        <div class="feature-badges">
+          <span class="feature-badge badge-violet">visibility timeout</span>
         </div>
       </div>
     </div>
