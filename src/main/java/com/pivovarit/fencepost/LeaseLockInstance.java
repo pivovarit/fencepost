@@ -203,7 +203,8 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         if (currentToken != null) {
             try {
                 unlock();
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                logger.trace("failed to unlock lease lock '{}' during close", lockName, e);
             }
         }
     }

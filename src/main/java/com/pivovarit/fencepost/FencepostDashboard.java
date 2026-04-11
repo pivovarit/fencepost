@@ -3,6 +3,9 @@ package com.pivovarit.fencepost;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.sql.DataSource;
 import java.io.IOException;
 import java.io.InputStream;
@@ -17,6 +20,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class FencepostDashboard {
 
+    private static final Logger logger = LoggerFactory.getLogger(FencepostDashboard.class);
     static final String DASHBOARD_CHANNEL = "fencepost_dashboard";
     private static final int DEFAULT_PORT = 3388;
     private static final String DEFAULT_LOCKS_TABLE = "fencepost_locks";
@@ -53,7 +57,7 @@ public final class FencepostDashboard {
     public void stop() {
         stopListener();
         for (OutputStream out : sseClients) {
-            try { out.close(); } catch (IOException ignored) {}
+            try { out.close(); } catch (IOException e) { logger.trace("failed to close SSE client output stream", e); }
         }
         sseClients.clear();
         if (server != null) {
@@ -204,7 +208,8 @@ public final class FencepostDashboard {
                 if (!listenerConnection.isClosed()) {
                     return;
                 }
-            } catch (SQLException ignored) {
+            } catch (SQLException e) {
+                logger.trace("failed to check listener connection state", e);
             }
         }
         listenerConnection = dataSource.getConnection();
@@ -214,7 +219,7 @@ public final class FencepostDashboard {
 
     private synchronized void closeListenerConnection() {
         if (listenerConnection != null) {
-            try { listenerConnection.close(); } catch (SQLException ignored) {}
+            try { listenerConnection.close(); } catch (SQLException e) { logger.trace("failed to close listener connection", e); }
             listenerConnection = null;
         }
     }

@@ -139,7 +139,8 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
         } catch (SQLException e) {
             try {
                 connection.rollback();
-            } catch (SQLException ignored) {
+            } catch (SQLException ex) {
+                logger.trace("failed to rollback after release failure for session lock '{}'", lockName, ex);
             }
             throw new FencepostException("Failed to release lock: " + lockName, e);
         } finally {
@@ -154,7 +155,8 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
         if (currentToken != null) {
             try {
                 unlock();
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                logger.trace("failed to unlock session lock '{}' during close", lockName, e);
             }
         }
     }
@@ -163,7 +165,8 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
         if (connection != null) {
             try {
                 connection.rollback();
-            } catch (SQLException ignored) {
+            } catch (SQLException e) {
+                logger.trace("failed to rollback session lock '{}' connection", lockName, e);
             }
             closeConnection();
             connection = null;
@@ -173,7 +176,8 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     private void closeConnection() {
         try {
             connection.close();
-        } catch (SQLException ignored) {
+        } catch (SQLException e) {
+            logger.trace("failed to close session lock '{}' connection", lockName, e);
         }
     }
 }
