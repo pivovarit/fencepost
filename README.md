@@ -109,6 +109,8 @@ CREATE TABLE fencepost_queue (
     id            BIGSERIAL PRIMARY KEY,
     queue_name    TEXT NOT NULL,
     payload       TEXT NOT NULL,
+    type          TEXT,
+    headers       JSONB,
     visible_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     picked_by     TEXT,
     attempts      INT NOT NULL DEFAULT 0
@@ -129,14 +131,23 @@ Queue queue = fencepost.forName("my-queue");
 queue.enqueue("hello");
 queue.enqueue("delayed hello", Duration.ofSeconds(10));
 
+// enqueue with type and headers
+queue.enqueue("{\"to\":\"user@example.com\"}", "send-email.v1", Map.of("priority", "high"));
+queue.enqueue("{\"to\":\"user@example.com\"}", "send-email.v1", Map.of("priority", "high"), Duration.ofSeconds(10));
+
 Message msg = queue.dequeue();           // blocking (LISTEN/NOTIFY)
 Message msg = queue.dequeue(Duration.ofSeconds(5)); // with timeout
 Optional<Message> msg = queue.tryDequeue();         // non-blocking
+
+msg.type();       // "send-email.v1"
+msg.headers();    // {"priority": "high"}
 
 // ack() deletes the message, nack() makes it visible again immediately
 msg.ack();
 msg.nack();
 ```
+
+Each message can optionally carry a `type` (a plain text label for routing or versioning) and `headers` (a `Map<String, String>` stored as JSONB). Both are nullable - plain `enqueue(payload)` and `enqueue(payload, delay)` still work as before.
 
 If processing fails without calling `ack()` or `nack()`, the message becomes visible again after the visibility timeout expires, with an incremented `attempts` counter.
 

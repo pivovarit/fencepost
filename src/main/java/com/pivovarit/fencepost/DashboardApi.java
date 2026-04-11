@@ -99,6 +99,9 @@ public final class DashboardApi {
             StringBuilder sb = new StringBuilder("{");
             sb.append("\"id\":").append(rs.getLong("id")).append(",");
             sb.append("\"payload\":").append(jsonString(rs.getString("payload"))).append(",");
+            sb.append("\"type\":").append(jsonString(rs.getString("type"))).append(",");
+            String headers = rs.getString("headers");
+            sb.append("\"headers\":").append(headers != null ? headers : "null").append(",");
             sb.append("\"picked_by\":").append(jsonString(rs.getString("picked_by"))).append(",");
             sb.append("\"attempts\":").append(rs.getInt("attempts")).append(",");
             Object visibleAt = rs.getObject("visible_at");
@@ -158,6 +161,7 @@ public final class DashboardApi {
         sb.append("{");
         sb.append("\"id\":").append(rs.getLong("id")).append(",");
         sb.append("\"payload_preview\":").append(jsonString(rs.getString("payload_preview"))).append(",");
+        sb.append("\"type\":").append(jsonString(rs.getString("type"))).append(",");
         sb.append("\"picked_by\":").append(jsonString(rs.getString("picked_by"))).append(",");
         sb.append("\"attempts\":").append(rs.getInt("attempts")).append(",");
         Object visibleAt = rs.getObject("visible_at");
@@ -216,7 +220,7 @@ public final class DashboardApi {
         }
 
         static String messagesByQueue(String table) {
-            return "SELECT id, LEFT(payload, 200) AS payload_preview, picked_by, attempts, visible_at, created_at, " +
+            return "SELECT id, LEFT(payload, 200) AS payload_preview, type, picked_by, attempts, visible_at, created_at, " +
               "  CASE WHEN picked_by IS NOT NULL THEN 'in_flight' " +
               "       WHEN visible_at > now() THEN 'delayed' " +
               "       ELSE 'visible' END AS status " +
@@ -224,7 +228,7 @@ public final class DashboardApi {
         }
 
         static String messageById(String table) {
-            return "SELECT id, payload, picked_by, attempts, visible_at, created_at, " +
+            return "SELECT id, payload, type, headers, picked_by, attempts, visible_at, created_at, " +
               "  CASE WHEN picked_by IS NOT NULL THEN 'in_flight' " +
               "       WHEN visible_at > now() THEN 'delayed' " +
               "       ELSE 'visible' END AS status " +
