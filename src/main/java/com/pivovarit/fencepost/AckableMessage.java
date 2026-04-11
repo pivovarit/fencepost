@@ -5,9 +5,9 @@ import java.sql.SQLException;
 import java.util.Collections;
 import java.util.Map;
 
-final class MessageInstance implements Message {
+final class AckableMessage implements Message {
 
-    private enum State { ACTIVE, ACKED, NACKED, CLOSED }
+    private enum State {ACTIVE, ACKED, NACKED, CLOSED}
 
     private final long id;
     private final String payload;
@@ -19,7 +19,7 @@ final class MessageInstance implements Message {
 
     private State state = State.ACTIVE;
 
-    MessageInstance(long id, String payload, String type, Map<String, String> headers, int attempts, DataSource dataSource, String tableName) {
+    AckableMessage(long id, String payload, String type, Map<String, String> headers, int attempts, DataSource dataSource, String tableName) {
         this.id = id;
         this.payload = payload;
         this.type = type;

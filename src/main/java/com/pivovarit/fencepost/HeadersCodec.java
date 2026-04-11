@@ -14,7 +14,7 @@ final class HeadersCodec {
         }
         StringBuilder sb = new StringBuilder("{");
         boolean first = true;
-        for (Map.Entry<String, String> entry : headers.entrySet()) {
+        for (Map.Entry<String, String> entry : headrs.entrySet()) {
             if (!first) {
                 sb.append(",");
             }
