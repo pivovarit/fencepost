@@ -1,12 +1,17 @@
 package com.pivovarit.fencepost;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Optional;
 
-final class QueueInstance implements Queue {
+final class FencepostQueue implements Queue {
+
+    private static final Logger logger = LoggerFactory.getLogger(FencepostQueue.class);
 
     private final String queueName;
     private final DataSource dataSource;
@@ -16,8 +21,8 @@ final class QueueInstance implements Queue {
 
     private volatile Connection listenerConnection;
 
-    QueueInstance(String queueName, DataSource dataSource, String tableName,
-                  Duration visibilityTimeout, long pollIntervalMs) {
+    FencepostQueue(String queueName, DataSource dataSource, String tableName,
+                   Duration visibilityTimeout, long pollIntervalMs) {
         this.queueName = queueName;
         this.dataSource = dataSource;
         this.tableName = tableName;
@@ -43,6 +48,7 @@ final class QueueInstance implements Queue {
               .bind(payload)
               .bind(delay.toMillis())
               .execute();
+            logger.debug("enqueued message to queue '{}'", queueName);
             notify_();
         } catch (SQLException e) {
             throw new FencepostException("Failed to enqueue message to queue: " + queueName, e);
@@ -67,8 +73,10 @@ final class QueueInstance implements Queue {
                   if (!rs.next()) {
                       return Optional.<Message>empty();
                   }
+                  long id = rs.getLong(1);
+                  logger.debug("dequeued message id={} from queue '{}'", id, queueName);
                   return Optional.<Message>of(new MessageInstance(
-                    rs.getLong(1), rs.getString(2), rs.getInt(3),
+                    id, rs.getString(2), rs.getInt(3),
                     dataSource, tableName));
               });
         } catch (SQLException e) {

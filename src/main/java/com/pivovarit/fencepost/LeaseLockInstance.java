@@ -1,5 +1,8 @@
 package com.pivovarit.fencepost;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.sql.DataSource;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -8,6 +11,7 @@ import java.util.function.Consumer;
 
 final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
+    private static final Logger logger = LoggerFactory.getLogger(LeaseLockInstance.class);
     private static final long DEFAULT_POLL_INTERVAL_MS = 100;
     private static final int AUTO_RENEW_MAX_RETRIES = 3;
 
@@ -66,9 +70,12 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         Optional<FencingToken> result = tryAcquireTimestamp();
         if (result.isPresent()) {
             currentToken = result.get();
+            logger.debug("acquired lease lock '{}' via tryLock, token={}, lease={}", lockName, currentToken.value(), leaseDuration);
             if (hasAutoRenew()) {
                 startAutoRenew();
             }
+        } else {
+            logger.debug("tryLock failed for lease lock '{}' - already held", lockName);
         }
         return result;
     }
@@ -84,6 +91,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             Optional<FencingToken> result = tryAcquireTimestamp();
             if (result.isPresent()) {
                 currentToken = result.get();
+                logger.debug("acquired lease lock '{}', token={}, lease={}", lockName, currentToken.value(), leaseDuration);
                 if (hasAutoRenew()) {
                     startAutoRenew();
                 }
@@ -91,6 +99,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             }
 
             if (timeout != null && System.nanoTime() >= deadlineNanos) {
+                logger.debug("timed out acquiring lease lock '{}' after {}", lockName, timeout);
                 throw new LockAcquisitionTimeoutException(lockName);
             }
 
@@ -142,6 +151,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                 currentToken = null;
                 throw new LockNotHeldException(lockName);
             }
+            logger.debug("renewed lease lock '{}', token={}, duration={}", lockName, currentToken.value(), duration);
             if (autoRenewThread != null) {
                 autoRenewWindowMillis = duration.toMillis();
             }
@@ -157,6 +167,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         if (currentToken == null) {
             throw new LockNotHeldException(lockName);
         }
+        long token = currentToken.value();
         stopAutoRenew();
         try {
             int updated;
@@ -175,6 +186,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             if (updated == 0) {
                 throw new LockNotHeldException(lockName);
             }
+            logger.debug("released lease lock '{}', token={}", lockName, token);
         } catch (SQLException e) {
             throw new FencepostException("Failed to release lock: " + lockName, e);
         } finally {
@@ -199,16 +211,19 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     private void startAutoRenew() {
         long token = currentToken.value();
         autoRenewWindowMillis = leaseDuration.toMillis();
+        logger.debug("starting auto-renew for lease lock '{}', token={}, interval={}", lockName, token, refreshInterval);
         autoRenewThread = new Thread(() -> {
             long intervalMillis = refreshInterval.toMillis();
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     Thread.sleep(intervalMillis);
                     refreshWithRetry(autoRenewWindowMillis, token);
+                    logger.trace("auto-renewed lease lock '{}', token={}", lockName, token);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
                 } catch (SQLException e) {
+                    logger.warn("auto-renew failed for lease lock '{}', token={}", lockName, token, e);
                     FencepostException ex = new FencepostException("Auto-renew failed for lock: " + lockName, e);
                     if (onAutoRenewFailure != null) {
                         onAutoRenewFailure.accept(ex);

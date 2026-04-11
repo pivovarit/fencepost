@@ -1,5 +1,8 @@
 package com.pivovarit.fencepost;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -8,6 +11,8 @@ import java.time.Duration;
 import java.util.Optional;
 
 final class SessionLockInstance extends TableBasedLock implements FencedLock {
+
+    private static final Logger logger = LoggerFactory.getLogger(SessionLockInstance.class);
 
     private volatile Connection connection;
 
@@ -45,9 +50,11 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
                     .map(ResultSet::next);
 
             currentToken = incrementToken(connection, null);
+            logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
             return currentToken;
         } catch (Exception e) {
             rollbackAndClose();
+            logger.debug("failed to acquire session lock '{}'", lockName, e);
             throw (e instanceof FencepostException) ? (FencepostException) e
                 : new FencepostException("Failed to acquire lock: " + lockName, e);
         }
@@ -69,12 +76,15 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
             Jdbc.resetStatementTimeout(connection);
 
             currentToken = incrementToken(connection, null);
+            logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
             return currentToken;
         } catch (Exception e) {
             rollbackAndClose();
             if (e instanceof SQLException && isStatementTimeout((SQLException) e)) {
+                logger.debug("timed out acquiring session lock '{}' after {}", lockName, timeout);
                 throw new LockAcquisitionTimeoutException(lockName);
             }
+            logger.debug("failed to acquire session lock '{}'", lockName, e);
             throw (e instanceof FencepostException) ? (FencepostException) e
                 : new FencepostException("Failed to acquire lock: " + lockName, e);
         }
@@ -93,13 +103,16 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
             if (!locked) {
                 rollbackAndClose();
+                logger.debug("tryLock failed for session lock '{}' - already held", lockName);
                 return Optional.empty();
             }
 
             currentToken = incrementToken(connection, null);
+            logger.debug("acquired session lock '{}' via tryLock, token={}", lockName, currentToken.value());
             return Optional.of(currentToken);
         } catch (Exception e) {
             rollbackAndClose();
+            logger.debug("failed to tryLock session lock '{}'", lockName, e);
             throw (e instanceof FencepostException) ? (FencepostException) e
                 : new FencepostException("Failed to try-lock: " + lockName, e);
         }
@@ -115,8 +128,10 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
         if (currentToken == null) {
             throw new LockNotHeldException(lockName);
         }
+        long token = currentToken.value();
         try {
             connection.commit();
+            logger.debug("released session lock '{}', token={}", lockName, token);
         } catch (SQLException e) {
             try {
                 connection.rollback();
