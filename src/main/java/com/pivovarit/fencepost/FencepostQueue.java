@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
+import java.lang.reflect.InvocationTargetException;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -143,7 +144,7 @@ final class FencepostQueue implements Queue {
         try (Connection conn = dataSource.getConnection()) {
             Jdbc.execute(conn, "NOTIFY " + channelName());
         } catch (SQLException e) {
-            // notification is best-effort; polling is the fallback
+            logger.trace("failed to send NOTIFY on queue '{}', polling is the fallback", queueName, e);
         }
     }
 
@@ -153,7 +154,8 @@ final class FencepostQueue implements Queue {
                 if (!listenerConnection.isClosed()) {
                     return;
                 }
-            } catch (SQLException ignored) {
+            } catch (SQLException e) {
+                logger.trace("failed to check listener connection state", e);
             }
         }
         try {
@@ -172,7 +174,7 @@ final class FencepostQueue implements Queue {
             var method = pgConn.getClass().getMethod("getNotifications", int.class);
             method.invoke(pgConn, (int) pollIntervalMs);
         } catch (Exception e) {
-            if (e instanceof java.lang.reflect.InvocationTargetException) {
+            if (e instanceof InvocationTargetException) {
                 Throwable cause = e.getCause();
                 if (cause instanceof InterruptedException) {
                     Thread.currentThread().interrupt();
@@ -193,7 +195,8 @@ final class FencepostQueue implements Queue {
         if (listenerConnection != null) {
             try {
                 listenerConnection.close();
-            } catch (SQLException ignored) {
+            } catch (SQLException e) {
+                logger.trace("failed to close listener connection", e);
             }
             listenerConnection = null;
         }

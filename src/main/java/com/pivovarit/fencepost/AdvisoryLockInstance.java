@@ -71,7 +71,8 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             } finally {
                 try {
                     Jdbc.resetLockTimeout(connection);
-                } catch (SQLException ignored) {
+                } catch (SQLException e) {
+                    logger.trace("failed to reset lock timeout for advisory lock '{}'", lockName, e);
                 }
             }
             held = true;
@@ -143,7 +144,8 @@ final class AdvisoryLockInstance implements AdvisoryLock {
         if (held) {
             try {
                 unlock();
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                logger.trace("failed to unlock advisory lock '{}' during close", lockName, e);
             }
         }
     }
@@ -159,7 +161,8 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             if (connection != null) {
                 connection.close();
             }
-        } catch (SQLException ignored) {
+        } catch (SQLException e) {
+            logger.trace("failed to close advisory lock '{}' connection", lockName, e);
         }
     }
 }
