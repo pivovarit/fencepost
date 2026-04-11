@@ -539,13 +539,16 @@
 
   async function refreshMessageDetail(queueName, id) {
     try {
-      const m = await apiFetch('/api/queues/' + encodeURIComponent(queueName) + '/messages/' + id);
-      clearError();
-      if (m === null) {
+      const r = await fetch('/api/queues/' + encodeURIComponent(queueName) + '/messages/' + id);
+      if (r.status === 404) {
+        clearError();
         document.getElementById('message-detail-body').innerHTML =
           '<div class="info-msg">This message has been acknowledged and is no longer in the queue.</div>';
         return;
       }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const m = await r.json();
+      clearError();
       document.getElementById('message-detail-body').innerHTML = renderMessageDetail(m);
     } catch (e) {
       showError('Failed to load message detail: ' + e.message);
