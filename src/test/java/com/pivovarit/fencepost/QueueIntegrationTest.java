@@ -21,6 +21,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -49,7 +50,7 @@ class QueueIntegrationTest {
                 + "CREATE TABLE fencepost_queue ("
                 + "  id BIGSERIAL PRIMARY KEY,"
                 + "  queue_name TEXT NOT NULL,"
-                + "  payload TEXT NOT NULL,"
+                + "  payload BYTEA NOT NULL,"
                 + "  type TEXT,"
                 + "  headers JSONB,"
                 + "  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),"
@@ -65,12 +66,12 @@ class QueueIntegrationTest {
     @Test
     void shouldEnqueueAndTryDequeue() {
         Queue queue = newQueue();
-        queue.enqueue("hello");
+        queue.enqueue("hello".getBytes(UTF_8));
 
         Optional<Message> msg = queue.tryDequeue();
 
         assertThat(msg).isPresent();
-        assertThat(msg.get().payload()).isEqualTo("hello");
+        assertThat(msg.get().payload()).isEqualTo("hello".getBytes(UTF_8));
         assertThat(msg.get().attempts()).isEqualTo(1);
         msg.get().ack();
     }
@@ -87,20 +88,20 @@ class QueueIntegrationTest {
     @Test
     void shouldDequeueInFIFOOrder() {
         Queue queue = newQueue();
-        queue.enqueue("first");
-        queue.enqueue("second");
-        queue.enqueue("third");
+        queue.enqueue("first".getBytes(UTF_8));
+        queue.enqueue("second".getBytes(UTF_8));
+        queue.enqueue("third".getBytes(UTF_8));
 
-        assertThat(queue.tryDequeue().get().payload()).isEqualTo("first");
-        assertThat(queue.tryDequeue().get().payload()).isEqualTo("second");
-        assertThat(queue.tryDequeue().get().payload()).isEqualTo("third");
+        assertThat(queue.tryDequeue().get().payload()).isEqualTo("first".getBytes(UTF_8));
+        assertThat(queue.tryDequeue().get().payload()).isEqualTo("second".getBytes(UTF_8));
+        assertThat(queue.tryDequeue().get().payload()).isEqualTo("third".getBytes(UTF_8));
         assertThat(queue.tryDequeue()).isEmpty();
     }
 
     @Test
     void shouldRespectDelayedEnqueue() throws Exception {
         Queue queue = newQueue();
-        queue.enqueue("delayed", Duration.ofSeconds(2));
+        queue.enqueue("delayed".getBytes(UTF_8), Duration.ofSeconds(2));
 
         assertThat(queue.tryDequeue()).isEmpty();
 
@@ -108,7 +109,7 @@ class QueueIntegrationTest {
 
         Optional<Message> msg = queue.tryDequeue();
         assertThat(msg).isPresent();
-        assertThat(msg.get().payload()).isEqualTo("delayed");
+        assertThat(msg.get().payload()).isEqualTo("delayed".getBytes(UTF_8));
         msg.get().ack();
     }
 
@@ -117,11 +118,11 @@ class QueueIntegrationTest {
         Queue emails = newQueue("emails");
         Queue webhooks = newQueue("webhooks");
 
-        emails.enqueue("email-1");
-        webhooks.enqueue("webhook-1");
+        emails.enqueue("email-1".getBytes(UTF_8));
+        webhooks.enqueue("webhook-1".getBytes(UTF_8));
 
-        assertThat(emails.tryDequeue().get().payload()).isEqualTo("email-1");
-        assertThat(webhooks.tryDequeue().get().payload()).isEqualTo("webhook-1");
+        assertThat(emails.tryDequeue().get().payload()).isEqualTo("email-1".getBytes(UTF_8));
+        assertThat(webhooks.tryDequeue().get().payload()).isEqualTo("webhook-1".getBytes(UTF_8));
         assertThat(emails.tryDequeue()).isEmpty();
         assertThat(webhooks.tryDequeue()).isEmpty();
     }
@@ -129,7 +130,7 @@ class QueueIntegrationTest {
     @Test
     void ackShouldDeleteMessage() {
         Queue queue = newQueue();
-        queue.enqueue("to-ack");
+        queue.enqueue("to-ack".getBytes(UTF_8));
 
         Message msg = queue.tryDequeue().get();
         msg.ack();
@@ -140,14 +141,14 @@ class QueueIntegrationTest {
     @Test
     void nackShouldMakeMessageImmediatelyAvailable() {
         Queue queue = newQueue();
-        queue.enqueue("to-nack");
+        queue.enqueue("to-nack".getBytes(UTF_8));
 
         Message msg = queue.tryDequeue().get();
         msg.nack();
 
         Optional<Message> redelivered = queue.tryDequeue();
         assertThat(redelivered).isPresent();
-        assertThat(redelivered.get().payload()).isEqualTo("to-nack");
+        assertThat(redelivered.get().payload()).isEqualTo("to-nack".getBytes(UTF_8));
         assertThat(redelivered.get().attempts()).isEqualTo(2);
         redelivered.get().ack();
     }
@@ -155,7 +156,7 @@ class QueueIntegrationTest {
     @Test
     void closeWithoutAckShouldLetVisibilityTimeoutExpire() {
         Queue shortTimeout = Fencepost.queue(dataSource).visibilityTimeout(Duration.ofSeconds(1)).build().forName("test-queue");
-        shortTimeout.enqueue("to-expire");
+        shortTimeout.enqueue("to-expire".getBytes(UTF_8));
 
         Message msg = shortTimeout.tryDequeue().get();
         msg.close();
@@ -166,7 +167,7 @@ class QueueIntegrationTest {
     @Test
     void ackAfterAckShouldThrow() {
         Queue queue = newQueue();
-        queue.enqueue("double-ack");
+        queue.enqueue("double-ack".getBytes(UTF_8));
 
         Message msg = queue.tryDequeue().get();
         msg.ack();
@@ -178,7 +179,7 @@ class QueueIntegrationTest {
     @Test
     void nackAfterAckShouldThrow() {
         Queue queue = newQueue();
-        queue.enqueue("ack-then-nack");
+        queue.enqueue("ack-then-nack".getBytes(UTF_8));
 
         Message msg = queue.tryDequeue().get();
         msg.ack();
@@ -190,7 +191,7 @@ class QueueIntegrationTest {
     @Test
     void ackAfterNackShouldThrow() {
         Queue queue = newQueue();
-        queue.enqueue("nack-then-ack");
+        queue.enqueue("nack-then-ack".getBytes(UTF_8));
 
         Message msg = queue.tryDequeue().get();
         msg.nack();
@@ -215,10 +216,10 @@ class QueueIntegrationTest {
         Thread.sleep(200);
         assertThat(received.getCount()).isEqualTo(1);
 
-        queue.enqueue("wake-up");
+        queue.enqueue("wake-up".getBytes(UTF_8));
 
         assertThat(received.await(5, TimeUnit.SECONDS)).isTrue();
-        assertThat(ref.get().payload()).isEqualTo("wake-up");
+        assertThat(ref.get().payload()).isEqualTo("wake-up".getBytes(UTF_8));
         ref.get().ack();
         queue.close();
     }
@@ -236,10 +237,10 @@ class QueueIntegrationTest {
     @Test
     void dequeueWithTimeoutShouldReturnBeforeTimeout() {
         Queue queue = newQueue();
-        queue.enqueue("already-here");
+        queue.enqueue("already-here".getBytes(UTF_8));
 
         Message msg = queue.dequeue(Duration.ofSeconds(5));
-        assertThat(msg.payload()).isEqualTo("already-here");
+        assertThat(msg.payload()).isEqualTo("already-here".getBytes(UTF_8));
         msg.ack();
         queue.close();
     }
@@ -249,7 +250,7 @@ class QueueIntegrationTest {
         Queue queue = newQueue();
         int messageCount = 50;
         for (int i = 0; i < messageCount; i++) {
-            queue.enqueue("msg-" + i);
+            queue.enqueue(("msg-" + i).getBytes(UTF_8));
         }
 
         List<String> consumed = new CopyOnWriteArrayList<>();
@@ -261,7 +262,7 @@ class QueueIntegrationTest {
                 if (msg.isEmpty()) {
                     break;
                 }
-                consumed.add(msg.get().payload());
+                consumed.add(new String(msg.get().payload(), UTF_8));
                 msg.get().ack();
                 done.countDown();
             }
@@ -286,11 +287,11 @@ class QueueIntegrationTest {
           .build();
 
         Queue queue = factory.forName("builder-test");
-        queue.enqueue("via-builder");
+        queue.enqueue("via-builder".getBytes(UTF_8));
 
         Optional<Message> msg = queue.tryDequeue();
         assertThat(msg).isPresent();
-        assertThat(msg.get().payload()).isEqualTo("via-builder");
+        assertThat(msg.get().payload()).isEqualTo("via-builder".getBytes(UTF_8));
         msg.get().ack();
     }
 
@@ -322,7 +323,7 @@ class QueueIntegrationTest {
           .build()
           .forName("timeout-redelivery");
 
-        shortTimeout.enqueue("will-expire");
+        shortTimeout.enqueue("will-expire".getBytes(UTF_8));
 
         Message msg = shortTimeout.tryDequeue().get();
         msg.close();
@@ -333,7 +334,7 @@ class QueueIntegrationTest {
 
         Optional<Message> redelivered = shortTimeout.tryDequeue();
         assertThat(redelivered).isPresent();
-        assertThat(redelivered.get().payload()).isEqualTo("will-expire");
+        assertThat(redelivered.get().payload()).isEqualTo("will-expire".getBytes(UTF_8));
         assertThat(redelivered.get().attempts()).isEqualTo(2);
         redelivered.get().ack();
     }

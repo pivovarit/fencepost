@@ -64,7 +64,7 @@ class DashboardApiTest {
               "CREATE TABLE fencepost_queue (" +
               "  id BIGSERIAL PRIMARY KEY," +
               "  queue_name TEXT NOT NULL," +
-              "  payload TEXT NOT NULL," +
+              "  payload BYTEA NOT NULL," +
               "  type TEXT," +
               "  headers JSONB," +
               "  created_at TIMESTAMPTZ NOT NULL DEFAULT now()," +
@@ -181,9 +181,9 @@ class DashboardApiTest {
             // 2 visible messages, 1 in-flight
             conn.createStatement().execute(
               "INSERT INTO fencepost_queue (queue_name, payload, visible_at, picked_by) VALUES " +
-              "('my-queue', 'msg1', now() - interval '1 second', NULL)," +
-              "('my-queue', 'msg2', now() - interval '2 seconds', NULL)," +
-              "('my-queue', 'msg3', now() - interval '3 seconds', 'worker-1')"
+              "('my-queue', 'msg1'::bytea, now() - interval '1 second', NULL)," +
+              "('my-queue', 'msg2'::bytea, now() - interval '2 seconds', NULL)," +
+              "('my-queue', 'msg3'::bytea, now() - interval '3 seconds', 'worker-1')"
             );
         }
 
@@ -201,7 +201,7 @@ class DashboardApiTest {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
               "INSERT INTO fencepost_queue (queue_name, payload, picked_by, attempts) VALUES " +
-              "('detail-queue', 'hello world', 'worker-99', 2)"
+              "('detail-queue', 'hello world'::bytea, 'worker-99', 2)"
             );
         }
 
@@ -209,7 +209,7 @@ class DashboardApiTest {
 
         assertThat(json).contains("\"name\":\"detail-queue\"");
         assertThat(json).contains("\"in_flight\":1");
-        assertThat(json).contains("\"payload_preview\":\"hello world\"");
+        assertThat(json).contains("\"payload_preview\":\"aGVsbG8gd29ybGQ=\"");
         assertThat(json).contains("\"picked_by\":\"worker-99\"");
         assertThat(json).contains("\"attempts\":2");
     }

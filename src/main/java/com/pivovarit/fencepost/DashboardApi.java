@@ -98,7 +98,7 @@ public final class DashboardApi {
             }
             StringBuilder sb = new StringBuilder("{");
             sb.append("\"id\":").append(rs.getLong("id")).append(",");
-            sb.append("\"payload\":").append(jsonString(rs.getString("payload"))).append(",");
+            sb.append("\"payload\":").append(jsonString(rs.getString("payload_b64"))).append(",");
             sb.append("\"type\":").append(jsonString(rs.getString("type"))).append(",");
             String headers = rs.getString("headers");
             sb.append("\"headers\":").append(headers != null ? headers : "null").append(",");
@@ -220,7 +220,7 @@ public final class DashboardApi {
         }
 
         static String messagesByQueue(String table) {
-            return "SELECT id, LEFT(payload, 200) AS payload_preview, type, picked_by, attempts, visible_at, created_at, " +
+            return "SELECT id, encode(substring(payload from 1 for 200), 'base64') AS payload_preview, type, picked_by, attempts, visible_at, created_at, " +
               "  CASE WHEN picked_by IS NOT NULL THEN 'in_flight' " +
               "       WHEN visible_at > now() THEN 'delayed' " +
               "       ELSE 'visible' END AS status " +
@@ -228,7 +228,7 @@ public final class DashboardApi {
         }
 
         static String messageById(String table) {
-            return "SELECT id, payload, type, headers, picked_by, attempts, visible_at, created_at, " +
+            return "SELECT id, encode(payload, 'base64') AS payload_b64, type, headers, picked_by, attempts, visible_at, created_at, " +
               "  CASE WHEN picked_by IS NOT NULL THEN 'in_flight' " +
               "       WHEN visible_at > now() THEN 'delayed' " +
               "       ELSE 'visible' END AS status " +

@@ -61,7 +61,7 @@ class FencepostDashboardTest {
               "CREATE TABLE fencepost_queue (" +
               "  id BIGSERIAL PRIMARY KEY," +
               "  queue_name TEXT NOT NULL," +
-              "  payload TEXT NOT NULL," +
+              "  payload BYTEA NOT NULL," +
               "  type TEXT," +
               "  headers JSONB," +
               "  created_at TIMESTAMPTZ NOT NULL DEFAULT now()," +
@@ -132,7 +132,7 @@ class FencepostDashboardTest {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
               "INSERT INTO fencepost_queue (queue_name, payload, visible_at) " +
-              "VALUES ('my-queue', 'hello', now() - interval '1 second')"
+              "VALUES ('my-queue', 'hello'::bytea, now() - interval '1 second')"
             );
         }
 
@@ -150,7 +150,7 @@ class FencepostDashboardTest {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
               "INSERT INTO fencepost_queue (queue_name, payload, picked_by, attempts) " +
-              "VALUES ('tasks', 'do something', 'worker-42', 3)"
+              "VALUES ('tasks', 'do something'::bytea, 'worker-42', 3)"
             );
         }
 
@@ -170,7 +170,7 @@ class FencepostDashboardTest {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
               "INSERT INTO fencepost_queue (id, queue_name, payload, picked_by, attempts) " +
-              "VALUES (1, 'tasks', 'full payload content here', 'worker-42', 3)"
+              "VALUES (1, 'tasks', 'full payload content here'::bytea, 'worker-42', 3)"
             );
         }
 
@@ -180,7 +180,7 @@ class FencepostDashboardTest {
         String response = httpGet("http://localhost:" + dashboard.getPort() + "/api/queues/tasks/messages/1");
 
         assertThat(response).contains("\"id\":1");
-        assertThat(response).contains("\"payload\":\"full payload content here\"");
+        assertThat(response).contains("\"payload\":\"ZnVsbCBwYXlsb2FkIGNvbnRlbnQgaGVyZQ==\"");
         assertThat(response).contains("\"picked_by\":\"worker-42\"");
         assertThat(response).contains("\"attempts\":3");
         assertThat(response).contains("\"status\":\"in_flight\"");
@@ -310,7 +310,7 @@ class FencepostDashboardTest {
             Queue q = factory.forName("emails");
             int i = 0;
             while (!Thread.currentThread().isInterrupted()) {
-                q.enqueue("email-task-" + (++i), "send-email-command.v1", Map.of("priority", "high"));
+                q.enqueue(("email-task-" + (++i)).getBytes(java.nio.charset.StandardCharsets.UTF_8), "send-email-command.v1", Map.of("priority", "high"));
                 sleep(500);
             }
             q.close();

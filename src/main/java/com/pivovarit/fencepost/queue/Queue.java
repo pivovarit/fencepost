@@ -6,13 +6,13 @@ import java.util.Optional;
 
 public interface Queue extends AutoCloseable {
 
-    void enqueue(String payload);
+    void enqueue(byte[] payload);
 
-    void enqueue(String payload, Duration delay);
+    void enqueue(byte[] payload, Duration delay);
 
-    void enqueue(String payload, String type, Map<String, String> headers);
+    void enqueue(byte[] payload, String type, Map<String, String> headers);
 
-    void enqueue(String payload, String type, Map<String, String> headers, Duration delay);
+    void enqueue(byte[] payload, String type, Map<String, String> headers, Duration delay);
 
     Message dequeue();
 
