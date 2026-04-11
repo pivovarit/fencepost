@@ -1,5 +1,8 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.lock.AdvisoryLock;
+import com.pivovarit.fencepost.lock.LockAcquisitionTimeoutException;
+import com.pivovarit.fencepost.lock.LockNotHeldException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

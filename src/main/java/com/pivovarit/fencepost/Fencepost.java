@@ -1,5 +1,10 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.lock.AdvisoryLock;
+import com.pivovarit.fencepost.lock.FencedLock;
+import com.pivovarit.fencepost.lock.RenewableLock;
+import com.pivovarit.fencepost.queue.Queue;
+
 import javax.sql.DataSource;
 import java.time.Duration;
 import java.util.Objects;

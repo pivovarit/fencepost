@@ -12,8 +12,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.pivovarit.fencepost.Fencepost;
-import com.pivovarit.fencepost.Message;
-import com.pivovarit.fencepost.Queue;
+import com.pivovarit.fencepost.queue.Message;
+import com.pivovarit.fencepost.queue.Queue;
 
 import javax.sql.DataSource;
 import java.io.IOException;

@@ -1,13 +1,13 @@
 package com.pivovarit.fencepost.example;
 
-import com.pivovarit.fencepost.AdvisoryLock;
+import com.pivovarit.fencepost.lock.AdvisoryLock;
 import com.pivovarit.fencepost.Factory;
-import com.pivovarit.fencepost.FencedLock;
+import com.pivovarit.fencepost.lock.FencedLock;
 import com.pivovarit.fencepost.Fencepost;
-import com.pivovarit.fencepost.FencingToken;
-import com.pivovarit.fencepost.Message;
-import com.pivovarit.fencepost.Queue;
-import com.pivovarit.fencepost.RenewableLock;
+import com.pivovarit.fencepost.lock.FencingToken;
+import com.pivovarit.fencepost.queue.Message;
+import com.pivovarit.fencepost.queue.Queue;
+import com.pivovarit.fencepost.lock.RenewableLock;
 import org.postgresql.ds.PGSimpleDataSource;
 
 import javax.sql.DataSource;

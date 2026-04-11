@@ -1,5 +1,7 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.queue.Message;
+
 import javax.sql.DataSource;
 import java.sql.SQLException;
 import java.util.Collections;

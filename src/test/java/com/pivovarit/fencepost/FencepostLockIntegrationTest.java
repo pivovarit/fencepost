@@ -1,5 +1,11 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.lock.AdvisoryLock;
+import com.pivovarit.fencepost.lock.FencedLock;
+import com.pivovarit.fencepost.lock.FencingToken;
+import com.pivovarit.fencepost.lock.LockAcquisitionTimeoutException;
+import com.pivovarit.fencepost.lock.LockNotHeldException;
+import com.pivovarit.fencepost.lock.RenewableLock;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
