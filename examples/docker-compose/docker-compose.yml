@@ -56,3 +56,18 @@ services:
       LOCK_TYPE: lease
     deploy:
       replicas: 3
+
+  queue:
+    build:
+      context: ../..
+      dockerfile: examples/docker-compose/Dockerfile
+    depends_on:
+      lease:
+        condition: service_completed_successfully
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/fencepost
+      DB_USER: fencepost
+      DB_PASSWORD: fencepost
+      LOCK_TYPE: queue
+    deploy:
+      replicas: 3

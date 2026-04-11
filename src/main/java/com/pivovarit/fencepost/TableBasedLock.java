@@ -91,7 +91,7 @@ abstract class TableBasedLock {
         return SqlStates.QUERY_CANCELLED.equals(e.getSQLState());
     }
 
-    private static String resolveHostname() {
+    static String resolveHostname() {
         try {
             return InetAddress.getLocalHost().getHostName();
         } catch (Exception e) {

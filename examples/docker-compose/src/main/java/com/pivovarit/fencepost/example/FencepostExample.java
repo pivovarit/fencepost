@@ -5,6 +5,8 @@ import com.pivovarit.fencepost.Factory;
 import com.pivovarit.fencepost.FencedLock;
 import com.pivovarit.fencepost.Fencepost;
 import com.pivovarit.fencepost.FencingToken;
+import com.pivovarit.fencepost.Message;
+import com.pivovarit.fencepost.Queue;
 import com.pivovarit.fencepost.RenewableLock;
 import org.postgresql.ds.PGSimpleDataSource;
 
@@ -39,12 +41,18 @@ public class FencepostExample {
                 createLockTable(dataSource);
                 leaseLockExample(dataSource);
                 break;
+            case "queue":
+                createQueueTable(dataSource);
+                queueExample(dataSource);
+                break;
             default:
                 throw new IllegalArgumentException("Unknown LOCK_TYPE: " + lockType);
         }
 
-        int finalValue = readCounter(dataSource, lockType);
-        log("[" + lockType + "] final counter value: " + finalValue);
+        if (!"queue".equals(lockType)) {
+            int finalValue = readCounter(dataSource, lockType);
+            log("[" + lockType + "] final counter value: " + finalValue);
+        }
     }
 
     private static void advisoryLockExample(DataSource dataSource) {
@@ -115,6 +123,37 @@ public class FencepostExample {
         }
     }
 
+    private static void queueExample(DataSource dataSource) {
+        Factory<Queue> factory = Fencepost.queue(dataSource)
+          .visibilityTimeout(Duration.ofSeconds(30))
+          .build();
+
+        Queue queue = factory.forName("tasks");
+
+        for (int i = 1; i <= ROUNDS; i++) {
+            String payload = "task-" + i + "-from-" + NODE;
+            queue.enqueue(payload);
+            log("[queue]    enqueued: " + payload);
+        }
+
+        sleep(1000);
+
+        for (int i = 0; i < ROUNDS * 3; i++) {
+            try (Message msg = queue.tryDequeue().orElse(null)) {
+                if (msg == null) {
+                    log("[queue]    no more messages");
+                    break;
+                }
+                log("[queue]    dequeued: " + msg.payload() + " (attempt #" + msg.attempts() + ")");
+                sleep(500);
+                msg.ack();
+                log("[queue]    acked: " + msg.payload());
+            }
+        }
+
+        queue.close();
+    }
+
     private static void initCounter(DataSource dataSource, String name) throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
@@ -171,6 +210,23 @@ public class FencepostExample {
         ds.setUser(System.getenv("DB_USER"));
         ds.setPassword(System.getenv("DB_PASSWORD"));
         return ds;
+    }
+
+    private static void createQueueTable(DataSource dataSource) throws SQLException {
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute(
+                "CREATE TABLE IF NOT EXISTS fencepost_queue ("
+                + "id          BIGSERIAL PRIMARY KEY,"
+                + "queue_name  TEXT NOT NULL,"
+                + "payload     TEXT NOT NULL,"
+                + "created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),"
+                + "visible_at  TIMESTAMPTZ NOT NULL DEFAULT now(),"
+                + "attempts    INT NOT NULL DEFAULT 0,"
+                + "picked_by   TEXT"
+                + ");"
+                + "CREATE INDEX IF NOT EXISTS idx_fencepost_queue_dequeue "
+                + "ON fencepost_queue (queue_name, visible_at)");
+        }
     }
 
     private static void createLockTable(DataSource dataSource) throws SQLException {
