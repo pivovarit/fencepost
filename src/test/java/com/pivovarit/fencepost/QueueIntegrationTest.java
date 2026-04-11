@@ -254,7 +254,9 @@ class QueueIntegrationTest {
         Runnable consumer = () -> {
             while (true) {
                 Optional<Message> msg = queue.tryDequeue();
-                if (msg.isEmpty()) break;
+                if (msg.isEmpty()) {
+                    break;
+                }
                 consumed.add(msg.get().payload());
                 msg.get().ack();
                 done.countDown();
