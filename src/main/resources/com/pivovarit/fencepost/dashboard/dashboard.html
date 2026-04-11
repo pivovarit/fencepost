@@ -538,6 +538,25 @@
   // ─── SSE + Polling fallback ────────────────────────────────────────────────
   let evtSource = null;
   const FALLBACK_POLL_MS = 5000;
+  const MIN_REFRESH_MS = 400;
+  let lastRefreshTime = 0;
+  let pendingRefresh = null;
+
+  function throttledRefresh() {
+    if (paused) return;
+    var now = Date.now();
+    var elapsed = now - lastRefreshTime;
+    if (elapsed >= MIN_REFRESH_MS) {
+      lastRefreshTime = now;
+      refreshCurrentView();
+    } else if (!pendingRefresh) {
+      pendingRefresh = setTimeout(function() {
+        pendingRefresh = null;
+        lastRefreshTime = Date.now();
+        refreshCurrentView();
+      }, MIN_REFRESH_MS - elapsed);
+    }
+  }
 
   function connectSse() {
     if (evtSource) return;
@@ -551,7 +570,7 @@
         stopPolling();
         return;
       }
-      if (!paused) refreshCurrentView();
+      throttledRefresh();
     };
     evtSource.onerror = function() {
       indicator.textContent = '\u25CF Polling';
