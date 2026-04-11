@@ -1,5 +1,7 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.queue.Message;
+import com.pivovarit.fencepost.queue.Queue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -1,4 +1,6 @@
-package com.pivovarit.fencepost;
+package com.pivovarit.fencepost.lock;
+
+import com.pivovarit.fencepost.Fencepost;
 
 import java.time.Duration;
 import java.util.function.Supplier;

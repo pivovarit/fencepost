@@ -1,5 +1,7 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.lock.FencingToken;
+
 import javax.sql.DataSource;
 import java.net.InetAddress;
 import java.sql.Connection;

@@ -1,4 +1,4 @@
-package com.pivovarit.fencepost;
+package com.pivovarit.fencepost.queue;
 
 import java.time.Duration;
 import java.util.Map;

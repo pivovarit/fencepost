@@ -1,4 +1,8 @@
-package com.pivovarit.fencepost;
+package com.pivovarit.fencepost.lock;
+
+import com.pivovarit.fencepost.FencepostException;
+import com.pivovarit.fencepost.function.ThrowingConsumer;
+import com.pivovarit.fencepost.function.ThrowingFunction;
 
 import java.time.Duration;
 import java.util.Optional;

@@ -1,5 +1,7 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.queue.Message;
+import com.pivovarit.fencepost.queue.Queue;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

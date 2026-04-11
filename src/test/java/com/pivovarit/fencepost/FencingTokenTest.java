@@ -1,5 +1,6 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.lock.FencingToken;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
