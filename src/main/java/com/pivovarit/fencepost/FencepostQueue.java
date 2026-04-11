@@ -86,11 +86,11 @@ final class FencepostQueue implements Queue {
               .bind(queueName)
               .map(rs -> {
                   if (!rs.next()) {
-                      return Optional.<Message>empty();
+                      return Optional.empty();
                   }
                   long id = rs.getLong(1);
                   logger.debug("dequeued message id={} from queue '{}'", id, queueName);
-                  return Optional.<Message>of(new AckableMessage(
+                  return Optional.of(new AckableMessage(
                     id, rs.getBytes(2), rs.getString(3), HeadersCodec.fromJson(rs.getString(4)), rs.getInt(5),
                     dataSource, tableName));
               });
