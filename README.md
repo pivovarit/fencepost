@@ -6,9 +6,11 @@ Zero dependencies beyond `java.sql`. Requires Java 11+.
 
 **Under construction.**
 
-## Lock Types
+## Features
 
-Fencepost provides three lock strategies, all backed by PostgreSQL:
+Fencepost provides three lock strategies and a message queue, all backed by PostgreSQL.
+
+## Lock Types
 
 | Type | Mechanism | Fencing Token | Auto-Expiry | Holds Connection |
 |------|-----------|:---:|:---:|:---:|
@@ -42,74 +44,25 @@ The table name defaults to `fencepost_locks` but can be customized via `.tableNa
 
 ### Advisory Lock
 
-The simplest option — no table setup required. Holds a database connection for the duration of the lock:
-
 ```java
 Factory<Lock> fencepost = Fencepost.advisoryLock(dataSource).build();
 Lock lock = fencepost.forName("my-resource");
 
-// option 1: explicit lock/unlock
-lock.lock();
-try {
-    // critical section
-} finally {
-    lock.unlock();
-}
+lock.lock();                          // blocking
+lock.lock(Duration.ofSeconds(5));     // blocking with timeout
+lock.tryLock();                       // non-blocking
 
-// option 2: with timeout
-lock.lock(Duration.ofSeconds(5));
-try {
-    // critical section
-} finally {
-    lock.unlock();
-}
-
-// option 3: non-blocking
-if (lock.tryLock()) {
-    try {
-        // critical section
-    } finally {
-        lock.unlock();
-    }
-}
-
-// option 4: convenience wrapper
-lock.runLocked(() -> {
-    // critical section
-});
+// convenience wrapper
+lock.runLocked(() -> { /* critical section */ });
 ```
 
 ### Session Lock
 
-Table-based lock held via `SELECT ... FOR UPDATE`. Issues fencing tokens to protect against stale holders:
-
 ```java
-Factory<FencedLock> fencepost = Fencepost.sessionLock(dataSource)
-    .tableName("my_locks") // optional, defaults to "fencepost_locks"
-    .build();
-
+Factory<FencedLock> fencepost = Fencepost.sessionLock(dataSource).build();
 FencedLock lock = fencepost.forName("my-resource");
 
-// acquire with fencing token
-FencingToken token = lock.lock();
-try {
-    // pass token to external systems to reject stale writes
-    externalStore.write(data, token.value());
-} finally {
-    lock.unlock();
-}
-
-// non-blocking with fencing token
-Optional<FencingToken> maybeToken = lock.tryLock();
-maybeToken.ifPresent(t -> {
-    try {
-        externalStore.write(data, t.value());
-    } finally {
-        lock.unlock();
-    }
-});
-
-// convenience wrapper with token access
+// fencing token protects against stale writes
 lock.runLocked(token -> {
     externalStore.write(data, token.value());
 });
@@ -117,28 +70,21 @@ lock.runLocked(token -> {
 
 ### Lease Lock
 
-Timestamp-based lock that releases the connection immediately. Best for long-running tasks:
-
 ```java
 Factory<RenewableLock> fencepost = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30))
-    .tableName("my_locks")                  // optional
-    .withAutoRenew(Duration.ofSeconds(10))    // auto-renew before expiry
-    .withQuietPeriod(Duration.ofSeconds(5))  // min gap between acquisitions
+    .withAutoRenew(Duration.ofSeconds(10))
+    .withQuietPeriod(Duration.ofSeconds(5))
     .onAutoRenewFailure(e -> log.error("auto-renew failed", e))
     .build();
 
 RenewableLock lock = fencepost.forName("my-resource");
 
-// auto-renew thread keeps the lease alive automatically
 FencingToken token = lock.lock();
 try {
     longRunningTask(token);
 } finally {
     lock.unlock();
 }
-
-// manual renewal (when not using auto-renew)
-lock.renew(Duration.ofSeconds(30));
 ```
 
 ## Docker Compose Example
@@ -151,6 +97,48 @@ docker compose up --build
 ```
 
 The output shows each instance racing to acquire the lock. Winners increment the counter; losers skip. At the end of each phase, the final counter value confirms that no updates were lost.
+
+## Queue
+
+Fencepost includes a PostgreSQL-backed message queue with at-least-once delivery, visibility timeouts, and `LISTEN/NOTIFY`-based blocking dequeue.
+
+### Queue Table Setup
+
+```sql
+CREATE TABLE fencepost_queue (
+    id            BIGSERIAL PRIMARY KEY,
+    queue_name    TEXT NOT NULL,
+    payload       TEXT NOT NULL,
+    visible_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    picked_by     TEXT,
+    attempts      INT NOT NULL DEFAULT 0
+);
+```
+
+The table name defaults to `fencepost_queue` but can be customized via `.tableName("my_queue")` on the builder.
+
+### Queue Example
+
+```java
+Factory<Queue> fencepost = Fencepost.queue(dataSource)
+    .visibilityTimeout(Duration.ofSeconds(30)) // required
+    .build();
+
+Queue queue = fencepost.forName("my-queue");
+
+queue.enqueue("hello");
+queue.enqueue("delayed hello", Duration.ofSeconds(10));
+
+Message msg = queue.dequeue();           // blocking (LISTEN/NOTIFY)
+Message msg = queue.dequeue(Duration.ofSeconds(5)); // with timeout
+Optional<Message> msg = queue.tryDequeue();         // non-blocking
+
+// ack() deletes the message, nack() makes it visible again immediately
+msg.ack();
+msg.nack();
+```
+
+If processing fails without calling `ack()` or `nack()`, the message becomes visible again after the visibility timeout expires, with an incremented `attempts` counter.
 
 ## Important: PostgreSQL Clock Behavior
 
