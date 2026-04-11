@@ -1,5 +1,8 @@
 package com.pivovarit.fencepost;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -12,6 +15,7 @@ import java.time.Duration;
  */
 final class AdvisoryLockInstance implements AdvisoryLock {
 
+    private static final Logger logger = LoggerFactory.getLogger(AdvisoryLockInstance.class);
     private static final String ADVISORY_NAMESPACE = "fencepost:";
 
     private final String lockName;
@@ -36,9 +40,11 @@ final class AdvisoryLockInstance implements AdvisoryLock {
               .bind(advisoryKey)
               .map(ResultSet::next);
             held = true;
+            logger.debug("acquired advisory lock '{}'", lockName);
         } catch (Exception e) {
             closeConnection();
             connection = null;
+            logger.debug("failed to acquire advisory lock '{}'", lockName, e);
             throw (e instanceof FencepostException) ? (FencepostException) e : new FencepostException("Failed to acquire advisory lock: " + lockName, e);
         }
     }
@@ -55,6 +61,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
                   .map(ResultSet::next);
             } catch (SQLException e) {
                 if (SqlStates.LOCK_NOT_AVAILABLE.equals(e.getSQLState())) {
+                    logger.debug("timed out acquiring advisory lock '{}' after {}", lockName, timeout);
                     throw new LockAcquisitionTimeoutException(lockName);
                 }
                 throw e;
@@ -65,6 +72,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
                 }
             }
             held = true;
+            logger.debug("acquired advisory lock '{}'", lockName);
         } catch (LockAcquisitionTimeoutException e) {
             closeConnection();
             connection = null;
@@ -72,6 +80,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
         } catch (Exception e) {
             closeConnection();
             connection = null;
+            logger.debug("failed to acquire advisory lock '{}'", lockName, e);
             throw (e instanceof FencepostException) ? (FencepostException) e : new FencepostException("Failed to acquire advisory lock: " + lockName, e);
         }
     }
@@ -87,13 +96,16 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             if (!acquired) {
                 closeConnection();
                 connection = null;
+                logger.debug("tryLock failed for advisory lock '{}' - already held", lockName);
                 return false;
             }
             held = true;
+            logger.debug("acquired advisory lock '{}' via tryLock", lockName);
             return true;
         } catch (Exception e) {
             closeConnection();
             connection = null;
+            logger.debug("failed to tryLock advisory lock '{}'", lockName, e);
             throw (e instanceof FencepostException) ? (FencepostException) e : new FencepostException("Failed to try-lock advisory: " + lockName, e);
         }
     }
@@ -113,6 +125,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             if (!released) {
                 throw new LockNotHeldException(lockName);
             }
+            logger.debug("released advisory lock '{}'", lockName);
         } catch (SQLException e) {
             throw new FencepostException("Failed to release advisory lock: " + lockName, e);
         } finally {

@@ -176,7 +176,7 @@ public final class Fencepost {
             String t = this.tableName;
             Duration vt = this.visibilityTimeout;
             long pi = this.pollIntervalMs;
-            return new Factory<>(queueName -> new QueueInstance(queueName, dataSource, t, vt, pi));
+            return new Factory<>(queueName -> new FencepostQueue(queueName, dataSource, t, vt, pi));
         }
     }
 }
