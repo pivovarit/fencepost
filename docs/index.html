@@ -768,6 +768,7 @@
         <p class="feature-desc">PostgreSQL advisory locks. No table setup. Simplest option - just point at a DataSource and go.</p>
         <div class="feature-badges">
           <span class="feature-badge badge-violet">simplest</span>
+          <span class="feature-badge badge-green">no table needed</span>
           <span class="feature-badge badge-yellow">holds connection</span>
         </div>
       </div>
@@ -785,11 +786,11 @@
       <div class="feature-card reveal reveal-delay-3">
         <div class="feature-icon">ttl</div>
         <h3 class="feature-title">lease</h3>
-        <p class="feature-desc">Timestamp TTL with optional heartbeat. Releases the connection immediately - best for long-running work.</p>
+        <p class="feature-desc">Timestamp TTL with optional auto-renew. Releases the connection immediately - best for long-running work.</p>
         <div class="feature-badges">
           <span class="feature-badge badge-green">fencing tokens</span>
           <span class="feature-badge badge-violet">auto-expiry</span>
-          <span class="feature-badge badge-violet">heartbeat</span>
+          <span class="feature-badge badge-violet">renewable</span>
         </div>
       </div>
     </div>
