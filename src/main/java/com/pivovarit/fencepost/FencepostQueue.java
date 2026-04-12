@@ -6,7 +6,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
-import java.lang.reflect.InvocationTargetException;
+import org.postgresql.PGConnection;
+
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -170,17 +171,9 @@ final class FencepostQueue implements Queue {
 
     private void waitForNotification() {
         try {
-            var pgConn = listenerConnection.unwrap(Class.forName("org.postgresql.PGConnection"));
-            var method = pgConn.getClass().getMethod("getNotifications", int.class);
-            method.invoke(pgConn, (int) pollIntervalMs);
+            var pgConn = listenerConnection.unwrap(PGConnection.class);
+            pgConn.getNotifications((int) pollIntervalMs);
         } catch (Exception e) {
-            if (e instanceof InvocationTargetException) {
-                Throwable cause = e.getCause();
-                if (cause instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                    throw new FencepostException("Interrupted while waiting for messages on queue: " + queueName);
-                }
-            }
             closeListenerConnection();
             try {
                 Thread.sleep(pollIntervalMs);

@@ -3,6 +3,7 @@ package com.pivovarit.fencepost;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import org.postgresql.PGConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -178,10 +179,8 @@ public final class FencepostDashboard {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     ensureListening();
-                    Object pgConn = listenerConnection.unwrap(Class.forName("org.postgresql.PGConnection"));
-                    Object notifications = pgConn.getClass()
-                      .getMethod("getNotifications", int.class)
-                      .invoke(pgConn, LISTEN_TIMEOUT_MS);
+                    var pgConn = listenerConnection.unwrap(PGConnection.class);
+                    var notifications = pgConn.getNotifications(LISTEN_TIMEOUT_MS);
                     if (notifications != null) {
                         broadcastRefresh();
                     }

@@ -16,7 +16,9 @@ import com.pivovarit.fencepost.queue.Message;
 import com.pivovarit.fencepost.queue.Queue;
 
 import javax.sql.DataSource;
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -266,14 +268,14 @@ class FencepostDashboardTest {
         dashboard = new FencepostDashboard(dataSource);
         dashboard.start(0);
 
-        HttpURLConnection conn = (HttpURLConnection) new URL("http://localhost:" + dashboard.getPort() + "/api/events").openConnection();
+        HttpURLConnection conn = (HttpURLConnection) new URL(String.format("http://localhost:%d/api/events", dashboard.getPort())).openConnection();
         conn.setRequestMethod("GET");
         conn.setReadTimeout(5000);
 
         assertThat(conn.getResponseCode()).isEqualTo(200);
         assertThat(conn.getContentType()).containsIgnoringCase("text/event-stream");
 
-        try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+        try (var reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
             String firstLine = reader.readLine();
             assertThat(firstLine).isEqualTo("data: connected");
 
@@ -310,7 +312,7 @@ class FencepostDashboardTest {
             Queue q = factory.forName("emails");
             int i = 0;
             while (!Thread.currentThread().isInterrupted()) {
-                q.enqueue(("email-task-" + (++i)).getBytes(java.nio.charset.StandardCharsets.UTF_8), "send-email-command.v1", Map.of("priority", "high"));
+                q.enqueue(("email-task-" + (++i)).getBytes(StandardCharsets.UTF_8), "send-email-command.v1", Map.of("priority", "high"));
                 sleep(500);
             }
             q.close();

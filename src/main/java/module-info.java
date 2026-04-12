@@ -8,4 +8,5 @@ module com.pivovarit.fencepost {
     requires java.naming;
     requires org.slf4j;
     requires jdk.httpserver;
+    requires static org.postgresql.jdbc;
 }
