@@ -12,11 +12,11 @@ Fencepost provides three lock strategies and a message queue, all backed by Post
 
 ## Lock Types
 
-| Type | Mechanism | Fencing Token | Auto-Expiry | Holds Connection |
-|------|-----------|:---:|:---:|:---:|
-| `advisory` | PostgreSQL advisory locks | - | - | + |
-| `session` | Table-based, `SELECT ... FOR UPDATE` | + | - | + |
-| `lease` | Table-based, timestamp TTL + auto-renew | + | + | - |
+| Type | Mechanism | Fencing Token | Auto-Expiry | Holds Connection | Custom Table |
+|------|-----------|:---:|:---:|:---:|:---:|
+| `advisory` | PostgreSQL advisory locks | - | - | + | - |
+| `session` | Table-based, `SELECT ... FOR UPDATE` | + | - | + | + |
+| `lease` | Table-based, timestamp TTL + auto-renew | + | + | - | + |
 
 - **Advisory** - leverages PostgreSQL's built-in advisory locks. No table or schema setup required. Holds a database connection for the duration of the lock. Released automatically on disconnect. Simple and lightweight, but provides no fencing tokens, so it can't protect against stale holders writing to external systems.
 
