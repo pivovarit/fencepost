@@ -14,6 +14,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -113,6 +114,58 @@ class FencepostLockInterceptorTest {
         return invocation;
     }
 
+    @Test
+    void shouldResolvePlaceholdersInLockName() throws Throwable {
+        DataSource ds = dataSource();
+        createTable(ds);
+        var interceptor = new FencepostLockInterceptor(
+            ds, "fencepost_locks", null,
+            name -> name.replace("${lock.name}", "resolved-lock")
+        );
+
+        Method method = SampleMethods.class.getDeclaredMethod("placeholderLocked");
+        MethodInvocation invocation = mock(MethodInvocation.class);
+        when(invocation.getMethod()).thenReturn(method);
+        when(invocation.getArguments()).thenReturn(new Object[0]);
+        when(invocation.proceed()).thenReturn("ok");
+
+        Object result = interceptor.invoke(invocation);
+
+        assertThat(result).isEqualTo("ok");
+        verify(invocation).proceed();
+    }
+
+    @Test
+    void shouldThrowWhenLockAtMostForMissingAndNoDefault() throws Throwable {
+        DataSource ds = dataSource();
+        var interceptor = new FencepostLockInterceptor(ds, "fencepost_locks", null, name -> name);
+
+        Method method = SampleMethods.class.getDeclaredMethod("noLockAtMostFor");
+        MethodInvocation invocation = mock(MethodInvocation.class);
+        when(invocation.getMethod()).thenReturn(method);
+        when(invocation.getArguments()).thenReturn(new Object[0]);
+
+        assertThatThrownBy(() -> interceptor.invoke(invocation))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("lockAtMostFor");
+    }
+
+    @Test
+    void shouldThrowWhenFencingTokenUsedWithAdvisory() throws Throwable {
+        DataSource ds = dataSource();
+        var interceptor = new FencepostLockInterceptor(ds, "fencepost_locks", null, name -> name);
+
+        Method method = SampleMethods.class.getDeclaredMethod("advisoryWithToken", FencingToken.class);
+        MethodInvocation invocation = mock(MethodInvocation.class);
+        when(invocation.getMethod()).thenReturn(method);
+        when(invocation.getArguments()).thenReturn(new Object[]{null});
+
+        assertThatThrownBy(() -> interceptor.invoke(invocation))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("FencingToken")
+            .hasMessageContaining("ADVISORY");
+    }
+
     static class SampleMethods {
         @FencepostLock(name = "test-lock", lockAtMostFor = "10m")
         Object leaseLocked() { return null; }
@@ -125,5 +178,14 @@ class FencepostLockInterceptorTest {
 
         @FencepostLock(name = "test-lock", lockAtMostFor = "10m", type = LockType.SESSION)
         Object sessionLocked() { return null; }
+
+        @FencepostLock(name = "${lock.name}", lockAtMostFor = "10m")
+        Object placeholderLocked() { return null; }
+
+        @FencepostLock(name = "test-lock")
+        Object noLockAtMostFor() { return null; }
+
+        @FencepostLock(name = "test-lock", lockAtMostFor = "10m", type = LockType.ADVISORY)
+        Object advisoryWithToken(FencingToken token) { return null; }
     }
 }

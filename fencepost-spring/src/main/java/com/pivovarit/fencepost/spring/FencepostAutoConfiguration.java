@@ -4,9 +4,11 @@ import com.pivovarit.fencepost.Fencepost;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.EmbeddedValueResolverAware;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
+import org.springframework.util.StringValueResolver;
 
 import javax.sql.DataSource;
 import java.time.Duration;
@@ -15,7 +17,14 @@ import java.time.Duration;
 @ConditionalOnClass(Fencepost.class)
 @ConditionalOnBean(DataSource.class)
 @EnableConfigurationProperties(FencepostProperties.class)
-public class FencepostAutoConfiguration {
+public class FencepostAutoConfiguration implements EmbeddedValueResolverAware {
+
+    private StringValueResolver resolver;
+
+    @Override
+    public void setEmbeddedValueResolver(StringValueResolver resolver) {
+        this.resolver = resolver;
+    }
 
     @Bean
     FencepostLockAdvisor fencepostLockAdvisor(DataSource dataSource, FencepostProperties properties) {
@@ -25,7 +34,7 @@ public class FencepostAutoConfiguration {
             dataSource,
             properties.getTableName(),
             defaultLockAtMostFor,
-            name -> name
+            name -> resolver != null ? resolver.resolveStringValue(name) : name
         );
 
         return new FencepostLockAdvisor(interceptor);

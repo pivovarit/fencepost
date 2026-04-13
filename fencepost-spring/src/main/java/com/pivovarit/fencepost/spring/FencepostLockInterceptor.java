@@ -49,6 +49,19 @@ class FencepostLockInterceptor implements MethodInterceptor {
         String lockName = placeholderResolver.apply(annotation.name());
         LockType type = annotation.type();
 
+        if (type == LockType.LEASE) {
+            Duration lockAtMostFor = resolveDuration(annotation.lockAtMostFor(), defaultLockAtMostFor);
+            if (lockAtMostFor == null || lockAtMostFor.isZero()) {
+                throw new IllegalStateException(
+                    "lockAtMostFor must be specified on @FencepostLock or via fencepost.default-lock-at-most-for property for method: " + method);
+            }
+        }
+
+        if (type == LockType.ADVISORY && hasFencingTokenParameter(method)) {
+            throw new IllegalStateException(
+                "FencingToken parameter is not supported with LockType.ADVISORY on method: " + method);
+        }
+
         return switch (type) {
             case LEASE -> invokeWithLease(invocation, lockName, annotation);
             case SESSION -> invokeWithSession(invocation, lockName);
@@ -145,6 +158,15 @@ class FencepostLockInterceptor implements MethodInterceptor {
         } catch (Exception e) {
             return DurationParser.parse(value);
         }
+    }
+
+    private boolean hasFencingTokenParameter(Method method) {
+        for (Class<?> paramType : method.getParameterTypes()) {
+            if (paramType == FencingToken.class) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private record LeaseConfig(Duration lockAtMostFor, Duration lockAtLeastFor) {}
