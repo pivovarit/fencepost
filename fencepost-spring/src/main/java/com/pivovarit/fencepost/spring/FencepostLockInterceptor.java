@@ -27,8 +27,8 @@ class FencepostLockInterceptor implements MethodInterceptor {
     private final Duration defaultLockAtMostFor;
     private final UnaryOperator<String> placeholderResolver;
 
-    private volatile Factory<AdvisoryLock> advisoryFactory;
-    private volatile Factory<FencedLock> sessionFactory;
+    private final Factory<AdvisoryLock> advisoryFactory;
+    private final Factory<FencedLock> sessionFactory;
     private final ConcurrentHashMap<LeaseConfig, Factory<RenewableLock>> leaseFactories = new ConcurrentHashMap<>();
 
     FencepostLockInterceptor(DataSource dataSource,
@@ -39,6 +39,8 @@ class FencepostLockInterceptor implements MethodInterceptor {
         this.tableName = tableName;
         this.defaultLockAtMostFor = defaultLockAtMostFor;
         this.placeholderResolver = placeholderResolver;
+        this.advisoryFactory = Fencepost.advisoryLock(dataSource).build();
+        this.sessionFactory = Fencepost.sessionLock(dataSource).tableName(tableName).build();
     }
 
     @Override
@@ -97,9 +99,6 @@ class FencepostLockInterceptor implements MethodInterceptor {
     }
 
     private Object invokeWithSession(MethodInvocation invocation, String lockName) throws Throwable {
-        if (sessionFactory == null) {
-            sessionFactory = Fencepost.sessionLock(dataSource).tableName(tableName).build();
-        }
         FencedLock lock = sessionFactory.forName(lockName);
         Optional<FencingToken> token = lock.tryLock();
         if (token.isEmpty()) {
@@ -115,9 +114,6 @@ class FencepostLockInterceptor implements MethodInterceptor {
     }
 
     private Object invokeWithAdvisory(MethodInvocation invocation, String lockName) throws Throwable {
-        if (advisoryFactory == null) {
-            advisoryFactory = Fencepost.advisoryLock(dataSource).build();
-        }
         AdvisoryLock lock = advisoryFactory.forName(lockName);
         if (!lock.tryLock()) {
             log.debug("Skipping execution of {}, lock '{}' is held", invocation.getMethod().getName(), lockName);
