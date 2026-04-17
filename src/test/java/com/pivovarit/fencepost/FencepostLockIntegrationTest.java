@@ -458,6 +458,27 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void quietPeriodShouldApplyWhenLockHeldLongerThanQuietPeriod() throws Exception {
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30))
+            .withQuietPeriod(Duration.ofSeconds(2))
+            .build();
+
+        RenewableLock lock = provider.forName("quiet-held-long-test");
+        lock.lock();
+        Thread.sleep(3_000);
+        lock.unlock();
+
+        RenewableLock lock2 = provider.forName("quiet-held-long-test");
+        assertThat(lock2.tryLock()).isEmpty();
+
+        Thread.sleep(2_500);
+
+        RenewableLock lock3 = provider.forName("quiet-held-long-test");
+        assertThat(lock3.tryLock()).isPresent();
+        lock3.unlock();
+    }
+
+    @Test
     void quietPeriodShouldClearLockedAtOnUnlock() throws Exception {
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10))
             .withQuietPeriod(Duration.ofSeconds(3))
