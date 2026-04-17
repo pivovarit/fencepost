@@ -117,8 +117,6 @@ final class FencepostQueue implements Queue {
           ? System.nanoTime() + timeout.toNanos()
           : Long.MAX_VALUE;
 
-        ensureListening();
-
         while (true) {
             Optional<Message> result = tryDequeue();
             if (result.isPresent()) {
@@ -129,7 +127,7 @@ final class FencepostQueue implements Queue {
                 throw new FencepostException("Dequeue timed out on queue: " + queueName);
             }
 
-            waitForNotification();
+            waitForNotification(ensureListening());
         }
     }
 
@@ -150,11 +148,11 @@ final class FencepostQueue implements Queue {
         }
     }
 
-    private synchronized void ensureListening() {
+    private synchronized Connection ensureListening() {
         if (listenerConnection != null) {
             try {
                 if (!listenerConnection.isClosed()) {
-                    return;
+                    return listenerConnection;
                 }
             } catch (SQLException e) {
                 logger.trace("failed to check listener connection state", e);
@@ -164,15 +162,16 @@ final class FencepostQueue implements Queue {
             listenerConnection = dataSource.getConnection();
             listenerConnection.setAutoCommit(true);
             Jdbc.execute(listenerConnection, "LISTEN " + channelName());
+            return listenerConnection;
         } catch (SQLException e) {
             closeListenerConnection();
             throw new FencepostException("Failed to set up listener for queue: " + queueName, e);
         }
     }
 
-    private void waitForNotification() {
+    private void waitForNotification(Connection conn) {
         try {
-            var pgConn = listenerConnection.unwrap(PGConnection.class);
+            var pgConn = conn.unwrap(PGConnection.class);
             pgConn.getNotifications((int) pollIntervalMs);
         } catch (Exception e) {
             closeListenerConnection();
