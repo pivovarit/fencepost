@@ -13,6 +13,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 final class FencepostQueue implements Queue {
 
@@ -74,7 +75,7 @@ final class FencepostQueue implements Queue {
 
     @Override
     public Optional<Message> tryDequeue() {
-        String pickedBy = TableBasedLock.HOSTNAME + "/" + Thread.currentThread().getName();
+        String pickToken = TableBasedLock.HOSTNAME + "/" + Thread.currentThread().getName() + "/" + UUID.randomUUID();
         String sql = String.format(
             "UPDATE %s SET visible_at = now() + %s, picked_by = ?, attempts = attempts + 1 "
               + "WHERE id = (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now() "
@@ -84,7 +85,7 @@ final class FencepostQueue implements Queue {
         try {
             return Jdbc.query(dataSource, sql)
               .bind(visibilityTimeout.toMillis())
-              .bind(pickedBy)
+              .bind(pickToken)
               .bind(queueName)
               .map(rs -> {
                   if (!rs.next()) {
@@ -94,7 +95,7 @@ final class FencepostQueue implements Queue {
                   logger.debug("dequeued message id={} from queue '{}'", id, queueName);
                   return Optional.of(new AckableMessage(
                     id, rs.getBytes(2), rs.getString(3), HeadersCodec.fromJson(rs.getString(4)), rs.getInt(5),
-                    dataSource, tableName));
+                    pickToken, dataSource, tableName));
               });
         } catch (SQLException e) {
             throw new FencepostException("Failed to dequeue from queue: " + queueName, e);
