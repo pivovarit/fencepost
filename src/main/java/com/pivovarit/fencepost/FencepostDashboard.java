@@ -178,8 +178,8 @@ public final class FencepostDashboard {
         listenerThread = new Thread(() -> {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
-                    ensureListening();
-                    var pgConn = listenerConnection.unwrap(PGConnection.class);
+                    Connection conn = ensureListening();
+                    var pgConn = conn.unwrap(PGConnection.class);
                     var notifications = pgConn.getNotifications(LISTEN_TIMEOUT_MS);
                     if (notifications != null) {
                         broadcastRefresh();
@@ -201,11 +201,11 @@ public final class FencepostDashboard {
         listenerThread.start();
     }
 
-    private synchronized void ensureListening() throws SQLException {
+    private synchronized Connection ensureListening() throws SQLException {
         if (listenerConnection != null) {
             try {
                 if (!listenerConnection.isClosed()) {
-                    return;
+                    return listenerConnection;
                 }
             } catch (SQLException e) {
                 logger.trace("failed to check listener connection state", e);
@@ -214,6 +214,7 @@ public final class FencepostDashboard {
         listenerConnection = dataSource.getConnection();
         listenerConnection.setAutoCommit(true);
         Jdbc.execute(listenerConnection, "LISTEN " + DASHBOARD_CHANNEL);
+        return listenerConnection;
     }
 
     private synchronized void closeListenerConnection() {
