@@ -12,6 +12,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.List;
@@ -314,6 +315,59 @@ class QueueIntegrationTest {
 
         assertThatThrownBy(() -> Fencepost.queue(dataSource).visibilityTimeout(Duration.ofSeconds(-1)))
           .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void ackFromStaleConsumerShouldNotDeleteMessageOwnedByAnother() throws Exception {
+        Queue queue = newQueue();
+        queue.enqueue("contested".getBytes(UTF_8));
+
+        Message msgA = queue.tryDequeue().get();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute(
+              "UPDATE fencepost_queue SET visible_at = now() - interval '1 second' WHERE id = " + msgA.id());
+        }
+
+        Message msgB = queue.tryDequeue().get();
+        assertThat(msgB.id()).isEqualTo(msgA.id());
+
+        msgA.ack();
+
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.createStatement().executeQuery(
+               "SELECT COUNT(*) FROM fencepost_queue WHERE id = " + msgB.id())) {
+            rs.next();
+            assertThat(rs.getInt(1))
+              .as("stale consumer A must not delete a message now owned by consumer B")
+              .isEqualTo(1);
+        }
+
+        msgB.ack();
+    }
+
+    @Test
+    void nackFromStaleConsumerShouldNotAffectMessageOwnedByAnother() throws Exception {
+        Queue queue = newQueue();
+        queue.enqueue("contested-nack".getBytes(UTF_8));
+
+        Message msgA = queue.tryDequeue().get();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute(
+              "UPDATE fencepost_queue SET visible_at = now() - interval '1 second' WHERE id = " + msgA.id());
+        }
+
+        Message msgB = queue.tryDequeue().get();
+        assertThat(msgB.id()).isEqualTo(msgA.id());
+
+        msgA.nack();
+
+        assertThat(queue.tryDequeue())
+          .as("stale consumer A's nack must not steal the message back from B")
+          .isEmpty();
+
+        msgB.ack();
     }
 
     @Test

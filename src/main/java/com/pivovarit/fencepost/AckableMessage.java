@@ -16,17 +16,19 @@ final class AckableMessage implements Message {
     private final String type;
     private final Map<String, String> headers;
     private final int attempts;
+    private final String pickToken;
     private final DataSource dataSource;
     private final String tableName;
 
     private State state = State.ACTIVE;
 
-    AckableMessage(long id, byte[] payload, String type, Map<String, String> headers, int attempts, DataSource dataSource, String tableName) {
+    AckableMessage(long id, byte[] payload, String type, Map<String, String> headers, int attempts, String pickToken, DataSource dataSource, String tableName) {
         this.id = id;
         this.payload = payload;
         this.type = type;
         this.headers = headers != null ? Collections.unmodifiableMap(headers) : Map.of();
         this.attempts = attempts;
+        this.pickToken = pickToken;
         this.dataSource = dataSource;
         this.tableName = tableName;
     }
@@ -62,8 +64,9 @@ final class AckableMessage implements Message {
             throw new IllegalStateException("Message already " + state.name().toLowerCase());
         }
         try {
-            Jdbc.update(dataSource, String.format("DELETE FROM %s WHERE id = ? AND picked_by IS NOT NULL", tableName))
+            Jdbc.update(dataSource, String.format("DELETE FROM %s WHERE id = ? AND picked_by = ?", tableName))
               .bind(id)
+              .bind(pickToken)
               .execute();
         } catch (SQLException e) {
             throw new FencepostException("Failed to ack message: " + id, e);
@@ -77,8 +80,9 @@ final class AckableMessage implements Message {
             throw new IllegalStateException("Message already " + state.name().toLowerCase());
         }
         try {
-            Jdbc.update(dataSource, String.format("UPDATE %s SET visible_at = now(), picked_by = NULL WHERE id = ?", tableName))
+            Jdbc.update(dataSource, String.format("UPDATE %s SET visible_at = now(), picked_by = NULL WHERE id = ? AND picked_by = ?", tableName))
               .bind(id)
+              .bind(pickToken)
               .execute();
         } catch (SQLException e) {
             throw new FencepostException("Failed to nack message: " + id, e);
