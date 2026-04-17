@@ -143,6 +143,7 @@ final class FencepostQueue implements Queue {
     private void notify_() {
         try (Connection conn = dataSource.getConnection()) {
             Jdbc.execute(conn, "NOTIFY " + channelName());
+            FencepostDashboard.notifyRefresh(conn);
         } catch (SQLException e) {
             logger.trace("failed to send NOTIFY on queue '{}', polling is the fallback", queueName, e);
         }

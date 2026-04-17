@@ -1,6 +1,12 @@
 package com.pivovarit.fencepost.dashboard;
 
+import com.pivovarit.fencepost.Factory;
+import com.pivovarit.fencepost.Fencepost;
 import com.pivovarit.fencepost.FencepostDashboard;
+import com.pivovarit.fencepost.lock.FencedLock;
+import com.pivovarit.fencepost.lock.RenewableLock;
+import com.pivovarit.fencepost.queue.Message;
+import com.pivovarit.fencepost.queue.Queue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,10 +16,6 @@ import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-
-import com.pivovarit.fencepost.Fencepost;
-import com.pivovarit.fencepost.queue.Message;
-import com.pivovarit.fencepost.queue.Queue;
 
 import javax.sql.DataSource;
 import java.io.BufferedReader;
@@ -240,11 +242,11 @@ class FencepostDashboardTest {
             conn.createStatement().execute("DROP TABLE IF EXISTS custom_locks");
             conn.createStatement().execute(
               "CREATE TABLE custom_locks ("
-                + "lock_name TEXT PRIMARY KEY,"
-                + "token BIGINT NOT NULL DEFAULT 0,"
-                + "locked_by TEXT,"
-                + "locked_at TIMESTAMPTZ,"
-                + "expires_at TIMESTAMPTZ)"
+              + "lock_name TEXT PRIMARY KEY,"
+              + "token BIGINT NOT NULL DEFAULT 0,"
+              + "locked_by TEXT,"
+              + "locked_at TIMESTAMPTZ,"
+              + "expires_at TIMESTAMPTZ)"
             );
             conn.createStatement().execute(
               "INSERT INTO custom_locks (lock_name, token) VALUES ('x', 42)"
@@ -289,6 +291,86 @@ class FencepostDashboardTest {
                 refreshLine = reader.readLine();
             }
             assertThat(refreshLine).isEqualTo("data: refresh");
+        }
+    }
+
+    @Test
+    void shouldStreamSseRefreshOnQueueEnqueue() throws Exception {
+        dashboard = new FencepostDashboard(dataSource);
+        dashboard.start(0);
+
+        try (SseReader sse = openSse(); Queue q = Fencepost.queue(dataSource).visibilityTimeout(Duration.ofSeconds(5)).build().forName("q")) {
+            sse.awaitConnected();
+            q.enqueue("payload".getBytes(StandardCharsets.UTF_8));
+            assertThat(sse.awaitRefresh()).isEqualTo("data: refresh");
+        }
+    }
+
+    @Test
+    void shouldStreamSseRefreshOnMessageAck() throws Exception {
+        dashboard = new FencepostDashboard(dataSource);
+        dashboard.start(0);
+
+        Queue q = Fencepost.queue(dataSource).visibilityTimeout(Duration.ofSeconds(5)).build().forName("q");
+        q.enqueue("payload".getBytes(StandardCharsets.UTF_8));
+        Message msg = q.dequeue(Duration.ofSeconds(2));
+
+        try (SseReader sse = openSse()) {
+            sse.awaitConnected();
+            msg.ack();
+            assertThat(sse.awaitRefresh()).isEqualTo("data: refresh");
+        } finally {
+            q.close();
+        }
+    }
+
+    @Test
+    void shouldStreamSseRefreshOnMessageNack() throws Exception {
+        dashboard = new FencepostDashboard(dataSource);
+        dashboard.start(0);
+
+        Queue q = Fencepost.queue(dataSource).visibilityTimeout(Duration.ofSeconds(5)).build().forName("q");
+        q.enqueue("payload".getBytes(StandardCharsets.UTF_8));
+        Message msg = q.dequeue(Duration.ofSeconds(2));
+
+        try (SseReader sse = openSse()) {
+            sse.awaitConnected();
+            msg.nack();
+            assertThat(sse.awaitRefresh()).isEqualTo("data: refresh");
+        } finally {
+            q.close();
+        }
+    }
+
+    @Test
+    void shouldStreamSseRefreshOnLeaseLockAcquireAndRelease() throws Exception {
+        dashboard = new FencepostDashboard(dataSource);
+        dashboard.start(0);
+
+        Factory<RenewableLock> factory = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30)).build();
+
+        try (SseReader sse = openSse(); RenewableLock lock = factory.forName("lease-lock")) {
+            sse.awaitConnected();
+            lock.lock();
+            assertThat(sse.awaitRefresh()).isEqualTo("data: refresh");
+            lock.unlock();
+            assertThat(sse.awaitRefresh()).isEqualTo("data: refresh");
+        }
+    }
+
+    @Test
+    void shouldStreamSseRefreshOnSessionLockAcquireAndRelease() throws Exception {
+        dashboard = new FencepostDashboard(dataSource);
+        dashboard.start(0);
+
+        Factory<FencedLock> factory = Fencepost.sessionLock(dataSource).build();
+
+        try (SseReader sse = openSse(); FencedLock lock = factory.forName("session-lock")) {
+            sse.awaitConnected();
+            lock.lock();
+            assertThat(sse.awaitRefresh()).isEqualTo("data: refresh");
+            lock.unlock();
+            assertThat(sse.awaitRefresh()).isEqualTo("data: refresh");
         }
     }
 
@@ -360,5 +442,50 @@ class FencepostDashboardTest {
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setRequestMethod("GET");
         return new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    }
+
+    private SseReader openSse() throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) new URL(String.format("http://localhost:%d/api/events", dashboard.getPort())).openConnection();
+        conn.setRequestMethod("GET");
+        conn.setReadTimeout(5000);
+        assertThat(conn.getResponseCode()).isEqualTo(200);
+        return new SseReader(conn);
+    }
+
+    private static final class SseReader implements AutoCloseable {
+        private final HttpURLConnection conn;
+        private final BufferedReader reader;
+
+        SseReader(HttpURLConnection conn) throws IOException {
+            this.conn = conn;
+            this.reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+        }
+
+        void awaitConnected() throws IOException {
+            assertThat(nextDataLine()).isEqualTo("data: connected");
+        }
+
+        String awaitRefresh() throws IOException {
+            return nextDataLine();
+        }
+
+        private String nextDataLine() throws IOException {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!line.isEmpty()) {
+                    return line;
+                }
+            }
+            throw new IOException("SSE stream closed before a data line arrived");
+        }
+
+        @Override
+        public void close() {
+            try {
+                reader.close();
+            } catch (IOException ignored) {
+            }
+            conn.disconnect();
+        }
     }
 }

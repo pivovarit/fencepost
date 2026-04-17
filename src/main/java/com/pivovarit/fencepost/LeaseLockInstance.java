@@ -122,11 +122,15 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         String sql = String.format("UPDATE %s SET token = token + 1, locked_by = ?, locked_at = now(), expires_at = now() + %s WHERE lock_name = ? AND (locked_by IS NULL OR expires_at IS NULL OR expires_at <= now()) RETURNING token", tableName, Jdbc.intervalMillis());
 
         try {
-            return Jdbc.query(dataSource, sql)
+            Optional<FencingToken> result = Jdbc.query(dataSource, sql)
                     .bind(lockedBy)
                     .bind(leaseDuration.toMillis())
                     .bind(lockName)
                     .map(rs -> rs.next() ? Optional.of(new FencingToken(rs.getLong(1))) : Optional.empty());
+            if (result.isPresent()) {
+                FencepostDashboard.notifyRefresh(dataSource);
+            }
+            return result;
         } catch (SQLException e) {
             throw new FencepostException("Failed to acquire lock: " + lockName, e);
         }
@@ -191,6 +195,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                 throw new LockNotHeldException(lockName);
             }
             logger.debug("released lease lock '{}', token={}", lockName, token);
+            FencepostDashboard.notifyRefresh(dataSource);
         } catch (SQLException e) {
             throw new FencepostException("Failed to release lock: " + lockName, e);
         } finally {

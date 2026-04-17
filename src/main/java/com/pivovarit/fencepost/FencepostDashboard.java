@@ -224,6 +224,22 @@ public final class FencepostDashboard {
         }
     }
 
+    static void notifyRefresh(DataSource dataSource) {
+        try (Connection conn = dataSource.getConnection()) {
+            notifyRefresh(conn);
+        } catch (SQLException e) {
+            logger.trace("failed to send NOTIFY on dashboard channel, dashboard will rely on polling fallback", e);
+        }
+    }
+
+    static void notifyRefresh(Connection conn) {
+        try {
+            Jdbc.execute(conn, "NOTIFY " + DASHBOARD_CHANNEL);
+        } catch (SQLException e) {
+            logger.trace("failed to send NOTIFY on dashboard channel", e);
+        }
+    }
+
     private void stopListener() {
         if (listenerThread != null) {
             listenerThread.interrupt();

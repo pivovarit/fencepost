@@ -55,6 +55,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
             currentToken = incrementToken(connection, null);
             logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
+            FencepostDashboard.notifyRefresh(dataSource);
             return currentToken;
         } catch (Exception e) {
             rollbackAndClose();
@@ -81,6 +82,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
             currentToken = incrementToken(connection, null);
             logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
+            FencepostDashboard.notifyRefresh(dataSource);
             return currentToken;
         } catch (Exception e) {
             rollbackAndClose();
@@ -113,6 +115,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
             currentToken = incrementToken(connection, null);
             logger.debug("acquired session lock '{}' via tryLock, token={}", lockName, currentToken.value());
+            FencepostDashboard.notifyRefresh(dataSource);
             return Optional.of(currentToken);
         } catch (Exception e) {
             rollbackAndClose();
@@ -136,6 +139,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
         try {
             connection.commit();
             logger.debug("released session lock '{}', token={}", lockName, token);
+            FencepostDashboard.notifyRefresh(dataSource);
         } catch (SQLException e) {
             try {
                 connection.rollback();

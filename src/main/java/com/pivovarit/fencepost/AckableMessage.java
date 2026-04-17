@@ -72,6 +72,7 @@ final class AckableMessage implements Message {
             throw new FencepostException("Failed to ack message: " + id, e);
         }
         state = State.ACKED;
+        FencepostDashboard.notifyRefresh(dataSource);
     }
 
     @Override
@@ -88,6 +89,7 @@ final class AckableMessage implements Message {
             throw new FencepostException("Failed to nack message: " + id, e);
         }
         state = State.NACKED;
+        FencepostDashboard.notifyRefresh(dataSource);
     }
 
     @Override
