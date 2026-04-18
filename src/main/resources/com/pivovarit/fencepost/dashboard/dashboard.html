@@ -56,10 +56,7 @@
       font-size: 13px;
       color: #28a745;
       font-weight: 600;
-      transition: color 0.3s;
     }
-
-    .live-indicator.disconnected { color: #e0a800; }
 
     main { padding: 24px; max-width: 1200px; margin: 0 auto; }
 
@@ -219,7 +216,7 @@
 <header>
   <h1>Fencepost Dashboard</h1>
   <div class="controls">
-    <span id="liveIndicator" class="live-indicator" title="Server-Sent Events">&#9679; Live</span>
+    <span id="liveIndicator" class="live-indicator" title="Polling every 5s">&#9679; Live</span>
     <button id="pauseBtn">Pause</button>
   </div>
 </header>
@@ -567,64 +564,12 @@
     }
   }
 
-  // ─── SSE + Polling fallback ────────────────────────────────────────────────
-  let evtSource = null;
-  const FALLBACK_POLL_MS = 5000;
-  const MIN_REFRESH_MS = 400;
-  let lastRefreshTime = 0;
-  let pendingRefresh = null;
-
-  function throttledRefresh() {
-    if (paused) return;
-    var now = Date.now();
-    var elapsed = now - lastRefreshTime;
-    if (elapsed >= MIN_REFRESH_MS) {
-      lastRefreshTime = now;
-      refreshCurrentView();
-    } else if (!pendingRefresh) {
-      pendingRefresh = setTimeout(function() {
-        pendingRefresh = null;
-        lastRefreshTime = Date.now();
-        refreshCurrentView();
-      }, MIN_REFRESH_MS - elapsed);
-    }
-  }
-
-  function connectSse() {
-    if (evtSource) return;
-    const indicator = document.getElementById('liveIndicator');
-    evtSource = new EventSource('/api/events');
-    evtSource.onmessage = function(e) {
-      if (e.data === 'connected') {
-        indicator.textContent = '\u25CF Live';
-        indicator.classList.remove('disconnected');
-        indicator.title = 'Server-Sent Events';
-        stopPolling();
-        return;
-      }
-      throttledRefresh();
-    };
-    evtSource.onerror = function() {
-      indicator.textContent = '\u25CF Polling';
-      indicator.classList.add('disconnected');
-      indicator.title = 'SSE disconnected, polling as fallback';
-      evtSource.close();
-      evtSource = null;
-      startPolling();
-      setTimeout(connectSse, 5000);
-    };
-  }
+  // ─── Polling ──────────────────────────────────────────────────────────────
+  const POLL_MS = 5000;
 
   function startPolling() {
     if (intervalId) return;
-    intervalId = setInterval(function() { if (!paused) refreshCurrentView(); }, FALLBACK_POLL_MS);
-  }
-
-  function stopPolling() {
-    if (intervalId) {
-      clearInterval(intervalId);
-      intervalId = null;
-    }
+    intervalId = setInterval(function() { if (!paused) refreshCurrentView(); }, POLL_MS);
   }
 
   // ─── Controls ─────────────────────────────────────────────────────────────
@@ -643,7 +588,7 @@
     }
     showView('overview');
     await refreshCurrentView();
-    connectSse();
+    startPolling();
   }
 
   init();

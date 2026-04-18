@@ -16,9 +16,7 @@ import com.pivovarit.fencepost.queue.Message;
 import com.pivovarit.fencepost.queue.Queue;
 
 import javax.sql.DataSource;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -261,35 +259,6 @@ class FencepostDashboardTest {
         String locksResponse = httpGet("http://localhost:" + dashboard.getPort() + "/api/locks");
         assertThat(locksResponse).contains("\"name\":\"x\"");
         assertThat(locksResponse).contains("\"token\":42");
-    }
-
-    @Test
-    void shouldStreamSseEventsOnNotify() throws Exception {
-        dashboard = new FencepostDashboard(dataSource);
-        dashboard.start(0);
-
-        HttpURLConnection conn = (HttpURLConnection) new URL(String.format("http://localhost:%d/api/events", dashboard.getPort())).openConnection();
-        conn.setRequestMethod("GET");
-        conn.setReadTimeout(5000);
-
-        assertThat(conn.getResponseCode()).isEqualTo(200);
-        assertThat(conn.getContentType()).containsIgnoringCase("text/event-stream");
-
-        try (var reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-            String firstLine = reader.readLine();
-            assertThat(firstLine).isEqualTo("data: connected");
-
-            try (Connection pgConn = dataSource.getConnection()) {
-                pgConn.createStatement().execute("NOTIFY fencepost_dashboard");
-            }
-
-            Thread.sleep(200);
-            String refreshLine = reader.readLine();
-            while (refreshLine != null && refreshLine.isEmpty()) {
-                refreshLine = reader.readLine();
-            }
-            assertThat(refreshLine).isEqualTo("data: refresh");
-        }
     }
 
     @Test
