@@ -15,6 +15,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
+import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -306,8 +307,8 @@ class FencepostLockIntegrationTest {
     @Test
     void autoRenewShouldExtendExpiry() throws Exception {
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(2))
-            .withAutoRenew(Duration.ofSeconds(1))
-            .build();
+          .withAutoRenew(Duration.ofSeconds(1))
+          .build();
 
         RenewableLock lock = provider.forName("heartbeat-test");
         lock.lock();
@@ -342,8 +343,8 @@ class FencepostLockIntegrationTest {
     @Test
     void renewShouldUpdateAutoRenewWindow() throws Exception {
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(2))
-            .withAutoRenew(Duration.ofSeconds(1))
-            .build();
+          .withAutoRenew(Duration.ofSeconds(1))
+          .build();
 
         RenewableLock lock = provider.forName("renew-heartbeat-test");
         lock.lock();
@@ -440,8 +441,8 @@ class FencepostLockIntegrationTest {
     @Test
     void quietPeriodShouldPreventImmediateReacquisition() throws Exception {
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10))
-            .withQuietPeriod(Duration.ofSeconds(3))
-            .build();
+          .withQuietPeriod(Duration.ofSeconds(3))
+          .build();
 
         RenewableLock lock = provider.forName("quiet-test");
         lock.lock();
@@ -460,8 +461,8 @@ class FencepostLockIntegrationTest {
     @Test
     void quietPeriodShouldApplyWhenLockHeldLongerThanQuietPeriod() throws Exception {
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30))
-            .withQuietPeriod(Duration.ofSeconds(2))
-            .build();
+          .withQuietPeriod(Duration.ofSeconds(2))
+          .build();
 
         RenewableLock lock = provider.forName("quiet-held-long-test");
         lock.lock();
@@ -481,8 +482,8 @@ class FencepostLockIntegrationTest {
     @Test
     void quietPeriodShouldClearLockedAtOnUnlock() throws Exception {
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10))
-            .withQuietPeriod(Duration.ofSeconds(3))
-            .build();
+          .withQuietPeriod(Duration.ofSeconds(3))
+          .build();
 
         RenewableLock lock = provider.forName("quiet-clear-test");
         lock.lock();
@@ -504,12 +505,12 @@ class FencepostLockIntegrationTest {
         AtomicReference<FencepostException> callbackError = new AtomicReference<>();
 
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(2))
-            .withAutoRenew(Duration.ofSeconds(1))
-            .onAutoRenewFailure(ex -> {
-                callbackFired.set(true);
-                callbackError.set(ex);
-            })
-            .build();
+          .withAutoRenew(Duration.ofSeconds(1))
+          .onAutoRenewFailure(ex -> {
+              callbackFired.set(true);
+              callbackError.set(ex);
+          })
+          .build();
 
         RenewableLock lock = provider.forName("heartbeat-callback-test");
         lock.lock();
@@ -532,9 +533,9 @@ class FencepostLockIntegrationTest {
         AtomicBoolean callbackFired = new AtomicBoolean(false);
 
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(2))
-            .withAutoRenew(Duration.ofSeconds(1))
-            .onAutoRenewFailure(ex -> callbackFired.set(true))
-            .build();
+          .withAutoRenew(Duration.ofSeconds(1))
+          .onAutoRenewFailure(ex -> callbackFired.set(true))
+          .build();
 
         RenewableLock lock = provider.forName("heartbeat-invalidate-test");
         lock.lock();
@@ -557,16 +558,17 @@ class FencepostLockIntegrationTest {
         AtomicReference<Long> acquiredToken = new AtomicReference<>();
 
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(5))
-            .withAutoRenew(Duration.ofSeconds(1))
-            .onAutoRenewFailure(ex -> callbackFired.set(true))
-            .build();
+          .withAutoRenew(Duration.ofSeconds(1))
+          .onAutoRenewFailure(ex -> callbackFired.set(true))
+          .build();
 
         RenewableLock lock = provider.forName("heartbeat-unlock-test");
         FencingToken token = lock.lock();
         acquiredToken.set(token.value());
 
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute("UPDATE fencepost_locks SET token = token + 1 WHERE lock_name = 'heartbeat-unlock-test'");
+            conn.createStatement()
+              .execute("UPDATE fencepost_locks SET token = token + 1 WHERE lock_name = 'heartbeat-unlock-test'");
         }
 
         await().atMost(Duration.ofSeconds(10)).untilTrue(callbackFired);
@@ -581,7 +583,8 @@ class FencepostLockIntegrationTest {
         lock.unlock();
 
         try (Connection conn = dataSource.getConnection();
-             ResultSet rs = conn.createStatement().executeQuery("SELECT locked_by FROM fencepost_locks WHERE lock_name = 'heartbeat-unlock-test'")) {
+             ResultSet rs = conn.createStatement()
+               .executeQuery("SELECT locked_by FROM fencepost_locks WHERE lock_name = 'heartbeat-unlock-test'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getString("locked_by")).isNull();
         }
@@ -662,7 +665,7 @@ class FencepostLockIntegrationTest {
         try {
             AdvisoryLock contender = provider.forName("advisory-timeout");
             assertThatThrownBy(() -> contender.lock(Duration.ofMillis(500)))
-                .isInstanceOf(LockAcquisitionTimeoutException.class);
+              .isInstanceOf(LockAcquisitionTimeoutException.class);
         } finally {
             holder.unlock();
         }
@@ -881,9 +884,61 @@ class FencepostLockIntegrationTest {
         assertThatThrownBy(holder::unlock).isInstanceOf(FencepostException.class);
     }
 
+    @Test
+    void advisoryUnlockShouldClearInheritedLocksOnPooledConnection() throws Exception {
+        try (Connection sticky = dataSource.getConnection()) {
+            long leakedKey = 4242424242L;
+            try (PreparedStatement ps = sticky.prepareStatement("SELECT pg_advisory_lock(?)")) {
+                ps.setLong(1, leakedKey);
+                try (ResultSet rs = ps.executeQuery()) {
+                    rs.next();
+                }
+            }
+
+            DataSource shared = sharedConnectionDataSource(sticky);
+            Factory<AdvisoryLock> provider = Fencepost.advisoryLock(shared).build();
+            AdvisoryLock lock = provider.forName("unlock-all-inheritance");
+            lock.lock();
+            lock.unlock();
+
+            try (Connection fresh = dataSource.getConnection();
+                 PreparedStatement ps = fresh.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
+                ps.setLong(1, leakedKey);
+                try (ResultSet rs = ps.executeQuery()) {
+                    rs.next();
+                    assertThat(rs.getBoolean(1))
+                      .as("leaked advisory lock on pooled connection should be cleared after unlock()")
+                      .isTrue();
+                }
+            }
+        }
+    }
+
+    private static DataSource sharedConnectionDataSource(Connection underlying) {
+        Connection uncloseable = (Connection) Proxy.newProxyInstance(
+          Connection.class.getClassLoader(),
+          new Class[]{Connection.class},
+          (proxy, method, args) -> {
+              if ("close".equals(method.getName())) {
+                  return null;
+              }
+              return method.invoke(underlying, args);
+          });
+        return (DataSource) Proxy.newProxyInstance(
+          DataSource.class.getClassLoader(),
+          new Class[]{DataSource.class},
+          (proxy, method, args) -> {
+              if ("getConnection".equals(method.getName())) {
+                  return uncloseable;
+              }
+              throw new UnsupportedOperationException(method.getName());
+          });
+    }
+
     private void terminateBackends(String state) throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(String.format("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = '%s' AND pid != pg_backend_pid()", state));
+            conn.createStatement()
+              .execute(String.format("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = '%s' AND pid != pg_backend_pid()", state));
         }
     }
 
