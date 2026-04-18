@@ -69,6 +69,7 @@ final class FencepostQueue implements Queue {
                   .bind(delay.toMillis())
                   .execute();
                 Jdbc.execute(conn, "NOTIFY " + channelName());
+                Jdbc.execute(conn, "NOTIFY " + FencepostDashboard.DASHBOARD_CHANNEL);
                 conn.commit();
                 logger.debug("enqueued message to queue '{}'", queueName);
             } catch (SQLException e) {

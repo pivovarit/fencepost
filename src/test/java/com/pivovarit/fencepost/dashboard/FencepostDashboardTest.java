@@ -293,6 +293,74 @@ class FencepostDashboardTest {
     }
 
     @Test
+    void shouldStreamSseRefreshWhenEnqueued() throws Exception {
+        dashboard = new FencepostDashboard(dataSource);
+        dashboard.start(0);
+
+        HttpURLConnection conn = (HttpURLConnection) new URL(
+          String.format("http://localhost:%d/api/events", dashboard.getPort())).openConnection();
+        conn.setRequestMethod("GET");
+        conn.setReadTimeout(5000);
+
+        assertThat(conn.getResponseCode()).isEqualTo(200);
+
+        try (var reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            String firstLine = reader.readLine();
+            assertThat(firstLine).isEqualTo("data: connected");
+
+            Queue queue = Fencepost.queue(dataSource)
+              .visibilityTimeout(Duration.ofSeconds(30))
+              .build()
+              .forName("dash-enqueue-test");
+            try {
+                queue.enqueue("hello".getBytes(StandardCharsets.UTF_8));
+            } finally {
+                queue.close();
+            }
+
+            String refreshLine = reader.readLine();
+            while (refreshLine != null && refreshLine.isEmpty()) {
+                refreshLine = reader.readLine();
+            }
+            assertThat(refreshLine).isEqualTo("data: refresh");
+        }
+    }
+
+    @Test
+    void shouldStreamSseRefreshWhenDelayedEnqueued() throws Exception {
+        dashboard = new FencepostDashboard(dataSource);
+        dashboard.start(0);
+
+        HttpURLConnection conn = (HttpURLConnection) new URL(
+          String.format("http://localhost:%d/api/events", dashboard.getPort())).openConnection();
+        conn.setRequestMethod("GET");
+        conn.setReadTimeout(5000);
+
+        assertThat(conn.getResponseCode()).isEqualTo(200);
+
+        try (var reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            String firstLine = reader.readLine();
+            assertThat(firstLine).isEqualTo("data: connected");
+
+            Queue queue = Fencepost.queue(dataSource)
+              .visibilityTimeout(Duration.ofSeconds(30))
+              .build()
+              .forName("dash-delayed-test");
+            try {
+                queue.enqueue("later".getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(30));
+            } finally {
+                queue.close();
+            }
+
+            String refreshLine = reader.readLine();
+            while (refreshLine != null && refreshLine.isEmpty()) {
+                refreshLine = reader.readLine();
+            }
+            assertThat(refreshLine).isEqualTo("data: refresh");
+        }
+    }
+
+    @Test
     @Disabled("manual test - run from IDE to experiment with the dashboard in a browser")
     void sandbox() throws Exception {
         try (Connection conn = dataSource.getConnection()) {
