@@ -133,6 +133,11 @@ final class AdvisoryLockInstance implements AdvisoryLock {
         } catch (SQLException e) {
             throw new FencepostException("Failed to release advisory lock: " + lockName, e);
         } finally {
+            try {
+                Jdbc.execute(connection, "SELECT pg_advisory_unlock_all()");
+            } catch (SQLException e) {
+                logger.trace("failed to pg_advisory_unlock_all for '{}'", lockName, e);
+            }
             closeConnection();
             connection = null;
             held = false;
