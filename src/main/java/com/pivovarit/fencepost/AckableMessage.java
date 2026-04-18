@@ -70,11 +70,11 @@ final class AckableMessage implements Message {
               .bind(pickToken)
               .execute();
 
-            state = State.ACKED;
-
             if (updated != 1) {
                 throw new LostOwnershipException(id);
             }
+
+            state = State.ACKED;
         } catch (SQLException e) {
             throw new FencepostException("Failed to ack message: " + id, e);
         }
@@ -90,10 +90,10 @@ final class AckableMessage implements Message {
               .bind(id)
               .bind(pickToken)
               .execute();
-            state = State.NACKED;
             if (updated != 1) {
                 throw new LostOwnershipException(id);
             }
+            state = State.NACKED;
         } catch (SQLException e) {
             throw new FencepostException("Failed to nack message: " + id, e);
         }

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>fencepost social preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 1280px;
+    height: 640px;
+    overflow: hidden;
+  }
+  body {
+    background: #080d14;
+    color: #e2e8f0;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    position: relative;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Fine grid background */
+  .grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(167,139,250,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(167,139,250,0.035) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: radial-gradient(ellipse 900px 520px at 40% 50%, #000 30%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse 900px 520px at 40% 50%, #000 30%, transparent 75%);
+  }
+
+  /* Glow */
+  .glow {
+    position: absolute;
+    top: -140px;
+    left: -160px;
+    width: 900px;
+    height: 900px;
+    background: radial-gradient(circle at center, rgba(167,139,250,0.16) 0%, rgba(124,58,237,0.08) 30%, transparent 60%);
+    pointer-events: none;
+  }
+  .glow2 {
+    position: absolute;
+    bottom: -220px;
+    right: -180px;
+    width: 700px;
+    height: 700px;
+    background: radial-gradient(circle at center, rgba(124,58,237,0.10) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  /* Top hairline */
+  .hairline {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, rgba(167,139,250,0.55) 50%, transparent 100%);
+  }
+
+  /* Grain overlay */
+  .grain {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.04;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .frame {
+    position: relative;
+    z-index: 2;
+    height: 640px;
+    width: 1280px;
+  }
+
+  /* Top row */
+  .top {
+    position: absolute;
+    top: 56px;
+    left: 80px;
+    right: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: #A78BFA;
+    background: rgba(167,139,250,0.07);
+    border: 1px solid rgba(167,139,250,0.22);
+    padding: 8px 16px;
+    border-radius: 100px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #A78BFA;
+    box-shadow: 0 0 10px rgba(167,139,250,0.7);
+  }
+
+  .repo {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 500;
+    color: #64748b;
+    letter-spacing: 0.02em;
+  }
+  .repo .slash { color: #334155; margin: 0 2px; }
+  .repo .name { color: #94a3b8; }
+
+  /* Center block */
+  .center {
+    position: absolute;
+    top: 170px;
+    left: 80px;
+    right: 80px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 22px;
+  }
+
+  .wordmark {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 150px;
+    line-height: 0.95;
+    letter-spacing: -0.055em;
+    color: #e2e8f0;
+    text-shadow: 0 0 80px rgba(167,139,250,0.12);
+  }
+  .wordmark .f {
+    color: #A78BFA;
+    text-shadow: 0 0 40px rgba(167,139,250,0.45);
+  }
+
+  .tagline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
+    font-weight: 400;
+    color: #94a3b8;
+    letter-spacing: -0.01em;
+  }
+  .tagline .hl { color: #C4B5FD; }
+  .tagline .sep { color: #334155; margin: 0 10px; }
+
+  /* Chips row */
+  .chips {
+    display: flex;
+    gap: 10px;
+  }
+  .chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 7px 14px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .chip::before {
+    content: '';
+    width: 5px; height: 5px; border-radius: 50%;
+    background: currentColor;
+    opacity: 0.8;
+  }
+  .chip.violet {
+    color: #A78BFA;
+    background: rgba(167,139,250,0.09);
+    border: 1px solid rgba(167,139,250,0.22);
+  }
+  .chip.green {
+    color: #4ade80;
+    background: rgba(74,222,128,0.08);
+    border: 1px solid rgba(74,222,128,0.22);
+  }
+  .chip.yellow {
+    color: #fcd34d;
+    background: rgba(252,211,77,0.08);
+    border: 1px solid rgba(252,211,77,0.22);
+  }
+
+  /* Bottom row */
+  .bottom {
+    position: absolute;
+    bottom: 56px;
+    left: 80px;
+    right: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+    display: flex;
+    gap: 28px;
+  }
+  .meta .item { display: flex; align-items: baseline; gap: 8px; }
+  .meta .k { color: #94a3b8; text-transform: uppercase; font-size: 11px; letter-spacing: 0.14em; font-weight: 600; }
+  .meta .v { color: #C4B5FD; font-weight: 500; }
+
+  /* Right marker */
+  .marker {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: #94a3b8;
+    letter-spacing: 0.02em;
+  }
+  .marker svg { width: 18px; height: 18px; fill: #94a3b8; }
+  .marker .lbl { color: #94a3b8; font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<div class="glow2"></div>
+<div class="grid"></div>
+<div class="grain"></div>
+<div class="hairline"></div>
+
+<div class="frame">
+
+  <div class="top">
+    <div class="badge">
+      <span class="dot"></span>
+      Java 11+ &nbsp;·&nbsp; PostgreSQL &nbsp;·&nbsp; Zero Dependencies
+    </div>
+    <div class="repo">
+      github.com<span class="slash">/</span>pivovarit<span class="slash">/</span><span class="name">fencepost</span>
+    </div>
+  </div>
+
+  <div class="center">
+    <div class="wordmark"><span class="f">f</span>encepost</div>
+    <div class="tagline">
+      Distributed concurrency toolkit for
+      <span class="hl">Java</span><span class="sep">+</span><span class="hl">PostgreSQL</span>
+    </div>
+    <div class="chips">
+      <span class="chip violet">advisory</span>
+      <span class="chip green">session&nbsp;·&nbsp;fenced</span>
+      <span class="chip yellow">lease&nbsp;·&nbsp;renewable</span>
+      <span class="chip violet">queue</span>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="meta">
+      <div class="item"><span class="k">locks</span><span class="v">3</span></div>
+      <div class="item"><span class="k">queue</span><span class="v">at-least-once</span></div>
+      <div class="item"><span class="k">deps</span><span class="v">java.sql</span></div>
+    </div>
+    <div class="marker">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+      </svg>
+      <span class="lbl">open-source</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
