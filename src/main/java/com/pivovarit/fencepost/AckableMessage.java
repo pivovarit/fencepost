@@ -21,7 +21,7 @@ final class AckableMessage implements Message {
     private final DataSource dataSource;
     private final String tableName;
 
-    private State state = State.ACTIVE;
+    private volatile State state = State.ACTIVE;
 
     AckableMessage(long id, byte[] payload, String type, Map<String, String> headers, int attempts, String pickToken, DataSource dataSource, String tableName) {
         this.id = id;
@@ -64,18 +64,19 @@ final class AckableMessage implements Message {
         if (state != State.ACTIVE) {
             throw new IllegalStateException("Message already " + state.name().toLowerCase());
         }
-        int updated;
         try {
-            updated = Jdbc.update(dataSource, String.format("DELETE FROM %s WHERE id = ? AND picked_by = ?", tableName))
+            int updated = Jdbc.update(dataSource, String.format("DELETE FROM %s WHERE id = ? AND picked_by = ?", tableName))
               .bind(id)
               .bind(pickToken)
               .execute();
+
+            state = State.ACKED;
+
+            if (updated != 1) {
+                throw new LostOwnershipException(id);
+            }
         } catch (SQLException e) {
             throw new FencepostException("Failed to ack message: " + id, e);
-        }
-        state = State.ACKED;
-        if (updated != 1) {
-            throw new LostOwnershipException(id);
         }
     }
 
@@ -84,18 +85,17 @@ final class AckableMessage implements Message {
         if (state != State.ACTIVE) {
             throw new IllegalStateException("Message already " + state.name().toLowerCase());
         }
-        int updated;
         try {
-            updated = Jdbc.update(dataSource, String.format("UPDATE %s SET visible_at = now(), picked_by = NULL WHERE id = ? AND picked_by = ?", tableName))
+            int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET visible_at = now(), picked_by = NULL WHERE id = ? AND picked_by = ?", tableName))
               .bind(id)
               .bind(pickToken)
               .execute();
+            state = State.NACKED;
+            if (updated != 1) {
+                throw new LostOwnershipException(id);
+            }
         } catch (SQLException e) {
             throw new FencepostException("Failed to nack message: " + id, e);
-        }
-        state = State.NACKED;
-        if (updated != 1) {
-            throw new LostOwnershipException(id);
         }
     }
 
