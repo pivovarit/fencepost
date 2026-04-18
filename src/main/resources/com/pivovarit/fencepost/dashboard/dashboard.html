@@ -311,6 +311,12 @@
     catch (e) { return str; }
   }
 
+  function shortPickedBy(s) {
+    if (!s) return s;
+    const i = s.lastIndexOf('/');
+    return i > 0 ? s.substring(0, i) : s;
+  }
+
   function jsonAttr(value) {
     return JSON.stringify(value)
       .replace(/&/g, '&amp;')
@@ -441,7 +447,7 @@
         <td class="mono">${h(m.type)}</td>
         <td class="mono">${h(decodeBase64(m.payload_preview))}</td>
         <td>${messageStatus(m)}</td>
-        <td>${h(m.picked_by)}</td>
+        <td class="mono">${h(shortPickedBy(m.picked_by))}</td>
         <td>${h(m.attempts)}</td>
         <td>${formatTime(m.created_at)}</td>
       </tr>`).join('');
