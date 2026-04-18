@@ -181,7 +181,7 @@ public final class FencepostDashboard {
                     Connection conn = ensureListening();
                     var pgConn = conn.unwrap(PGConnection.class);
                     var notifications = pgConn.getNotifications(LISTEN_TIMEOUT_MS);
-                    if (notifications != null) {
+                    if (notifications != null && notifications.length > 0) {
                         broadcastRefresh();
                     }
                 } catch (Exception e) {
