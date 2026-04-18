@@ -225,6 +225,13 @@ public final class FencepostDashboard {
 
     private synchronized void closeListenerConnection() {
         if (listenerConnection != null) {
+            try {
+                if (!listenerConnection.isClosed()) {
+                    Jdbc.execute(listenerConnection, "UNLISTEN *");
+                }
+            } catch (SQLException e) {
+                logger.trace("failed to UNLISTEN before releasing listener connection", e);
+            }
             try { listenerConnection.close(); } catch (SQLException e) { logger.trace("failed to close listener connection", e); }
             listenerConnection = null;
         }
