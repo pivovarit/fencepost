@@ -1,5 +1,6 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.queue.LostOwnershipException;
 import com.pivovarit.fencepost.queue.Message;
 import com.pivovarit.fencepost.queue.Queue;
 import org.junit.jupiter.api.BeforeAll;
@@ -332,7 +333,9 @@ class QueueIntegrationTest {
         Message msgB = queue.tryDequeue().get();
         assertThat(msgB.id()).isEqualTo(msgA.id());
 
-        msgA.ack();
+        assertThatThrownBy(msgA::ack)
+          .as("stale consumer A must be told its ack lost ownership")
+          .isInstanceOf(LostOwnershipException.class);
 
         try (Connection conn = dataSource.getConnection();
              ResultSet rs = conn.createStatement().executeQuery(
@@ -361,7 +364,9 @@ class QueueIntegrationTest {
         Message msgB = queue.tryDequeue().get();
         assertThat(msgB.id()).isEqualTo(msgA.id());
 
-        msgA.nack();
+        assertThatThrownBy(msgA::nack)
+          .as("stale consumer A must be told its nack lost ownership")
+          .isInstanceOf(LostOwnershipException.class);
 
         assertThat(queue.tryDequeue())
           .as("stale consumer A's nack must not steal the message back from B")

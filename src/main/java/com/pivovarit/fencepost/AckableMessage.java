@@ -1,5 +1,6 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.queue.LostOwnershipException;
 import com.pivovarit.fencepost.queue.Message;
 
 import javax.sql.DataSource;
@@ -63,8 +64,9 @@ final class AckableMessage implements Message {
         if (state != State.ACTIVE) {
             throw new IllegalStateException("Message already " + state.name().toLowerCase());
         }
+        int updated;
         try {
-            Jdbc.update(dataSource, String.format("DELETE FROM %s WHERE id = ? AND picked_by = ?", tableName))
+            updated = Jdbc.update(dataSource, String.format("DELETE FROM %s WHERE id = ? AND picked_by = ?", tableName))
               .bind(id)
               .bind(pickToken)
               .execute();
@@ -72,6 +74,9 @@ final class AckableMessage implements Message {
             throw new FencepostException("Failed to ack message: " + id, e);
         }
         state = State.ACKED;
+        if (updated != 1) {
+            throw new LostOwnershipException(id);
+        }
     }
 
     @Override
@@ -79,8 +84,9 @@ final class AckableMessage implements Message {
         if (state != State.ACTIVE) {
             throw new IllegalStateException("Message already " + state.name().toLowerCase());
         }
+        int updated;
         try {
-            Jdbc.update(dataSource, String.format("UPDATE %s SET visible_at = now(), picked_by = NULL WHERE id = ? AND picked_by = ?", tableName))
+            updated = Jdbc.update(dataSource, String.format("UPDATE %s SET visible_at = now(), picked_by = NULL WHERE id = ? AND picked_by = ?", tableName))
               .bind(id)
               .bind(pickToken)
               .execute();
@@ -88,6 +94,9 @@ final class AckableMessage implements Message {
             throw new FencepostException("Failed to nack message: " + id, e);
         }
         state = State.NACKED;
+        if (updated != 1) {
+            throw new LostOwnershipException(id);
+        }
     }
 
     @Override
