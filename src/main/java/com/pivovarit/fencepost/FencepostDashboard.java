@@ -52,6 +52,12 @@ public final class FencepostDashboard {
         server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/", this::handle);
         server.start();
+        try {
+            ensureListening();
+        } catch (SQLException e) {
+            server.stop(0);
+            throw new IOException("failed to start dashboard listener", e);
+        }
         startListener();
     }
 
