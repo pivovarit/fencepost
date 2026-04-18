@@ -12,16 +12,22 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
+import java.io.PrintWriter;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Logger;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,18 +55,18 @@ class QueueIntegrationTest {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
               "DROP TABLE IF EXISTS fencepost_queue; "
-                + "CREATE TABLE fencepost_queue ("
-                + "  id BIGSERIAL PRIMARY KEY,"
-                + "  queue_name TEXT NOT NULL,"
-                + "  payload BYTEA NOT NULL,"
-                + "  type TEXT,"
-                + "  headers JSONB,"
-                + "  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),"
-                + "  visible_at TIMESTAMPTZ NOT NULL DEFAULT now(),"
-                + "  attempts INT NOT NULL DEFAULT 0,"
-                + "  picked_by TEXT"
-                + ");"
-                + "CREATE INDEX idx_fencepost_queue_dequeue ON fencepost_queue (queue_name, visible_at)"
+              + "CREATE TABLE fencepost_queue ("
+              + "  id BIGSERIAL PRIMARY KEY,"
+              + "  queue_name TEXT NOT NULL,"
+              + "  payload BYTEA NOT NULL,"
+              + "  type TEXT,"
+              + "  headers JSONB,"
+              + "  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),"
+              + "  visible_at TIMESTAMPTZ NOT NULL DEFAULT now(),"
+              + "  attempts INT NOT NULL DEFAULT 0,"
+              + "  picked_by TEXT"
+              + ");"
+              + "CREATE INDEX idx_fencepost_queue_dequeue ON fencepost_queue (queue_name, visible_at)"
             );
         }
     }
@@ -157,7 +163,8 @@ class QueueIntegrationTest {
 
     @Test
     void closeWithoutAckShouldLetVisibilityTimeoutExpire() {
-        Queue shortTimeout = Fencepost.queue(dataSource).visibilityTimeout(Duration.ofSeconds(1)).build().forName("test-queue");
+        Queue shortTimeout = Fencepost.queue(dataSource).visibilityTimeout(Duration.ofSeconds(1)).build()
+          .forName("test-queue");
         shortTimeout.enqueue("to-expire".getBytes(UTF_8));
 
         Message msg = shortTimeout.tryDequeue().get();
@@ -421,6 +428,48 @@ class QueueIntegrationTest {
         redelivered.get().ack();
     }
 
+    @Test
+    void closeShouldNotHangWhenListenerAcquireIsBlocked() throws Exception {
+        GatingDataSource gated = new GatingDataSource(dataSource);
+        Queue queue = Fencepost.queue(gated)
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .build()
+          .forName("close-while-blocked");
+
+        // Allow tryDequeue's getConnection to succeed, then block subsequent acquisitions
+        // so the listener connection acquisition inside ensureListening() hangs.
+        gated.allowThenBlock(1);
+
+        AtomicReference<Throwable> consumerError = new AtomicReference<>();
+        Thread consumer = new Thread(() -> {
+            try {
+                queue.dequeue();
+            } catch (Throwable t) {
+                consumerError.set(t);
+            }
+        }, "consumer");
+        consumer.start();
+
+        assertThat(gated.awaitBlocked(2, TimeUnit.SECONDS))
+          .as("consumer should be parked inside dataSource.getConnection()")
+          .isTrue();
+
+        long start = System.nanoTime();
+        queue.close();
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+        assertThat(elapsedMs)
+          .as("close() must not wait for the stuck listener acquisition")
+          .isLessThan(1000);
+
+        gated.release();
+        consumer.join(5000);
+        assertThat(consumer.isAlive()).isFalse();
+        assertThat(consumerError.get()).isInstanceOf(FencepostException.class);
+        assertThat(gated.outstanding())
+          .as("a connection acquired after close() must not leak")
+          .isZero();
+    }
+
     private Queue newQueue() {
         return newQueue("test-queue");
     }
@@ -432,4 +481,110 @@ class QueueIntegrationTest {
           .forName(name);
     }
 
+    static final class GatingDataSource implements DataSource {
+        private final DataSource delegate;
+        private final AtomicInteger outstanding = new AtomicInteger(0);
+        private final AtomicInteger remainingAllowed = new AtomicInteger(Integer.MAX_VALUE);
+        private final CountDownLatch blocked = new CountDownLatch(1);
+        private volatile CountDownLatch gate;
+
+        GatingDataSource(DataSource delegate) {
+            this.delegate = delegate;
+        }
+
+        void allowThenBlock(int allowed) {
+            remainingAllowed.set(allowed);
+            gate = new CountDownLatch(1);
+        }
+
+        boolean awaitBlocked(long timeout, TimeUnit unit) throws InterruptedException {
+            return blocked.await(timeout, unit);
+        }
+
+        void release() {
+            CountDownLatch g = this.gate;
+            if (g != null) g.countDown();
+        }
+
+        int outstanding() {
+            return outstanding.get();
+        }
+
+        @Override
+        public Connection getConnection() throws SQLException {
+            CountDownLatch g = this.gate;
+            if (g != null && remainingAllowed.getAndDecrement() <= 0) {
+                blocked.countDown();
+                try {
+                    g.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new SQLException("getConnection interrupted", e);
+                }
+            }
+            Connection raw = delegate.getConnection();
+            outstanding.incrementAndGet();
+            return (Connection) Proxy.newProxyInstance(
+              Connection.class.getClassLoader(),
+              new Class<?>[]{Connection.class},
+              tracking(raw));
+        }
+
+        private InvocationHandler tracking(Connection raw) {
+            return (proxy, method, args) -> {
+                if ("close".equals(method.getName()) && method.getParameterCount() == 0) {
+                    try {
+                        return method.invoke(raw, args);
+                    } finally {
+                        outstanding.decrementAndGet();
+                    }
+                }
+                try {
+                    return method.invoke(raw, args);
+                } catch (java.lang.reflect.InvocationTargetException ite) {
+                    throw ite.getCause();
+                }
+            };
+        }
+
+        @Override
+        public Connection getConnection(String u, String p) throws SQLException {
+            return getConnection();
+        }
+
+        @Override
+        public PrintWriter getLogWriter() throws SQLException {
+            return delegate.getLogWriter();
+        }
+
+        @Override
+        public void setLogWriter(PrintWriter out) throws SQLException {
+            delegate.setLogWriter(out);
+        }
+
+        @Override
+        public void setLoginTimeout(int seconds) throws SQLException {
+            delegate.setLoginTimeout(seconds);
+        }
+
+        @Override
+        public int getLoginTimeout() throws SQLException {
+            return delegate.getLoginTimeout();
+        }
+
+        @Override
+        public Logger getParentLogger() throws SQLFeatureNotSupportedException {
+            throw new SQLFeatureNotSupportedException();
+        }
+
+        @Override
+        public <T> T unwrap(Class<T> iface) throws SQLException {
+            return delegate.unwrap(iface);
+        }
+
+        @Override
+        public boolean isWrapperFor(Class<?> iface) throws SQLException {
+            return delegate.isWrapperFor(iface);
+        }
+    }
 }

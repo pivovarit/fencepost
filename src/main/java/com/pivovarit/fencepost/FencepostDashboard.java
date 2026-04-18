@@ -31,9 +31,11 @@ public final class FencepostDashboard {
     private final DataSource dataSource;
     private final DashboardApi api;
     private final List<OutputStream> sseClients = new CopyOnWriteArrayList<>();
+    private final Object listenerLock = new Object();
     private HttpServer server;
     private volatile Thread listenerThread;
-    private volatile Connection listenerConnection;
+    private volatile boolean stopping;
+    private Connection listenerConnection;
 
     public FencepostDashboard(DataSource dataSource) {
         this(dataSource, DEFAULT_LOCKS_TABLE, DEFAULT_QUEUE_TABLE);
@@ -182,24 +184,28 @@ public final class FencepostDashboard {
 
     private void startListener() {
         listenerThread = new Thread(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    Connection conn = ensureListening();
-                    var pgConn = conn.unwrap(PGConnection.class);
-                    var notifications = pgConn.getNotifications(LISTEN_TIMEOUT_MS);
-                    if (notifications != null && notifications.length > 0) {
-                        broadcastRefresh();
-                    }
-                } catch (Exception e) {
-                    closeListenerConnection();
-                    if (!Thread.currentThread().isInterrupted()) {
-                        try {
-                            Thread.sleep(1000);
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
+            try {
+                while (!stopping && !Thread.currentThread().isInterrupted()) {
+                    try {
+                        Connection conn = ensureListening();
+                        var pgConn = conn.unwrap(PGConnection.class);
+                        var notifications = pgConn.getNotifications(LISTEN_TIMEOUT_MS);
+                        if (notifications != null && notifications.length > 0) {
+                            broadcastRefresh();
+                        }
+                    } catch (Exception e) {
+                        closeListenerConnection();
+                        if (!stopping && !Thread.currentThread().isInterrupted()) {
+                            try {
+                                Thread.sleep(1000);
+                            } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                            }
                         }
                     }
                 }
+            } finally {
+                closeListenerConnection();
             }
         });
         listenerThread.setDaemon(true);
@@ -207,41 +213,98 @@ public final class FencepostDashboard {
         listenerThread.start();
     }
 
-    private synchronized Connection ensureListening() throws SQLException {
-        if (listenerConnection != null) {
-            try {
-                if (!listenerConnection.isClosed()) {
-                    return listenerConnection;
+    private Connection ensureListening() throws SQLException {
+        synchronized (listenerLock) {
+            if (stopping) {
+                throw new SQLException("Dashboard is stopping");
+            }
+            if (listenerConnection != null) {
+                try {
+                    if (!listenerConnection.isClosed()) {
+                        return listenerConnection;
+                    }
+                } catch (SQLException e) {
+                    logger.trace("failed to check listener connection state", e);
                 }
-            } catch (SQLException e) {
-                logger.trace("failed to check listener connection state", e);
             }
         }
-        listenerConnection = dataSource.getConnection();
-        listenerConnection.setAutoCommit(true);
-        Jdbc.execute(listenerConnection, "LISTEN " + DASHBOARD_CHANNEL);
-        return listenerConnection;
+
+        Connection newConn = null;
+        try {
+            newConn = dataSource.getConnection();
+            newConn.setAutoCommit(true);
+            Jdbc.execute(newConn, "LISTEN " + DASHBOARD_CHANNEL);
+        } catch (SQLException e) {
+            if (newConn != null) {
+                try {
+                    newConn.close();
+                } catch (SQLException ce) {
+                    logger.trace("failed to close listener connection", ce);
+                }
+            }
+            throw e;
+        }
+
+        synchronized (listenerLock) {
+            if (stopping) {
+                try {
+                    newConn.close();
+                } catch (SQLException e) {
+                    logger.trace("failed to close listener connection", e);
+                }
+                throw new SQLException("Dashboard is stopping");
+            }
+            if (listenerConnection != null) {
+                try {
+                    if (!listenerConnection.isClosed()) {
+                        Connection winner = listenerConnection;
+                        try {
+                            newConn.close();
+                        } catch (SQLException e) {
+                            logger.trace("failed to close listener connection", e);
+                        }
+                        return winner;
+                    }
+                } catch (SQLException e) {
+                    logger.trace("failed to check listener connection state", e);
+                }
+            }
+            listenerConnection = newConn;
+            return newConn;
+        }
     }
 
-    private synchronized void closeListenerConnection() {
-        if (listenerConnection != null) {
-            try {
-                if (!listenerConnection.isClosed()) {
-                    Jdbc.execute(listenerConnection, "UNLISTEN *");
-                }
-            } catch (SQLException e) {
-                logger.trace("failed to UNLISTEN before releasing listener connection", e);
-            }
-            try { listenerConnection.close(); } catch (SQLException e) { logger.trace("failed to close listener connection", e); }
+    private void closeListenerConnection() {
+        Connection toClose;
+        synchronized (listenerLock) {
+            toClose = listenerConnection;
             listenerConnection = null;
+        }
+        if (toClose == null) {
+            return;
+        }
+        try {
+            if (!toClose.isClosed()) {
+                Jdbc.execute(toClose, "UNLISTEN *");
+            }
+        } catch (SQLException e) {
+            logger.trace("failed to UNLISTEN before releasing listener connection", e);
+        }
+        try {
+            toClose.close();
+        } catch (SQLException e) {
+            logger.trace("failed to close listener connection", e);
         }
     }
 
     private void stopListener() {
-        if (listenerThread != null) {
-            listenerThread.interrupt();
+        stopping = true;
+        Thread thread = listenerThread;
+        if (thread != null) {
+            thread.interrupt();
+            closeListenerConnection();
             try {
-                listenerThread.join(2000);
+                thread.join(2000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }

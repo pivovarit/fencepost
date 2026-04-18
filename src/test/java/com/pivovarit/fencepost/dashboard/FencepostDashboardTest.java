@@ -19,13 +19,21 @@ import javax.sql.DataSource;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Logger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -361,6 +369,43 @@ class FencepostDashboardTest {
     }
 
     @Test
+    void stopShouldNotLeakPoolConnectionWhenListenerIsBlockedAcquiring() throws Exception {
+        GatingDataSource gated = new GatingDataSource(dataSource);
+        dashboard = new FencepostDashboard(gated);
+        dashboard.start(0);
+
+        long deadline = System.currentTimeMillis() + 2000;
+        while (gated.outstanding() < 1 && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
+        assertThat(gated.outstanding()).isEqualTo(1);
+
+        gated.blockFromNow();
+        gated.closeAllIssued();
+
+        assertThat(gated.awaitBlocked(5, TimeUnit.SECONDS))
+          .as("listener should be parked inside dataSource.getConnection() during reconnect")
+          .isTrue();
+
+        long start = System.nanoTime();
+        dashboard.stop();
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+        assertThat(elapsedMs)
+          .as("stop() must not wait for the stuck listener re-acquisition")
+          .isLessThan(3000);
+
+        gated.release();
+
+        long leakDeadline = System.currentTimeMillis() + 3000;
+        while (gated.outstanding() > 0 && System.currentTimeMillis() < leakDeadline) {
+            Thread.sleep(50);
+        }
+        assertThat(gated.outstanding())
+          .as("no pool connection may remain outstanding after stop()")
+          .isZero();
+    }
+
+    @Test
     @Disabled("manual test - run from IDE to experiment with the dashboard in a browser")
     void sandbox() throws Exception {
         try (Connection conn = dataSource.getConnection()) {
@@ -428,5 +473,84 @@ class FencepostDashboardTest {
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setRequestMethod("GET");
         return new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    }
+
+    static final class GatingDataSource implements DataSource {
+        private final DataSource delegate;
+        private final AtomicInteger outstanding = new AtomicInteger(0);
+        private final java.util.List<Connection> issued = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private final CountDownLatch blocked = new CountDownLatch(1);
+        private volatile CountDownLatch gate;
+
+        GatingDataSource(DataSource delegate) { this.delegate = delegate; }
+
+        void blockFromNow() { gate = new CountDownLatch(1); }
+
+        boolean awaitBlocked(long timeout, TimeUnit unit) throws InterruptedException {
+            return blocked.await(timeout, unit);
+        }
+
+        void release() {
+            CountDownLatch g = this.gate;
+            if (g != null) g.countDown();
+        }
+
+        int outstanding() { return outstanding.get(); }
+
+        void closeAllIssued() {
+            for (Connection c : issued) {
+                try { c.close(); } catch (SQLException ignored) { }
+            }
+            issued.clear();
+        }
+
+        @Override
+        public Connection getConnection() throws SQLException {
+            CountDownLatch g = this.gate;
+            if (g != null) {
+                blocked.countDown();
+                try {
+                    g.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new SQLException("getConnection interrupted", e);
+                }
+            }
+            Connection raw = delegate.getConnection();
+            outstanding.incrementAndGet();
+            Connection proxied = (Connection) Proxy.newProxyInstance(
+              Connection.class.getClassLoader(),
+              new Class<?>[] { Connection.class },
+              tracking(raw));
+            issued.add(raw);
+            return proxied;
+        }
+
+        private InvocationHandler tracking(Connection raw) {
+            return (proxy, method, args) -> {
+                if ("close".equals(method.getName()) && method.getParameterCount() == 0) {
+                    try {
+                        return method.invoke(raw, args);
+                    } finally {
+                        outstanding.decrementAndGet();
+                        issued.remove(raw);
+                    }
+                }
+                try {
+                    return method.invoke(raw, args);
+                } catch (java.lang.reflect.InvocationTargetException ite) {
+                    throw ite.getCause();
+                }
+            };
+        }
+
+        @Override public Connection getConnection(String u, String p) throws SQLException { return getConnection(); }
+        @Override public PrintWriter getLogWriter() throws SQLException { return delegate.getLogWriter(); }
+        @Override public void setLogWriter(PrintWriter out) throws SQLException { delegate.setLogWriter(out); }
+        @Override public void setLoginTimeout(int seconds) throws SQLException { delegate.setLoginTimeout(seconds); }
+        @Override public int getLoginTimeout() throws SQLException { return delegate.getLoginTimeout(); }
+        @Override public Logger getParentLogger() throws SQLFeatureNotSupportedException { throw new SQLFeatureNotSupportedException(); }
+        @Override public <T> T unwrap(Class<T> iface) throws SQLException { return delegate.unwrap(iface); }
+        @Override public boolean isWrapperFor(Class<?> iface) throws SQLException { return delegate.isWrapperFor(iface); }
     }
 }
