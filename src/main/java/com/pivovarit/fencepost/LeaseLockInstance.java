@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Optional;
@@ -18,6 +19,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     private static final Logger logger = LoggerFactory.getLogger(LeaseLockInstance.class);
     private static final long DEFAULT_POLL_INTERVAL_MS = 100;
     private static final int AUTO_RENEW_MAX_RETRIES = 3;
+    private static final long STOP_AUTO_RENEW_JOIN_TIMEOUT_MS = 5_000;
 
     private final Duration leaseDuration;
     private final Duration refreshInterval;
@@ -27,6 +29,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     private volatile Thread autoRenewThread;
     private volatile long autoRenewWindowMillis;
+    private volatile PreparedStatement autoRenewStatement;
 
     LeaseLockInstance(String lockName, DataSource dataSource, String tableName,
                          Duration leaseDuration, Duration refreshInterval, Duration quietPeriod,
@@ -243,10 +246,14 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     }
 
     private void refreshWithRetry(long windowMillis, long token) throws SQLException, InterruptedException {
+        String sql = String.format("UPDATE %s SET expires_at = GREATEST(expires_at, now() + %s) WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis());
+
         SQLException lastException = null;
         for (int attempt = 0; attempt < AUTO_RENEW_MAX_RETRIES; attempt++) {
             try {
-                int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET expires_at = GREATEST(expires_at, now() + %s) WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis()))
+                int updated = Jdbc.update(dataSource, sql)
+                        .queryTimeout(refreshInterval)
+                        .onStatement(ps -> autoRenewStatement = ps)
                         .bind(windowMillis)
                         .bind(lockName)
                         .bind(token)
@@ -257,23 +264,42 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                 return;
             } catch (SQLException e) {
                 lastException = e;
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new InterruptedException();
+                }
                 if (attempt < AUTO_RENEW_MAX_RETRIES - 1) {
                     Thread.sleep(100L * (attempt + 1));
                 }
+            } finally {
+                autoRenewStatement = null;
             }
         }
         throw lastException;
     }
 
     private void stopAutoRenew() {
-        if (autoRenewThread != null) {
-            autoRenewThread.interrupt();
-            try {
-                autoRenewThread.join();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            autoRenewThread = null;
+        Thread thread = autoRenewThread;
+        if (thread == null) {
+            return;
         }
+        thread.interrupt();
+        PreparedStatement stmt = autoRenewStatement;
+        if (stmt != null) {
+            try {
+                stmt.cancel();
+            } catch (SQLException e) {
+                logger.trace("cancel of in-flight auto-renew statement failed for lease lock '{}'", lockName, e);
+            }
+        }
+        try {
+            thread.join(STOP_AUTO_RENEW_JOIN_TIMEOUT_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        if (thread.isAlive()) {
+            logger.warn("auto-renew thread for lease lock '{}' did not exit within {} ms; detaching (daemon)", lockName, STOP_AUTO_RENEW_JOIN_TIMEOUT_MS);
+        }
+        autoRenewThread = null;
+        autoRenewStatement = null;
     }
 }
