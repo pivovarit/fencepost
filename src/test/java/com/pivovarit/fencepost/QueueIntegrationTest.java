@@ -350,6 +350,29 @@ class QueueIntegrationTest {
     }
 
     @Test
+    void nackShouldStillBeCallableAfterAckLosesOwnership() throws Exception {
+        Queue queue = newQueue();
+        queue.enqueue("contested".getBytes(UTF_8));
+
+        Message msgA = queue.tryDequeue().get();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute(
+              "UPDATE fencepost_queue SET visible_at = now() - interval '1 second' WHERE id = " + msgA.id());
+        }
+
+        Message msgB = queue.tryDequeue().get();
+
+        assertThatThrownBy(msgA::ack).isInstanceOf(LostOwnershipException.class);
+
+        assertThatThrownBy(msgA::nack)
+          .as("after failed ack, nack must not throw IllegalStateException")
+          .isInstanceOf(LostOwnershipException.class);
+
+        msgB.ack();
+    }
+
+    @Test
     void nackFromStaleConsumerShouldNotAffectMessageOwnedByAnother() throws Exception {
         Queue queue = newQueue();
         queue.enqueue("contested-nack".getBytes(UTF_8));
