@@ -56,18 +56,25 @@ final class FencepostQueue implements Queue {
         if (delay.isNegative()) {
             throw new IllegalArgumentException("delay must not be negative");
         }
-        try {
-            Jdbc.update(dataSource, String.format(
-                "INSERT INTO %s (queue_name, payload, type, headers, visible_at) VALUES (?, ?, ?, ?::jsonb, now() + %s)",
-                tableName, Jdbc.intervalMillis()))
-              .bind(queueName)
-              .bind(payload)
-              .bind(type)
-              .bind(HeadersCodec.toJson(headers))
-              .bind(delay.toMillis())
-              .execute();
-            logger.debug("enqueued message to queue '{}'", queueName);
-            notify_();
+        try (Connection conn = dataSource.getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                Jdbc.update(conn, String.format(
+                    "INSERT INTO %s (queue_name, payload, type, headers, visible_at) VALUES (?, ?, ?, ?::jsonb, now() + %s)",
+                    tableName, Jdbc.intervalMillis()))
+                  .bind(queueName)
+                  .bind(payload)
+                  .bind(type)
+                  .bind(HeadersCodec.toJson(headers))
+                  .bind(delay.toMillis())
+                  .execute();
+                Jdbc.execute(conn, "NOTIFY " + channelName());
+                conn.commit();
+                logger.debug("enqueued message to queue '{}'", queueName);
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            }
         } catch (SQLException e) {
             throw new FencepostException("Failed to enqueue message to queue: " + queueName, e);
         }
@@ -137,16 +144,9 @@ final class FencepostQueue implements Queue {
     }
 
     private String channelName() {
-        return "fencepost_q_" + HashUtils.fnv1a64("fencepost:" + queueName);
+        return "fencepost_q_" + Long.toUnsignedString(HashUtils.fnv1a64("fencepost:" + queueName));
     }
 
-    private void notify_() {
-        try (Connection conn = dataSource.getConnection()) {
-            Jdbc.execute(conn, "NOTIFY " + channelName());
-        } catch (SQLException e) {
-            logger.trace("failed to send NOTIFY on queue '{}', polling is the fallback", queueName, e);
-        }
-    }
 
     private synchronized Connection ensureListening() {
         if (listenerConnection != null) {
