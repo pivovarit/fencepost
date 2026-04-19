@@ -139,7 +139,7 @@ Message msg = queue.dequeue();           // blocking (LISTEN/NOTIFY)
 Message msg = queue.dequeue(Duration.ofSeconds(5)); // with timeout
 Optional<Message> msg = queue.tryDequeue();         // non-blocking
 
-msg.type();       // "send-email.v1"
+msg.type();       // Optional[send-email.v1]
 msg.headers();    // {"priority": "high"}
 
 // ack() deletes the message, nack() makes it visible again immediately

@@ -1,6 +1,7 @@
 package com.pivovarit.fencepost.queue;
 
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * A message dequeued from a {@link Queue}.
@@ -28,9 +29,10 @@ public interface Message extends AutoCloseable {
     byte[] payload();
 
     /**
-     * @return the caller-supplied type tag, or {@code null} if the producer did not set one.
+     * @return the caller-supplied type tag, or {@link Optional#empty()} if the producer did
+     * not set one.
      */
-    String type();
+    Optional<String> type();
 
     /**
      * @return the caller-supplied headers as an unmodifiable map; empty if none were set.
