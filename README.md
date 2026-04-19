@@ -87,6 +87,33 @@ try {
 }
 ```
 
+### Leader Election
+
+Use leader election when you want one of N instances to *pick up* a piece of work and *keep doing it*, with automatic failover when the leader dies. It's built on top of `leaseLock` — a sticky single-leader primitive, not per-iteration mutual exclusion (use `leaseLock` directly for that).
+
+```java
+LeaderElection election = Fencepost.leaderElection(dataSource, "import-job", Duration.ofSeconds(30))
+    .withRenewInterval(Duration.ofSeconds(10))
+    .withPollInterval(Duration.ofSeconds(5))
+    .withInstanceId("worker-pod-7")               // optional, written to locked_by
+    .onElected(token -> startWorker(token))       // overload: receives the FencingToken
+    .onRevoked(() -> stopWorker())
+    .onCallbackError(e -> log.warn("...", e))     // optional
+    .build();
+
+election.start();
+
+// elsewhere:
+if (election.isLeader()) {
+    // safe to act
+}
+
+// on shutdown:
+election.close();   // fires onRevoked synchronously, then releases the lease
+```
+
+`onElected` and `onRevoked` are state-change callbacks — they should return quickly. Real work runs on your own thread, gated by `isLeader()`. If the leader's lease can't be renewed (DB hiccup, GC pause longer than the lease), `onRevoked` fires and the loop returns to standby; another instance takes over within roughly one lease duration.
+
 ## Docker Compose Example
 
 The `examples/docker-compose` directory contains a ready-to-run demo where three container instances compete to increment a shared counter in PostgreSQL.

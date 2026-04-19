@@ -26,6 +26,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     private final Duration quietPeriod;
     private final long pollIntervalMs;
     private final Consumer<FencepostException> onAutoRenewFailure;
+    private final String instanceId;
 
     private volatile Thread autoRenewThread;
     private volatile long autoRenewWindowMillis;
@@ -34,13 +35,15 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     LeaseLockInstance(String lockName, DataSource dataSource, String tableName,
                          Duration leaseDuration, Duration refreshInterval, Duration quietPeriod,
                          Duration pollInterval,
-                         Consumer<FencepostException> onAutoRenewFailure) {
+                         Consumer<FencepostException> onAutoRenewFailure,
+                         String instanceId) {
         super(lockName, dataSource, tableName);
         this.leaseDuration = leaseDuration;
         this.refreshInterval = refreshInterval;
         this.quietPeriod = quietPeriod;
         this.pollIntervalMs = pollInterval != null ? pollInterval.toMillis() : DEFAULT_POLL_INTERVAL_MS;
         this.onAutoRenewFailure = onAutoRenewFailure;
+        this.instanceId = instanceId;
     }
 
     @Override
@@ -120,7 +123,9 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     }
 
     private Optional<FencingToken> tryAcquireTimestamp() {
-        String lockedBy = String.format("%s/%s", HOSTNAME, Thread.currentThread().getName());
+        String lockedBy = instanceId != null
+            ? instanceId
+            : String.format("%s/%s", HOSTNAME, Thread.currentThread().getName());
 
         String sql = String.format("UPDATE %s SET token = token + 1, locked_by = ?, locked_at = now(), expires_at = now() + %s WHERE lock_name = ? AND (locked_by IS NULL OR expires_at IS NULL OR expires_at <= now()) RETURNING token", tableName, Jdbc.intervalMillis());
 
