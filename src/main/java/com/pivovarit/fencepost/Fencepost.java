@@ -1,6 +1,8 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.election.LeaderElection;
 import com.pivovarit.fencepost.lock.AdvisoryLock;
+import com.pivovarit.fencepost.lock.FencingToken;
 import com.pivovarit.fencepost.lock.FencedLock;
 import com.pivovarit.fencepost.lock.RenewableLock;
 import com.pivovarit.fencepost.queue.Queue;
@@ -77,6 +79,7 @@ public final class Fencepost {
         private Duration quietPeriod;
         private Duration pollInterval;
         private Consumer<FencepostException> onAutoRenewFailure;
+        private String instanceId;
 
         private LeaseBuilder(DataSource dataSource, Duration leaseDuration) {
             this.dataSource = dataSource;
@@ -124,6 +127,15 @@ public final class Fencepost {
             return this;
         }
 
+        public LeaseBuilder withInstanceId(String instanceId) {
+            Objects.requireNonNull(instanceId, "instanceId must not be null");
+            if (instanceId.isEmpty()) {
+                throw new IllegalArgumentException("instanceId must not be empty");
+            }
+            this.instanceId = instanceId;
+            return this;
+        }
+
         public Factory<RenewableLock> build() {
             return new Factory<>(lockName -> new LeaseLockInstance(lockName, dataSource,
               this.tableName,
@@ -131,12 +143,138 @@ public final class Fencepost {
               this.refreshInterval,
               this.quietPeriod,
               this.pollInterval,
-              this.onAutoRenewFailure));
+              this.onAutoRenewFailure,
+              this.instanceId));
         }
+    }
+
+    public static LeaderElectionBuilder leaderElection(DataSource dataSource, String electionName, Duration leaseDuration) {
+        Objects.requireNonNull(dataSource, "dataSource must not be null");
+        Objects.requireNonNull(electionName, "electionName must not be null");
+        if (electionName.isEmpty()) {
+            throw new IllegalArgumentException("electionName must not be empty");
+        }
+        Objects.requireNonNull(leaseDuration, "leaseDuration must not be null");
+        if (leaseDuration.isNegative() || leaseDuration.isZero()) {
+            throw new IllegalArgumentException("leaseDuration must be positive");
+        }
+        return new LeaderElectionBuilder(dataSource, electionName, leaseDuration);
     }
 
     public static QueueBuilder queue(DataSource dataSource) {
         return new QueueBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
+    }
+
+    public static final class LeaderElectionBuilder {
+        private final DataSource dataSource;
+        private final String electionName;
+        private final Duration leaseDuration;
+        private String tableName = "fencepost_locks";
+        private Duration renewInterval;
+        private Duration pollInterval;
+        private Duration quietPeriod;
+        private String instanceId;
+        private Consumer<FencingToken> onElected = token -> {};
+        private Runnable onRevoked = () -> {};
+        private Consumer<Throwable> onCallbackError = t -> {};
+
+        private LeaderElectionBuilder(DataSource dataSource, String electionName, Duration leaseDuration) {
+            this.dataSource = dataSource;
+            this.electionName = electionName;
+            this.leaseDuration = leaseDuration;
+        }
+
+        public LeaderElectionBuilder tableName(String tableName) {
+            Objects.requireNonNull(tableName);
+            if (!TABLE_NAME_PATTERN.matcher(tableName).matches()) {
+                throw new IllegalArgumentException("Invalid table name: " + tableName);
+            }
+            this.tableName = tableName;
+            return this;
+        }
+
+        public LeaderElectionBuilder withRenewInterval(Duration renewInterval) {
+            Objects.requireNonNull(renewInterval, "renewInterval must not be null");
+            if (renewInterval.isNegative() || renewInterval.isZero()) {
+                throw new IllegalArgumentException("renewInterval must be positive");
+            }
+            if (renewInterval.compareTo(leaseDuration) >= 0) {
+                throw new IllegalArgumentException("renewInterval must be less than leaseDuration");
+            }
+            this.renewInterval = renewInterval;
+            return this;
+        }
+
+        public LeaderElectionBuilder withPollInterval(Duration pollInterval) {
+            Objects.requireNonNull(pollInterval, "pollInterval must not be null");
+            if (pollInterval.isNegative() || pollInterval.isZero()) {
+                throw new IllegalArgumentException("pollInterval must be positive");
+            }
+            this.pollInterval = pollInterval;
+            return this;
+        }
+
+        public LeaderElectionBuilder withQuietPeriod(Duration quietPeriod) {
+            Objects.requireNonNull(quietPeriod, "quietPeriod must not be null");
+            if (quietPeriod.isNegative() || quietPeriod.isZero()) {
+                throw new IllegalArgumentException("quietPeriod must be positive");
+            }
+            this.quietPeriod = quietPeriod;
+            return this;
+        }
+
+        public LeaderElectionBuilder withInstanceId(String instanceId) {
+            Objects.requireNonNull(instanceId, "instanceId must not be null");
+            if (instanceId.isEmpty()) {
+                throw new IllegalArgumentException("instanceId must not be empty");
+            }
+            this.instanceId = instanceId;
+            return this;
+        }
+
+        public LeaderElectionBuilder onElected(Runnable callback) {
+            Objects.requireNonNull(callback, "callback must not be null");
+            this.onElected = token -> callback.run();
+            return this;
+        }
+
+        public LeaderElectionBuilder onElected(Consumer<FencingToken> callback) {
+            this.onElected = Objects.requireNonNull(callback, "callback must not be null");
+            return this;
+        }
+
+        public LeaderElectionBuilder onRevoked(Runnable callback) {
+            this.onRevoked = Objects.requireNonNull(callback, "callback must not be null");
+            return this;
+        }
+
+        public LeaderElectionBuilder onCallbackError(Consumer<Throwable> handler) {
+            this.onCallbackError = Objects.requireNonNull(handler, "handler must not be null");
+            return this;
+        }
+
+        public LeaderElection build() {
+            Duration effectiveRenew = renewInterval != null ? renewInterval : leaseDuration.dividedBy(3);
+            Duration effectivePoll = pollInterval != null ? pollInterval : leaseDuration.dividedBy(2);
+            if (effectiveRenew.isZero()) {
+                throw new IllegalArgumentException("Default renewInterval (leaseDuration/3) is zero — leaseDuration is too small");
+            }
+            if (effectivePoll.isZero()) {
+                throw new IllegalArgumentException("Default pollInterval (leaseDuration/2) is zero — leaseDuration is too small");
+            }
+            return new LeaderElectionInstance(
+                electionName,
+                dataSource,
+                tableName,
+                leaseDuration,
+                effectiveRenew,
+                effectivePoll,
+                quietPeriod,
+                instanceId,
+                onElected,
+                onRevoked,
+                onCallbackError);
+        }
     }
 
     public static final class QueueBuilder {
