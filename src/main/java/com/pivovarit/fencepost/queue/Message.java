@@ -50,6 +50,9 @@ public interface Message extends AutoCloseable {
      * @throws LostOwnershipException if the visibility timeout expired and the message was
      *                                re-picked by another consumer before this call reached
      *                                the database.
+     * @throws AckUnknownException    if the database call itself failed, leaving the outcome
+     *                                indeterminate. Local state is reset to active, so the
+     *                                caller may retry or {@link #close()}.
      * @throws IllegalStateException  if this message has already been resolved locally via
      *                                {@code ack()}, {@link #nack()}, or {@link #close()}.
      */
@@ -63,6 +66,9 @@ public interface Message extends AutoCloseable {
      * @throws LostOwnershipException if the visibility timeout expired and the message was
      *                                re-picked by another consumer before this call reached
      *                                the database.
+     * @throws AckUnknownException    if the database call itself failed, leaving the outcome
+     *                                indeterminate. Local state is reset to active, so the
+     *                                caller may retry or {@link #close()}.
      * @throws IllegalStateException  if this message has already been resolved locally via
      *                                {@link #ack()}, {@code nack()}, or {@link #close()}.
      */

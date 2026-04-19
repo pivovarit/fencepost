@@ -1,5 +1,6 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.queue.AckUnknownException;
 import com.pivovarit.fencepost.queue.LostOwnershipException;
 import com.pivovarit.fencepost.queue.Message;
 
@@ -77,7 +78,7 @@ final class AckableMessage implements Message {
             }
         } catch (SQLException e) {
             state.set(State.ACTIVE);
-            throw new FencepostException("Failed to ack message: " + id, e);
+            throw new AckUnknownException(id, "ack", e);
         }
     }
 
@@ -97,7 +98,7 @@ final class AckableMessage implements Message {
             }
         } catch (SQLException e) {
             state.set(State.ACTIVE);
-            throw new FencepostException("Failed to nack message: " + id, e);
+            throw new AckUnknownException(id, "nack", e);
         }
     }
 
