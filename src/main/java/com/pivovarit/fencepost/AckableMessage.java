@@ -8,6 +8,7 @@ import javax.sql.DataSource;
 import java.sql.SQLException;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 final class AckableMessage implements Message {
@@ -47,8 +48,8 @@ final class AckableMessage implements Message {
     }
 
     @Override
-    public String type() {
-        return type;
+    public Optional<String> type() {
+        return Optional.ofNullable(type);
     }
 
     @Override
