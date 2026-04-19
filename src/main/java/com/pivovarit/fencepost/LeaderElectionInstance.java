@@ -99,7 +99,7 @@ final class LeaderElectionInstance implements LeaderElection {
             thread = loopThread;
         }
         if (thread != null) {
-            thread.interrupt();
+            LockSupport.unpark(thread);
             try {
                 thread.join();
             } catch (InterruptedException e) {
@@ -120,13 +120,13 @@ final class LeaderElectionInstance implements LeaderElection {
                     live.set(false);
                     logger.debug("tryLock failed for '{}' during standby polling", electionName, e);
                     reportError(e);
-                    sleepInterruptibly(pollInterval);
+                    sleep(pollInterval);
                     continue;
                 }
 
                 if (token.isEmpty()) {
                     live.set(false);
-                    sleepInterruptibly(pollInterval);
+                    sleep(pollInterval);
                     continue;
                 }
 
@@ -193,27 +193,24 @@ final class LeaderElectionInstance implements LeaderElection {
         revokedSignal = true;
         Thread t = loopThread;
         if (t != null) {
-            t.interrupt();
+            LockSupport.unpark(t);
         }
     }
 
     private void waitForRevocation() {
         while (state != State.CLOSED && !revokedSignal) {
             LockSupport.park(this);
-            // Clear interrupt flag set by close() or onRenewFailure so subsequent
-            // sleeps in this thread don't throw spuriously.
-            Thread.interrupted();
         }
     }
 
-    private void sleepInterruptibly(Duration d) {
-        if (state == State.CLOSED) {
-            return;
-        }
-        try {
-            Thread.sleep(d.toMillis());
-        } catch (InterruptedException e) {
-            // close() interrupted us; loop condition will exit.
+    private void sleep(Duration d) {
+        long deadline = System.nanoTime() + d.toNanos();
+        while (state != State.CLOSED) {
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) {
+                return;
+            }
+            LockSupport.parkNanos(this, remaining);
         }
     }
 
