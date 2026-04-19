@@ -1,5 +1,6 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.queue.AckUnknownException;
 import com.pivovarit.fencepost.queue.LostOwnershipException;
 import com.pivovarit.fencepost.queue.Message;
 import com.pivovarit.fencepost.queue.Queue;
@@ -26,6 +27,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
@@ -515,6 +517,48 @@ class QueueIntegrationTest {
           .isZero();
     }
 
+    @Test
+    void ackShouldThrowAckUnknownExceptionWhenDbCallFails() {
+        FailingDataSource fds = new FailingDataSource(dataSource);
+        Queue queue = Fencepost.queue(fds)
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .build()
+          .forName("test-queue");
+
+        queue.enqueue("payload".getBytes(UTF_8));
+        Message msg = queue.tryDequeue().get();
+
+        fds.failNextGetConnection();
+
+        assertThatThrownBy(msg::ack)
+          .as("ack() whose DB call fails must surface AckUnknownException, distinct from LostOwnership")
+          .isInstanceOf(AckUnknownException.class)
+          .hasCauseInstanceOf(SQLException.class);
+
+        msg.ack();
+    }
+
+    @Test
+    void nackShouldThrowAckUnknownExceptionWhenDbCallFails() {
+        FailingDataSource fds = new FailingDataSource(dataSource);
+        Queue queue = Fencepost.queue(fds)
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .build()
+          .forName("test-queue");
+
+        queue.enqueue("payload".getBytes(UTF_8));
+        Message msg = queue.tryDequeue().get();
+
+        fds.failNextGetConnection();
+
+        assertThatThrownBy(msg::nack)
+          .as("nack() whose DB call fails must surface AckUnknownException, distinct from LostOwnership")
+          .isInstanceOf(AckUnknownException.class)
+          .hasCauseInstanceOf(SQLException.class);
+
+        msg.nack();
+    }
+
     private Queue newQueue() {
         return newQueue("test-queue");
     }
@@ -590,6 +634,67 @@ class QueueIntegrationTest {
                     throw ite.getCause();
                 }
             };
+        }
+
+        @Override
+        public Connection getConnection(String u, String p) throws SQLException {
+            return getConnection();
+        }
+
+        @Override
+        public PrintWriter getLogWriter() throws SQLException {
+            return delegate.getLogWriter();
+        }
+
+        @Override
+        public void setLogWriter(PrintWriter out) throws SQLException {
+            delegate.setLogWriter(out);
+        }
+
+        @Override
+        public void setLoginTimeout(int seconds) throws SQLException {
+            delegate.setLoginTimeout(seconds);
+        }
+
+        @Override
+        public int getLoginTimeout() throws SQLException {
+            return delegate.getLoginTimeout();
+        }
+
+        @Override
+        public Logger getParentLogger() throws SQLFeatureNotSupportedException {
+            throw new SQLFeatureNotSupportedException();
+        }
+
+        @Override
+        public <T> T unwrap(Class<T> iface) throws SQLException {
+            return delegate.unwrap(iface);
+        }
+
+        @Override
+        public boolean isWrapperFor(Class<?> iface) throws SQLException {
+            return delegate.isWrapperFor(iface);
+        }
+    }
+
+    static final class FailingDataSource implements DataSource {
+        private final DataSource delegate;
+        private final AtomicBoolean failNext = new AtomicBoolean(false);
+
+        FailingDataSource(DataSource delegate) {
+            this.delegate = delegate;
+        }
+
+        void failNextGetConnection() {
+            failNext.set(true);
+        }
+
+        @Override
+        public Connection getConnection() throws SQLException {
+            if (failNext.compareAndSet(true, false)) {
+                throw new SQLException("simulated DB failure");
+            }
+            return delegate.getConnection();
         }
 
         @Override
