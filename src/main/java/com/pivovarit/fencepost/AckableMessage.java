@@ -7,6 +7,7 @@ import javax.sql.DataSource;
 import java.sql.SQLException;
 import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 final class AckableMessage implements Message {
 
@@ -21,7 +22,7 @@ final class AckableMessage implements Message {
     private final DataSource dataSource;
     private final String tableName;
 
-    private volatile State state = State.ACTIVE;
+    private final AtomicReference<State> state = new AtomicReference<>(State.ACTIVE);
 
     AckableMessage(long id, byte[] payload, String type, Map<String, String> headers, int attempts, String pickToken, DataSource dataSource, String tableName) {
         this.id = id;
@@ -61,8 +62,8 @@ final class AckableMessage implements Message {
 
     @Override
     public void ack() {
-        if (state != State.ACTIVE) {
-            throw new IllegalStateException("Message already " + state.name().toLowerCase());
+        if (!state.compareAndSet(State.ACTIVE, State.ACKED)) {
+            throw new IllegalStateException("Message already " + state.get().name().toLowerCase());
         }
         try {
             int updated = Jdbc.update(dataSource, String.format("DELETE FROM %s WHERE id = ? AND picked_by = ?", tableName))
@@ -71,19 +72,19 @@ final class AckableMessage implements Message {
               .execute();
 
             if (updated != 1) {
+                state.set(State.ACTIVE);
                 throw new LostOwnershipException(id);
             }
-
-            state = State.ACKED;
         } catch (SQLException e) {
+            state.set(State.ACTIVE);
             throw new FencepostException("Failed to ack message: " + id, e);
         }
     }
 
     @Override
     public void nack() {
-        if (state != State.ACTIVE) {
-            throw new IllegalStateException("Message already " + state.name().toLowerCase());
+        if (!state.compareAndSet(State.ACTIVE, State.NACKED)) {
+            throw new IllegalStateException("Message already " + state.get().name().toLowerCase());
         }
         try {
             int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET visible_at = now(), picked_by = NULL WHERE id = ? AND picked_by = ?", tableName))
@@ -91,18 +92,17 @@ final class AckableMessage implements Message {
               .bind(pickToken)
               .execute();
             if (updated != 1) {
+                state.set(State.ACTIVE);
                 throw new LostOwnershipException(id);
             }
-            state = State.NACKED;
         } catch (SQLException e) {
+            state.set(State.ACTIVE);
             throw new FencepostException("Failed to nack message: " + id, e);
         }
     }
 
     @Override
     public void close() {
-        if (state == State.ACTIVE) {
-            state = State.CLOSED;
-        }
+        state.compareAndSet(State.ACTIVE, State.CLOSED);
     }
 }

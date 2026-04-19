@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -195,6 +196,50 @@ class QueueIntegrationTest {
 
         assertThatThrownBy(msg::nack)
           .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void concurrentAckShouldNotReportLostOwnership() throws Exception {
+        Queue queue = newQueue();
+
+        int iterations = 50;
+        List<Throwable> failures = new CopyOnWriteArrayList<>();
+        AtomicInteger successes = new AtomicInteger();
+
+        for (int i = 0; i < iterations; i++) {
+            queue.enqueue(("race-" + i).getBytes(UTF_8));
+            Message msg = queue.tryDequeue().get();
+
+            CyclicBarrier barrier = new CyclicBarrier(2);
+            CountDownLatch done = new CountDownLatch(2);
+
+            Runnable acker = () -> {
+                try {
+                    barrier.await();
+                    msg.ack();
+                    successes.incrementAndGet();
+                } catch (IllegalStateException | LostOwnershipException e) {
+                    failures.add(e);
+                } catch (Exception ignored) {
+                } finally {
+                    done.countDown();
+                }
+            };
+
+            new Thread(acker).start();
+            new Thread(acker).start();
+
+            assertThat(done.await(5, TimeUnit.SECONDS)).isTrue();
+        }
+
+        assertThat(successes.get())
+          .as("each concurrent-ack iteration should have exactly one winner")
+          .isEqualTo(iterations);
+
+        assertThat(failures)
+          .as("a thread that loses a purely local ack() race must be told it was late locally (IllegalStateException) - not that the DB row was stolen (LostOwnershipException), because no other consumer was involved")
+          .hasSize(iterations)
+          .allMatch(t -> t instanceof IllegalStateException);
     }
 
     @Test
