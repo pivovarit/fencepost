@@ -23,6 +23,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -588,6 +589,86 @@ class FencepostLockIntegrationTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getString("locked_by")).isNull();
         }
+    }
+
+    @Test
+    void unlockShouldNotBlockForeverWhenAutoRenewIsStuckInDb() throws Exception {
+        CountDownLatch renewEnteredExecute = new CountDownLatch(1);
+        CountDownLatch releaseHang = new CountDownLatch(1);
+
+        DataSource hangingDs = hangingDataSource(dataSource, renewEnteredExecute, releaseHang);
+
+        Factory<RenewableLock> provider = Fencepost.leaseLock(hangingDs, Duration.ofSeconds(10))
+          .withAutoRenew(Duration.ofMillis(100))
+          .build();
+
+        RenewableLock lock = provider.forName("unlock-hang-test");
+        lock.lock();
+
+        try {
+            assertThat(renewEnteredExecute.await(5, TimeUnit.SECONDS))
+              .as("auto-renew thread should have entered executeUpdate before we try to unlock")
+              .isTrue();
+
+            CompletableFuture<Void> unlockFuture = CompletableFuture.runAsync(lock::unlock);
+
+            assertThat(unlockFuture)
+              .as("unlock() must not block indefinitely when auto-renew is stuck in a non-interruptible JDBC call")
+              .succeedsWithin(Duration.ofSeconds(10));
+        } finally {
+            releaseHang.countDown();
+        }
+    }
+
+    private static DataSource hangingDataSource(DataSource real, CountDownLatch entered, CountDownLatch release) {
+        return (DataSource) Proxy.newProxyInstance(
+          DataSource.class.getClassLoader(),
+          new Class[]{DataSource.class},
+          (proxy, method, args) -> {
+              if ("getConnection".equals(method.getName()) && (args == null || args.length == 0)) {
+                  Connection raw = real.getConnection();
+                  return hangingConnection(raw, entered, release);
+              }
+              return method.invoke(real, args);
+          });
+    }
+
+    private static Connection hangingConnection(Connection real, CountDownLatch entered, CountDownLatch release) {
+        return (Connection) Proxy.newProxyInstance(
+          Connection.class.getClassLoader(),
+          new Class[]{Connection.class},
+          (proxy, method, args) -> {
+              if ("prepareStatement".equals(method.getName())
+                && args != null && args.length > 0
+                && args[0] instanceof String
+                && ((String) args[0]).contains("SET expires_at = GREATEST")) {
+                  PreparedStatement ps = real.prepareStatement((String) args[0]);
+                  return hangingStatement(ps, entered, release);
+              }
+              return method.invoke(real, args);
+          });
+    }
+
+    private static PreparedStatement hangingStatement(PreparedStatement real, CountDownLatch entered, CountDownLatch release) {
+        return (PreparedStatement) Proxy.newProxyInstance(
+          PreparedStatement.class.getClassLoader(),
+          new Class[]{PreparedStatement.class},
+          (proxy, method, args) -> {
+              if ("executeUpdate".equals(method.getName())) {
+                  entered.countDown();
+                  boolean waiting = true;
+                  while (waiting) {
+                      try {
+                          release.await();
+                          waiting = false;
+                      } catch (InterruptedException ignored) {
+                          // simulate pgjdbc socket read that ignores Thread.interrupt()
+                      }
+                  }
+                  return 1;
+              }
+              return method.invoke(real, args);
+          });
     }
 
     @Test
