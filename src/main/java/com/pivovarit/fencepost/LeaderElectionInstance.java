@@ -35,7 +35,6 @@ final class LeaderElectionInstance implements LeaderElection {
     private final Object lifecycleLock = new Object();
     private volatile State state = State.NEW;
     private volatile boolean isLeader;
-    private volatile boolean revokedSignal;
     private volatile Thread loopThread;
 
     LeaderElectionInstance(String electionName,
@@ -115,18 +114,16 @@ final class LeaderElectionInstance implements LeaderElection {
 
     private void runOneCycle() {
         AtomicBoolean live = new AtomicBoolean(true);
-        RenewableLock lock = newLock(live);
+        AtomicBoolean revoked = new AtomicBoolean(false);
+        RenewableLock lock = newLock(live, revoked);
         try {
-            Optional<FencingToken> token;
+            Optional<FencingToken> token = Optional.empty();
             try {
                 token = lock.tryLock();
             } catch (Exception e) {
                 logger.debug("tryLock failed for '{}' during standby polling", electionName, e);
                 reportError(e);
-                sleep(pollInterval);
-                return;
             }
-
             if (token.isEmpty()) {
                 sleep(pollInterval);
                 return;
@@ -137,29 +134,28 @@ final class LeaderElectionInstance implements LeaderElection {
             isLeader = true;
             try {
                 invokeCallback(() -> onElected.accept(won));
-                waitForRevocation();
+                waitForRevocation(revoked);
             } finally {
                 isLeader = false;
                 invokeCallback(onRevoked);
-                if (!revokedSignal) {
+                if (!revoked.get()) {
                     try {
                         lock.unlock();
                     } catch (Exception e) {
                         reportError(e);
                     }
                 }
-                revokedSignal = false;
             }
         } finally {
             live.set(false);
         }
     }
 
-    private RenewableLock newLock(AtomicBoolean live) {
+    private RenewableLock newLock(AtomicBoolean live, AtomicBoolean revoked) {
         Fencepost.LeaseBuilder builder = Fencepost.leaseLock(dataSource, leaseDuration)
             .tableName(tableName)
             .withAutoRenew(renewInterval)
-            .onAutoRenewFailure(e -> onRenewFailure(live, e))
+            .onAutoRenewFailure(e -> onRenewFailure(live, revoked, e))
             .withPollInterval(pollInterval);
         if (quietPeriod != null) {
             builder.withQuietPeriod(quietPeriod);
@@ -170,21 +166,21 @@ final class LeaderElectionInstance implements LeaderElection {
         return builder.build().forName(electionName);
     }
 
-    private void onRenewFailure(AtomicBoolean live, FencepostException e) {
+    private void onRenewFailure(AtomicBoolean live, AtomicBoolean revoked, FencepostException e) {
         if (!live.get()) {
             logger.debug("ignoring stale renew failure for '{}'", electionName);
             return;
         }
         logger.debug("auto-renew failure for '{}': {}", electionName, e.getMessage());
-        revokedSignal = true;
+        revoked.set(true);
         Thread t = loopThread;
         if (t != null) {
             LockSupport.unpark(t);
         }
     }
 
-    private void waitForRevocation() {
-        while (state != State.CLOSED && !revokedSignal) {
+    private void waitForRevocation(AtomicBoolean revoked) {
+        while (state != State.CLOSED && !revoked.get()) {
             LockSupport.park(this);
         }
     }
