@@ -31,9 +31,10 @@ final class LeaderElectionInstance implements LeaderElection {
     private final Consumer<Throwable> onCallbackError;
 
     private final Object lifecycleLock = new Object();
+
     private volatile boolean closed;
     private volatile boolean isLeader;
-    private volatile Thread loopThread;
+    private volatile Thread executor;
 
     LeaderElectionInstance(String electionName,
                            DataSource dataSource,
@@ -65,12 +66,12 @@ final class LeaderElectionInstance implements LeaderElection {
             if (closed) {
                 throw new IllegalStateException("LeaderElection has been closed: " + electionName);
             }
-            if (loopThread != null) {
+            if (executor != null) {
                 return;
             }
-            loopThread = new Thread(this::electionLoop, "fencepost-leader-election-" + electionName);
-            loopThread.setDaemon(true);
-            loopThread.start();
+            executor = new Thread(this::electionLoop, "fencepost-leader-election-" + electionName);
+            executor.setDaemon(true);
+            executor.start();
         }
     }
 
@@ -87,7 +88,7 @@ final class LeaderElectionInstance implements LeaderElection {
                 return;
             }
             closed = true;
-            thread = loopThread;
+            thread = executor;
         }
         if (thread != null) {
             LockSupport.unpark(thread);
@@ -166,7 +167,7 @@ final class LeaderElectionInstance implements LeaderElection {
         }
         logger.debug("auto-renew failure for '{}': {}", electionName, e.getMessage());
         revoked.set(true);
-        Thread t = loopThread;
+        Thread t = executor;
         if (t != null) {
             LockSupport.unpark(t);
         }
