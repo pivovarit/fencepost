@@ -57,22 +57,22 @@ final class AdvisoryLockInstance implements AdvisoryLock {
         ensureNotHeld();
         try {
             connection = dataSource.getConnection();
-            Jdbc.setLockTimeout(connection, timeout);
+            Jdbc.execute(connection, String.format("SET statement_timeout = '%dms'", timeout.toMillis()));
             try {
                 Jdbc.query(connection, "SELECT pg_advisory_lock(?)")
                   .bind(advisoryKey)
                   .map(ResultSet::next);
             } catch (SQLException e) {
-                if (SqlStates.LOCK_NOT_AVAILABLE.equals(e.getSQLState())) {
+                if (SqlStates.QUERY_CANCELLED.equals(e.getSQLState())) {
                     logger.debug("timed out acquiring advisory lock '{}' after {}", lockName, timeout);
                     throw new LockAcquisitionTimeoutException(lockName);
                 }
                 throw e;
             } finally {
                 try {
-                    Jdbc.resetLockTimeout(connection);
+                    Jdbc.execute(connection, "SET statement_timeout = 0");
                 } catch (SQLException e) {
-                    logger.trace("failed to reset lock timeout for advisory lock '{}'", lockName, e);
+                    logger.trace("failed to reset statement timeout for advisory lock '{}'", lockName, e);
                 }
             }
             held = true;
