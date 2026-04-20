@@ -18,8 +18,6 @@ final class LeaderElectionInstance implements LeaderElection {
 
     private static final Logger logger = LoggerFactory.getLogger(LeaderElectionInstance.class);
 
-    private enum State { NEW, RUNNING, CLOSED }
-
     private final String electionName;
     private final DataSource dataSource;
     private final String tableName;
@@ -33,7 +31,7 @@ final class LeaderElectionInstance implements LeaderElection {
     private final Consumer<Throwable> onCallbackError;
 
     private final Object lifecycleLock = new Object();
-    private volatile State state = State.NEW;
+    private volatile boolean closed;
     private volatile boolean isLeader;
     private volatile Thread loopThread;
 
@@ -64,13 +62,12 @@ final class LeaderElectionInstance implements LeaderElection {
     @Override
     public void start() {
         synchronized (lifecycleLock) {
-            if (state == State.CLOSED) {
+            if (closed) {
                 throw new IllegalStateException("LeaderElection has been closed: " + electionName);
             }
-            if (state == State.RUNNING) {
+            if (loopThread != null) {
                 return;
             }
-            state = State.RUNNING;
             loopThread = new Thread(this::electionLoop, "fencepost-leader-election-" + electionName);
             loopThread.setDaemon(true);
             loopThread.start();
@@ -86,14 +83,10 @@ final class LeaderElectionInstance implements LeaderElection {
     public void close() {
         Thread thread;
         synchronized (lifecycleLock) {
-            if (state == State.CLOSED) {
+            if (closed) {
                 return;
             }
-            if (state == State.NEW) {
-                state = State.CLOSED;
-                return;
-            }
-            state = State.CLOSED;
+            closed = true;
             thread = loopThread;
         }
         if (thread != null) {
@@ -107,7 +100,7 @@ final class LeaderElectionInstance implements LeaderElection {
     }
 
     private void electionLoop() {
-        while (state != State.CLOSED) {
+        while (!closed) {
             runOneCycle();
         }
     }
@@ -180,14 +173,14 @@ final class LeaderElectionInstance implements LeaderElection {
     }
 
     private void waitForRevocation(AtomicBoolean revoked) {
-        while (state != State.CLOSED && !revoked.get()) {
+        while (!closed && !revoked.get()) {
             LockSupport.park(this);
         }
     }
 
     private void sleep(Duration d) {
         long deadline = System.nanoTime() + d.toNanos();
-        while (state != State.CLOSED) {
+        while (!closed) {
             long remaining = deadline - System.nanoTime();
             if (remaining <= 0) {
                 return;
