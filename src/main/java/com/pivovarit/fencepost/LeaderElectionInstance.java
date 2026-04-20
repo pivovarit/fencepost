@@ -73,7 +73,7 @@ final class LeaderElectionInstance implements LeaderElection {
                 return;
             }
             state = State.RUNNING;
-            loopThread = new Thread(this::loop, "fencepost-leader-election-" + electionName);
+            loopThread = new Thread(this::electionLoop, "fencepost-leader-election-" + electionName);
             loopThread.setDaemon(true);
             loopThread.start();
         }
@@ -108,7 +108,7 @@ final class LeaderElectionInstance implements LeaderElection {
         }
     }
 
-    private void loop() {
+    private void electionLoop() {
         try {
             while (state != State.CLOSED) {
                 AtomicBoolean live = new AtomicBoolean(true);
