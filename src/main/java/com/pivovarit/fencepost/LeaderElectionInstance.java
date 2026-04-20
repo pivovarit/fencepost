@@ -36,7 +36,6 @@ final class LeaderElectionInstance implements LeaderElection {
     private volatile State state = State.NEW;
     private volatile boolean isLeader;
     private volatile boolean revokedSignal;
-    private volatile RenewableLock currentLock;
     private volatile Thread loopThread;
 
     LeaderElectionInstance(String electionName,
@@ -109,38 +108,39 @@ final class LeaderElectionInstance implements LeaderElection {
     }
 
     private void electionLoop() {
+        while (state != State.CLOSED) {
+            runOneCycle();
+        }
+    }
+
+    private void runOneCycle() {
+        AtomicBoolean live = new AtomicBoolean(true);
+        RenewableLock lock = newLock(live);
         try {
-            while (state != State.CLOSED) {
-                AtomicBoolean live = new AtomicBoolean(true);
-                RenewableLock lock = newLock(live);
-                Optional<FencingToken> token;
-                try {
-                    token = lock.tryLock();
-                } catch (Exception e) {
-                    live.set(false);
-                    logger.debug("tryLock failed for '{}' during standby polling", electionName, e);
-                    reportError(e);
-                    sleep(pollInterval);
-                    continue;
-                }
+            Optional<FencingToken> token;
+            try {
+                token = lock.tryLock();
+            } catch (Exception e) {
+                logger.debug("tryLock failed for '{}' during standby polling", electionName, e);
+                reportError(e);
+                sleep(pollInterval);
+                return;
+            }
 
-                if (token.isEmpty()) {
-                    live.set(false);
-                    sleep(pollInterval);
-                    continue;
-                }
+            if (token.isEmpty()) {
+                sleep(pollInterval);
+                return;
+            }
 
-                currentLock = lock;
-                isLeader = true;
-                FencingToken won = token.get();
-                logger.debug("won leadership for '{}', token={}", electionName, won.value());
+            FencingToken won = token.get();
+            logger.debug("won leadership for '{}', token={}", electionName, won.value());
+            isLeader = true;
+            try {
                 invokeCallback(() -> onElected.accept(won));
-
                 waitForRevocation();
-
+            } finally {
                 isLeader = false;
                 invokeCallback(onRevoked);
-
                 if (!revokedSignal) {
                     try {
                         lock.unlock();
@@ -148,24 +148,10 @@ final class LeaderElectionInstance implements LeaderElection {
                         reportError(e);
                     }
                 }
-                currentLock = null;
-                live.set(false);
                 revokedSignal = false;
             }
         } finally {
-            if (isLeader) {
-                isLeader = false;
-                invokeCallback(onRevoked);
-            }
-            RenewableLock lingering = currentLock;
-            currentLock = null;
-            if (lingering != null && !revokedSignal) {
-                try {
-                    lingering.unlock();
-                } catch (Exception e) {
-                    reportError(e);
-                }
-            }
+            live.set(false);
         }
     }
 
