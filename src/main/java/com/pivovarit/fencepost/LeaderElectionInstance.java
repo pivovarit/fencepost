@@ -111,13 +111,7 @@ final class LeaderElectionInstance implements LeaderElection {
         AtomicBoolean revoked = new AtomicBoolean(false);
         RenewableLock lock = newLock(live, revoked);
         try {
-            Optional<FencingToken> token = Optional.empty();
-            try {
-                token = lock.tryLock();
-            } catch (Exception e) {
-                logger.debug("tryLock failed for '{}' during standby polling", electionName, e);
-                reportError(e);
-            }
+            Optional<FencingToken> token = tryAcquireLock(lock);
             if (token.isEmpty()) {
                 sleep(pollInterval);
                 return;
@@ -143,6 +137,16 @@ final class LeaderElectionInstance implements LeaderElection {
         } finally {
             live.set(false);
         }
+    }
+
+    private Optional<FencingToken> tryAcquireLock(RenewableLock lock) {
+        try {
+            return lock.tryLock();
+        } catch (Exception e) {
+            logger.debug("tryLock failed for '{}' during standby polling", electionName, e);
+            reportError(e);
+        }
+        return Optional.empty();
     }
 
     private RenewableLock newLock(AtomicBoolean live, AtomicBoolean revoked) {
