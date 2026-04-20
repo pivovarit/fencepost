@@ -92,10 +92,12 @@ final class LeaderElectionInstance implements LeaderElection {
         }
         if (thread != null) {
             LockSupport.unpark(thread);
-            try {
-                thread.join();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            if (Thread.currentThread() != thread) {
+                try {
+                    thread.join();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             }
         }
     }
