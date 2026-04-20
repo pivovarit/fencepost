@@ -8,7 +8,7 @@ Zero dependencies beyond `org.postgresql:postgresql`. Requires Java 11+.
 
 ## Features
 
-Fencepost provides three lock strategies and a message queue, all backed by PostgreSQL.
+Fencepost provides three lock strategies, leader election, and a message queue, all backed by PostgreSQL.
 
 ## Lock Types
 
