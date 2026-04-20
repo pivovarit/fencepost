@@ -1,5 +1,6 @@
 module com.pivovarit.fencepost {
     exports com.pivovarit.fencepost;
+    exports com.pivovarit.fencepost.election;
     exports com.pivovarit.fencepost.function;
     exports com.pivovarit.fencepost.lock;
     exports com.pivovarit.fencepost.queue;

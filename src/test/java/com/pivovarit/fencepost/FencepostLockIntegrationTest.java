@@ -672,6 +672,28 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void leaseLockWritesConfiguredInstanceId() throws SQLException {
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30))
+            .withInstanceId("my-pod-7")
+            .build();
+
+        RenewableLock lock = provider.forName("instance-id-test");
+        lock.lock();
+        try {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement ps = conn.prepareStatement("SELECT locked_by FROM fencepost_locks WHERE lock_name = ?")) {
+                ps.setString(1, "instance-id-test");
+                try (ResultSet rs = ps.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getString(1)).isEqualTo("my-pod-7");
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Test
     void lockWhileHeldShouldThrow() {
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10)).build();
 
