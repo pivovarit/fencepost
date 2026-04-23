@@ -501,6 +501,45 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void unlockShouldIncrementTokenToPreventGhostAutoRenew() throws Exception {
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30))
+          .withAutoRenew(Duration.ofSeconds(1))
+          .withQuietPeriod(Duration.ofSeconds(2))
+          .build();
+
+        RenewableLock lock = provider.forName("ghost-renew-test");
+        lock.lock();
+
+        long tokenBeforeUnlock;
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.createStatement().executeQuery(
+               "SELECT token FROM fencepost_locks WHERE lock_name = 'ghost-renew-test'")) {
+            assertThat(rs.next()).isTrue();
+            tokenBeforeUnlock = rs.getLong(1);
+        }
+
+        lock.unlock();
+
+        Thread.sleep(2_000);
+
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.createStatement().executeQuery(
+               "SELECT token, extract(epoch from expires_at) FROM fencepost_locks WHERE lock_name = 'ghost-renew-test'")) {
+            assertThat(rs.next()).isTrue();
+            long tokenAfterUnlock = rs.getLong(1);
+            long expiresAtEpoch = rs.getLong(2);
+            long now = System.currentTimeMillis() / 1000;
+
+            assertThat(tokenAfterUnlock)
+              .as("unlock should increment token to invalidate ghost auto-renew")
+              .isGreaterThan(tokenBeforeUnlock);
+            assertThat(expiresAtEpoch - now)
+              .as("expires_at should not be extended beyond the quiet period by ghost auto-renew")
+              .isLessThanOrEqualTo(2);
+        }
+    }
+
+    @Test
     void onAutoRenewFailureShouldBeCalledWhenLockIsStolen() throws Exception {
         AtomicBoolean callbackFired = new AtomicBoolean(false);
         AtomicReference<FencepostException> callbackError = new AtomicReference<>();

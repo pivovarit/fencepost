@@ -184,13 +184,13 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         try {
             int updated;
             if (quietPeriod != null) {
-                updated = Jdbc.update(dataSource, String.format("UPDATE %s SET locked_at = NULL, expires_at = now() + %s WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis()))
+                updated = Jdbc.update(dataSource, String.format("UPDATE %s SET token = token + 1, locked_at = NULL, expires_at = now() + %s WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis()))
                         .bind(quietPeriod.toMillis())
                         .bind(lockName)
                         .bind(currentToken.value())
                         .execute();
             } else {
-                updated = Jdbc.update(dataSource, String.format("UPDATE %s SET locked_by = NULL, locked_at = NULL, expires_at = NULL WHERE lock_name = ? AND token = ?", tableName))
+                updated = Jdbc.update(dataSource, String.format("UPDATE %s SET token = token + 1, locked_by = NULL, locked_at = NULL, expires_at = NULL WHERE lock_name = ? AND token = ?", tableName))
                         .bind(lockName)
                         .bind(currentToken.value())
                         .execute();
