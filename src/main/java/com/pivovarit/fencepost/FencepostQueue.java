@@ -216,7 +216,9 @@ final class FencepostQueue implements Queue {
     private void waitForNotification(Connection conn) {
         try {
             var pgConn = conn.unwrap(PGConnection.class);
-            pgConn.getNotifications((int) pollIntervalMs);
+            synchronized (listenerLock) {
+                pgConn.getNotifications((int) pollIntervalMs);
+            }
         } catch (Exception e) {
             closeListenerConnection();
             try {
