@@ -14,6 +14,16 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Optional;
 
+/**
+ * Session-scoped lock backed by PostgreSQL's {@code SELECT ... FOR UPDATE}.
+ *
+ * <p><b>Fencing token limitation:</b> the token increment is part of the lock-holding transaction
+ * and only committed on {@link #unlock()}. If the process crashes while holding the lock,
+ * PostgreSQL rolls back the transaction - reverting the token. The next acquirer then receives
+ * the same token value
+ *
+ * Use {@link LeaseLockInstance} when crash-safe fencing tokens are required.
+ */
 final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     private static final Logger logger = LoggerFactory.getLogger(SessionLockInstance.class);
