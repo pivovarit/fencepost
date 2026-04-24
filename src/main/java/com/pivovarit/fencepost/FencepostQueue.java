@@ -169,8 +169,8 @@ final class FencepostQueue implements Queue {
                     } catch (SQLException ce) {
                         logger.trace("failed to close listener connection", ce);
                     }
+                    listenerConnection = null;
                 }
-                listenerConnection = null;
             }
         }
 
@@ -217,8 +217,8 @@ final class FencepostQueue implements Queue {
                     } catch (SQLException ce) {
                         logger.trace("failed to close listener connection", ce);
                     }
+                    listenerConnection = null;
                 }
-                listenerConnection = null;
             }
             listenerConnection = newConn;
             return newConn;

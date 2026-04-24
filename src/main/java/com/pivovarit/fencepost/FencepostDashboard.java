@@ -230,8 +230,8 @@ public final class FencepostDashboard {
                     } catch (SQLException ce) {
                         logger.trace("failed to close listener connection", ce);
                     }
+                    listenerConnection = null;
                 }
-                listenerConnection = null;
             }
         }
 
@@ -278,8 +278,8 @@ public final class FencepostDashboard {
                     } catch (SQLException ce) {
                         logger.trace("failed to close listener connection", ce);
                     }
+                    listenerConnection = null;
                 }
-                listenerConnection = null;
             }
             listenerConnection = newConn;
             return newConn;
