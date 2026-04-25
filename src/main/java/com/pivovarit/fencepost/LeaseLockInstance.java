@@ -37,7 +37,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                          Duration pollInterval,
                          Consumer<FencepostException> onAutoRenewFailure,
                          String instanceId) {
-        super(lockName, dataSource, tableName);
+        super(lockName, dataSource, tableName, LockType.LEASE);
         this.leaseDuration = leaseDuration;
         this.refreshInterval = refreshInterval;
         this.quietPeriod = quietPeriod;

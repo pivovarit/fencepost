@@ -63,6 +63,7 @@ class FencepostDashboardTest {
               "DROP TABLE IF EXISTS fencepost_queue; DROP TABLE IF EXISTS fencepost_locks;" +
               "CREATE TABLE fencepost_locks (" +
               "  lock_name TEXT PRIMARY KEY," +
+              "  lock_type TEXT NOT NULL," +
               "  token BIGINT NOT NULL DEFAULT 0," +
               "  locked_by TEXT," +
               "  locked_at TIMESTAMPTZ," +
@@ -105,8 +106,8 @@ class FencepostDashboardTest {
     void shouldServeLocksEndpoint() throws Exception {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
-              "INSERT INTO fencepost_locks (lock_name, token, locked_by, locked_at, expires_at) " +
-              "VALUES ('test-lock', 5, 'worker-1', now(), now() + interval '1 hour')"
+              "INSERT INTO fencepost_locks (lock_name, lock_type, token, locked_by, locked_at, expires_at) " +
+              "VALUES ('test-lock', 'LEASE', 5, 'worker-1', now(), now() + interval '1 hour')"
             );
         }
 
@@ -124,7 +125,7 @@ class FencepostDashboardTest {
     void shouldServeSingleLockEndpoint() throws Exception {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
-              "INSERT INTO fencepost_locks (lock_name, token) VALUES ('a', 1), ('b', 2)"
+              "INSERT INTO fencepost_locks (lock_name, lock_type, token) VALUES ('a', 'LEASE', 1), ('b', 'LEASE', 2)"
             );
         }
 
@@ -249,13 +250,14 @@ class FencepostDashboardTest {
             conn.createStatement().execute(
               "CREATE TABLE custom_locks ("
                 + "lock_name TEXT PRIMARY KEY,"
+                + "lock_type TEXT NOT NULL,"
                 + "token BIGINT NOT NULL DEFAULT 0,"
                 + "locked_by TEXT,"
                 + "locked_at TIMESTAMPTZ,"
                 + "expires_at TIMESTAMPTZ)"
             );
             conn.createStatement().execute(
-              "INSERT INTO custom_locks (lock_name, token) VALUES ('x', 42)"
+              "INSERT INTO custom_locks (lock_name, lock_type, token) VALUES ('x', 'LEASE', 42)"
             );
         }
 
@@ -410,10 +412,10 @@ class FencepostDashboardTest {
     void sandbox() throws Exception {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
-              "INSERT INTO fencepost_locks (lock_name, token, locked_by, locked_at, expires_at) VALUES " +
-              "('order-processing', 7, 'worker-1/main', now(), now() + interval '5 minutes')," +
-              "('inventory-sync', 3, NULL, NULL, NULL)," +
-              "('report-generation', 12, 'worker-2/pool-1', now() - interval '10 minutes', now() - interval '5 minutes')"
+              "INSERT INTO fencepost_locks (lock_name, lock_type, token, locked_by, locked_at, expires_at) VALUES " +
+              "('order-processing', 'LEASE', 7, 'worker-1/main', now(), now() + interval '5 minutes')," +
+              "('inventory-sync', 'LEASE', 3, NULL, NULL, NULL)," +
+              "('report-generation', 'LEASE', 12, 'worker-2/pool-1', now() - interval '10 minutes', now() - interval '5 minutes')"
             );
         }
 

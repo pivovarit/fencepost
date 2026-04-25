@@ -56,7 +56,7 @@ class FencepostLockIntegrationTest {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement()
               .execute("DROP TABLE IF EXISTS fencepost_locks_tokens; DROP TABLE IF EXISTS fencepost_locks; " +
-                "CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE); " +
+                "CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  lock_type TEXT NOT NULL,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE); " +
                 "CREATE TABLE fencepost_locks_tokens (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0)");
         }
     }
@@ -1170,5 +1170,65 @@ class FencepostLockIntegrationTest {
                 return rs.getBoolean(1);
             }
         }
+    }
+
+    @Test
+    void shouldRejectLeaseAfterSessionForSameName() {
+        Factory<FencedLock> sessionFactory = Fencepost.sessionLock(dataSource).build();
+        Factory<RenewableLock> leaseFactory = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10)).build();
+
+        FencedLock sessionLock = sessionFactory.forName("mixed-type-test");
+        sessionLock.lock();
+        sessionLock.unlock();
+
+        RenewableLock leaseLock = leaseFactory.forName("mixed-type-test");
+        assertThatThrownBy(leaseLock::lock)
+          .isInstanceOf(FencepostException.class)
+          .hasMessageContaining("mixed-type-test");
+    }
+
+    @Test
+    void shouldRejectSessionAfterLeaseForSameName() {
+        Factory<RenewableLock> leaseFactory = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10)).build();
+        Factory<FencedLock> sessionFactory = Fencepost.sessionLock(dataSource).build();
+
+        RenewableLock leaseLock = leaseFactory.forName("mixed-type-test-2");
+        leaseLock.lock();
+        leaseLock.unlock();
+
+        FencedLock sessionLock = sessionFactory.forName("mixed-type-test-2");
+        assertThatThrownBy(sessionLock::lock)
+          .isInstanceOf(FencepostException.class)
+          .hasMessageContaining("mixed-type-test-2");
+    }
+
+    @Test
+    void shouldAllowSameTypeReuseForSession() {
+        Factory<FencedLock> factory1 = Fencepost.sessionLock(dataSource).build();
+        Factory<FencedLock> factory2 = Fencepost.sessionLock(dataSource).build();
+
+        FencedLock lock1 = factory1.forName("same-type-session");
+        lock1.lock();
+        lock1.unlock();
+
+        FencedLock lock2 = factory2.forName("same-type-session");
+        FencingToken token = lock2.lock();
+        assertThat(token).isNotNull();
+        lock2.unlock();
+    }
+
+    @Test
+    void shouldAllowSameTypeReuseForLease() {
+        Factory<RenewableLock> factory1 = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10)).build();
+        Factory<RenewableLock> factory2 = Fencepost.leaseLock(dataSource, Duration.ofSeconds(5)).build();
+
+        RenewableLock lock1 = factory1.forName("same-type-lease");
+        lock1.lock();
+        lock1.unlock();
+
+        RenewableLock lock2 = factory2.forName("same-type-lease");
+        FencingToken token = lock2.lock();
+        assertThat(token).isNotNull();
+        lock2.unlock();
     }
 }

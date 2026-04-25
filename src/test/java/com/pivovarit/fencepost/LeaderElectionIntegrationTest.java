@@ -47,7 +47,7 @@ class LeaderElectionIntegrationTest {
     void createTable() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement()
-              .execute("DROP TABLE IF EXISTS fencepost_locks; CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE)");
+              .execute("DROP TABLE IF EXISTS fencepost_locks; CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  lock_type TEXT NOT NULL,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE)");
         }
     }
 
@@ -181,7 +181,7 @@ class LeaderElectionIntegrationTest {
             assertThat(election.isLeader()).isFalse();
 
             try (Connection conn = dataSource.getConnection()) {
-                conn.createStatement().execute("CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE)");
+                conn.createStatement().execute("CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  lock_type TEXT NOT NULL,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE)");
             }
             await().atMost(10, TimeUnit.SECONDS).until(election::isLeader);
             assertThat(electedCount.get()).isGreaterThanOrEqualTo(2);
