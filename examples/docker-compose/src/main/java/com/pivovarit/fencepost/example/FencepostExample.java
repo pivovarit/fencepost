@@ -84,7 +84,7 @@ public class FencepostExample {
         Factory<FencedLock> factory = Fencepost.sessionLock(dataSource).build();
 
         for (int round = 1; round <= ROUNDS; round++) {
-            FencedLock lock = factory.forName("counter-lock");
+            FencedLock lock = factory.forName("session-counter-lock");
 
             Optional<FencingToken> maybe = lock.tryLock();
             if (maybe.isPresent()) {
@@ -109,7 +109,7 @@ public class FencepostExample {
           .build();
 
         for (int round = 1; round <= ROUNDS; round++) {
-            RenewableLock lock = factory.forName("counter-lock");
+            RenewableLock lock = factory.forName("lease-counter-lock");
 
             Optional<FencingToken> maybe = lock.tryLock();
             if (maybe.isPresent()) {
