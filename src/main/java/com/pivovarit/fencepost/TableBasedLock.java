@@ -17,6 +17,7 @@ abstract class TableBasedLock {
     final String lockName;
     final DataSource dataSource;
     final String tableName;
+    final String tokenTableName;
 
     volatile FencingToken currentToken;
 
@@ -24,6 +25,7 @@ abstract class TableBasedLock {
         this.lockName = lockName;
         this.dataSource = dataSource;
         this.tableName = tableName;
+        this.tokenTableName = tokenTableName(tableName);
     }
 
     void ensureNotHeld() {
@@ -48,19 +50,22 @@ abstract class TableBasedLock {
         }
     }
 
-    FencingToken incrementToken(Connection conn, Duration expiry) throws SQLException {
+    FencingToken allocateSessionToken() throws SQLException {
+        return Jdbc.query(dataSource, String.format(
+                "INSERT INTO %s AS t (lock_name, token) VALUES (?, 1) " +
+                "ON CONFLICT (lock_name) DO UPDATE SET token = t.token + 1 RETURNING token",
+                tokenTableName))
+            .bind(lockName)
+            .map(rs -> {
+                rs.next();
+                return new FencingToken(rs.getLong(1));
+            });
+    }
+
+    FencingToken recordSessionToken(Connection conn, FencingToken token) throws SQLException {
         String lockedBy = HOSTNAME + "/" + Thread.currentThread().getName();
-        if (expiry != null) {
-            return Jdbc.query(conn, String.format("UPDATE %s SET token = token + 1, locked_by = ?, locked_at = now(), expires_at = now() + %s WHERE lock_name = ? RETURNING token", tableName, Jdbc.intervalMillis()))
-                    .bind(lockedBy)
-                    .bind(expiry.toMillis())
-                    .bind(lockName)
-                    .map(rs -> {
-                        rs.next();
-                        return new FencingToken(rs.getLong(1));
-                    });
-        }
-        return Jdbc.query(conn, String.format("UPDATE %s SET token = token + 1, locked_by = ?, locked_at = now(), expires_at = NULL WHERE lock_name = ? RETURNING token", tableName))
+        return Jdbc.query(conn, String.format("UPDATE %s SET token = ?, locked_by = ?, locked_at = now(), expires_at = NULL WHERE lock_name = ? RETURNING token", tableName))
+                .bind(token.value())
                 .bind(lockedBy)
                 .bind(lockName)
                 .map(rs -> {
@@ -83,6 +88,30 @@ abstract class TableBasedLock {
         } catch (SQLException e) {
             throw new FencepostException("Failed to check token for lock: " + lockName, e);
         }
+    }
+
+    boolean checkSupersededByTokenTable(FencingToken token) {
+        try {
+            return Jdbc.query(dataSource, String.format("SELECT token > ? FROM %s WHERE lock_name = ?", tokenTableName))
+                    .bind(token.value())
+                    .bind(lockName)
+                    .map(rs -> {
+                        if (!rs.next()) {
+                            throw new FencepostException("Lock token row not found: " + lockName);
+                        }
+                        return rs.getBoolean(1);
+                    });
+        } catch (SQLException e) {
+            throw new FencepostException("Failed to check token for lock: " + lockName, e);
+        }
+    }
+
+    private static String tokenTableName(String tableName) {
+        int dot = tableName.lastIndexOf('.');
+        if (dot == -1) {
+            return tableName + "_tokens";
+        }
+        return tableName.substring(0, dot + 1) + tableName.substring(dot + 1) + "_tokens";
     }
 
     abstract FencingToken doLock();

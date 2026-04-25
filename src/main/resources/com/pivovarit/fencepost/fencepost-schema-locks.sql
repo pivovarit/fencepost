@@ -5,3 +5,8 @@ CREATE TABLE IF NOT EXISTS fencepost_locks (
     locked_at   TIMESTAMP WITH TIME ZONE,
     expires_at  TIMESTAMP WITH TIME ZONE
 );
+
+CREATE TABLE IF NOT EXISTS fencepost_locks_tokens (
+    lock_name   TEXT PRIMARY KEY,
+    token       BIGINT NOT NULL DEFAULT 0
+);
