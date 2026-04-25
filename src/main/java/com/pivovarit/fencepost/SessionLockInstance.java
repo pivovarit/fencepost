@@ -39,6 +39,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     @Override
     public FencingToken lock(Duration timeout) {
+        Durations.requireAtLeastOneMillisecond(timeout, "timeout");
         ensureNotHeld();
         return doLock(timeout);
     }

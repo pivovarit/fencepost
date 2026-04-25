@@ -41,7 +41,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         this.leaseDuration = leaseDuration;
         this.refreshInterval = refreshInterval;
         this.quietPeriod = quietPeriod;
-        this.pollIntervalMs = pollInterval != null ? pollInterval.toMillis() : DEFAULT_POLL_INTERVAL_MS;
+        this.pollIntervalMs = pollInterval != null ? Durations.toPositiveMillis(pollInterval, "pollInterval") : DEFAULT_POLL_INTERVAL_MS;
         this.onAutoRenewFailure = onAutoRenewFailure;
         this.instanceId = instanceId;
     }
@@ -54,6 +54,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     @Override
     public FencingToken lock(Duration timeout) {
+        Durations.requireAtLeastOneMillisecond(timeout, "timeout");
         ensureNotHeld();
         return doLock(timeout);
     }
@@ -147,16 +148,14 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     @Override
     public void renew(Duration duration) {
-        if (duration.isNegative() || duration.isZero()) {
-            throw new IllegalArgumentException("duration must be positive");
-        }
+        long durationMillis = Durations.toPositiveMillis(duration, "duration");
         FencingToken token = currentToken;
         if (token == null) {
             throw new LockNotHeldException(lockName);
         }
         try {
             int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET expires_at = GREATEST(expires_at, now() + %s) %s", tableName, Jdbc.intervalMillis(), activeLeasePredicate()))
-                    .bind(duration.toMillis())
+                    .bind(durationMillis)
                     .bind(lockName)
                     .bind(token.value())
                     .execute();
@@ -166,7 +165,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             }
             logger.debug("renewed lease lock '{}', token={}, duration={}", lockName, token.value(), duration);
             if (autoRenewThread != null) {
-                autoRenewWindowMillis = duration.toMillis();
+                autoRenewWindowMillis = durationMillis;
             }
         } catch (LockNotHeldException e) {
             throw e;

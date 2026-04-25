@@ -44,7 +44,7 @@ final class Jdbc {
     }
 
     static void setStatementTimeout(Connection conn, Duration timeout) throws SQLException {
-        execute(conn, String.format("SET LOCAL statement_timeout = '%dms'", timeout.toMillis()));
+        execute(conn, String.format("SET LOCAL statement_timeout = '%dms'", Durations.toPositiveMillis(timeout, "timeout")));
     }
 
     static void resetStatementTimeout(Connection conn) throws SQLException {
@@ -52,7 +52,7 @@ final class Jdbc {
     }
 
     static void setLockTimeout(Connection conn, Duration timeout) throws SQLException {
-        execute(conn, String.format("SET lock_timeout = '%dms'", timeout.toMillis()));
+        execute(conn, String.format("SET lock_timeout = '%dms'", Durations.toPositiveMillis(timeout, "timeout")));
     }
 
     static void resetLockTimeout(Connection conn) throws SQLException {

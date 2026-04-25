@@ -55,9 +55,7 @@ final class FencepostQueue implements Queue {
 
     @Override
     public void enqueue(byte[] payload, String type, Map<String, String> headers, Duration delay) {
-        if (delay.isNegative()) {
-            throw new IllegalArgumentException("delay must not be negative");
-        }
+        long delayMillis = Durations.toNonNegativeMillis(delay, "delay");
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(false);
             try {
@@ -68,7 +66,7 @@ final class FencepostQueue implements Queue {
                   .bind(payload)
                   .bind(type)
                   .bind(HeadersCodec.toJson(headers))
-                  .bind(delay.toMillis())
+                  .bind(delayMillis)
                   .execute();
                 Jdbc.execute(conn, "NOTIFY " + channelName());
                 Jdbc.execute(conn, "NOTIFY " + FencepostDashboard.DASHBOARD_CHANNEL);
@@ -119,6 +117,7 @@ final class FencepostQueue implements Queue {
 
     @Override
     public Message dequeue(Duration timeout) {
+        Durations.requireAtLeastOneMillisecond(timeout, "timeout");
         return dequeueBlocking(timeout);
     }
 

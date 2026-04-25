@@ -54,6 +54,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
 
     @Override
     public void lock(Duration timeout) {
+        Durations.requireAtLeastOneMillisecond(timeout, "timeout");
         ensureNotHeld();
         try {
             connection = dataSource.getConnection();
