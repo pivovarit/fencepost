@@ -16,6 +16,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Duration;
 import java.util.Optional;
 
@@ -23,6 +24,8 @@ public class FencepostExample {
 
     private static final String NODE = System.getenv().getOrDefault("HOSTNAME", "unknown");
     private static final int ROUNDS = 5;
+    // Serializes startup DDL across Compose replicas.
+    private static final long BOOTSTRAP_LOCK_ID = 0x46656E6365506F73L;
 
     public static void main(String[] args) throws Exception {
         DataSource dataSource = dataSource();
@@ -157,15 +160,17 @@ public class FencepostExample {
     }
 
     private static void initCounter(DataSource dataSource, String name) throws SQLException {
-        try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, value INT NOT NULL DEFAULT 0)");
+        withBootstrapLock(dataSource, conn -> {
+            try (Statement statement = conn.createStatement()) {
+                statement.execute(
+                  "CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, value INT NOT NULL DEFAULT 0)");
+            }
             try (PreparedStatement ps = conn.prepareStatement(
               "INSERT INTO counters (name, value) VALUES (?, 0) ON CONFLICT (name) DO NOTHING")) {
                 ps.setString(1, name);
                 ps.executeUpdate();
             }
-        }
+        });
     }
 
     private static int incrementCounter(DataSource dataSource, String name) {
@@ -215,34 +220,70 @@ public class FencepostExample {
     }
 
     private static void createQueueTable(DataSource dataSource) throws SQLException {
-        try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-                "CREATE TABLE IF NOT EXISTS fencepost_queue ("
-                + "id          BIGSERIAL PRIMARY KEY,"
-                + "queue_name  TEXT NOT NULL,"
-                + "payload     BYTEA NOT NULL,"
-                + "type        TEXT,"
-                + "headers     JSONB,"
-                + "created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),"
-                + "visible_at  TIMESTAMPTZ NOT NULL DEFAULT now(),"
-                + "attempts    INT NOT NULL DEFAULT 0,"
-                + "picked_by   TEXT"
-                + ");"
-                + "CREATE INDEX IF NOT EXISTS idx_fencepost_queue_dequeue "
-                + "ON fencepost_queue (queue_name, visible_at)");
-        }
+        withBootstrapLock(dataSource, conn -> {
+            try (Statement statement = conn.createStatement()) {
+                statement.execute(
+                  "CREATE TABLE IF NOT EXISTS fencepost_queue ("
+                  + "id          BIGSERIAL PRIMARY KEY,"
+                  + "queue_name  TEXT NOT NULL,"
+                  + "payload     BYTEA NOT NULL,"
+                  + "type        TEXT,"
+                  + "headers     JSONB,"
+                  + "created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),"
+                  + "visible_at  TIMESTAMPTZ NOT NULL DEFAULT now(),"
+                  + "attempts    INT NOT NULL DEFAULT 0,"
+                  + "picked_by   TEXT"
+                  + ");"
+                  + "CREATE INDEX IF NOT EXISTS idx_fencepost_queue_dequeue "
+                  + "ON fencepost_queue (queue_name, visible_at)");
+            }
+        });
     }
 
     private static void createLockTable(DataSource dataSource) throws SQLException {
+        withBootstrapLock(dataSource, conn -> {
+            try (Statement statement = conn.createStatement()) {
+                statement.execute(
+                  "CREATE TABLE IF NOT EXISTS fencepost_locks ("
+                  + "lock_name   TEXT PRIMARY KEY,"
+                  + "token       BIGINT NOT NULL DEFAULT 0,"
+                  + "locked_by   TEXT,"
+                  + "locked_at   TIMESTAMP WITH TIME ZONE,"
+                  + "expires_at  TIMESTAMP WITH TIME ZONE"
+                  + ");"
+                  + "CREATE TABLE IF NOT EXISTS fencepost_locks_tokens ("
+                  + "lock_name   TEXT PRIMARY KEY,"
+                  + "token       BIGINT NOT NULL DEFAULT 0"
+                  + ")");
+            }
+        });
+    }
+
+    private static void withBootstrapLock(DataSource dataSource, BootstrapAction action) throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-                "CREATE TABLE IF NOT EXISTS fencepost_locks ("
-                + "lock_name   TEXT PRIMARY KEY,"
-                + "token       BIGINT NOT NULL DEFAULT 0,"
-                + "locked_by   TEXT,"
-                + "locked_at   TIMESTAMP WITH TIME ZONE,"
-                + "expires_at  TIMESTAMP WITH TIME ZONE"
-                + ")");
+            boolean autoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+            try {
+                acquireBootstrapLock(conn);
+                action.run(conn);
+                conn.commit();
+            } catch (SQLException | RuntimeException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(autoCommit);
+            }
         }
+    }
+
+    private static void acquireBootstrapLock(Connection conn) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("SELECT pg_advisory_xact_lock(?)")) {
+            ps.setLong(1, BOOTSTRAP_LOCK_ID);
+            ps.execute();
+        }
+    }
+
+    private interface BootstrapAction {
+        void run(Connection conn) throws SQLException;
     }
 }

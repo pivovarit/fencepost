@@ -55,7 +55,9 @@ class FencepostLockIntegrationTest {
     void createTable() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement()
-              .execute("DROP TABLE IF EXISTS fencepost_locks; CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE)");
+              .execute("DROP TABLE IF EXISTS fencepost_locks_tokens; DROP TABLE IF EXISTS fencepost_locks; " +
+                "CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE); " +
+                "CREATE TABLE fencepost_locks_tokens (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0)");
         }
     }
 
@@ -999,12 +1001,14 @@ class FencepostLockIntegrationTest {
         Factory<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
         FencedLock holder = provider.forName("conn-drop-session");
-        holder.lock();
+        FencingToken firstToken = holder.lock();
 
         terminateBackends("idle in transaction");
 
         FencedLock contender = provider.forName("conn-drop-session");
-        assertThat(contender.tryLock()).isPresent();
+        Optional<FencingToken> secondToken = contender.tryLock();
+        assertThat(secondToken).isPresent();
+        assertThat(secondToken.get().value()).isGreaterThan(firstToken.value());
         contender.unlock();
 
         assertThatThrownBy(holder::unlock).isInstanceOf(FencepostException.class);

@@ -17,12 +17,9 @@ import java.util.Optional;
 /**
  * Session-scoped lock backed by PostgreSQL's {@code SELECT ... FOR UPDATE}.
  *
- * <p><b>Fencing token limitation:</b> the token increment is part of the lock-holding transaction
- * and only committed on {@link #unlock()}. If the process crashes while holding the lock,
- * PostgreSQL rolls back the transaction - reverting the token. The next acquirer then receives
- * the same token value
- *
- * Use {@link LeaseLockInstance} when crash-safe fencing tokens are required.
+ * <p>Fencing tokens are allocated from a separate durable token table after the row lock is
+ * acquired, so token increments survive holder crashes even though the row-lock transaction is
+ * rolled back.
  */
 final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
@@ -63,7 +60,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
                     .bind(lockName)
                     .map(ResultSet::next);
 
-            currentToken = incrementToken(connection, null);
+            currentToken = recordSessionToken(connection, allocateSessionToken());
             logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
             return currentToken;
         } catch (Exception e) {
@@ -89,7 +86,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
             Jdbc.resetStatementTimeout(connection);
 
-            currentToken = incrementToken(connection, null);
+            currentToken = recordSessionToken(connection, allocateSessionToken());
             logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
             return currentToken;
         } catch (Exception e) {
@@ -121,7 +118,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
                 return Optional.empty();
             }
 
-            currentToken = incrementToken(connection, null);
+            currentToken = recordSessionToken(connection, allocateSessionToken());
             logger.debug("acquired session lock '{}' via tryLock, token={}", lockName, currentToken.value());
             return Optional.of(currentToken);
         } catch (Exception e) {
@@ -134,7 +131,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     @Override
     public boolean isSuperseded(FencingToken token) {
-        return checkSuperseded(token);
+        return checkSupersededByTokenTable(token);
     }
 
     @Override
