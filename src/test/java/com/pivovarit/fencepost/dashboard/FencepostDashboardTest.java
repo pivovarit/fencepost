@@ -250,13 +250,14 @@ class FencepostDashboardTest {
             conn.createStatement().execute(
               "CREATE TABLE custom_locks ("
                 + "lock_name TEXT PRIMARY KEY,"
+                + "lock_type TEXT NOT NULL,"
                 + "token BIGINT NOT NULL DEFAULT 0,"
                 + "locked_by TEXT,"
                 + "locked_at TIMESTAMPTZ,"
                 + "expires_at TIMESTAMPTZ)"
             );
             conn.createStatement().execute(
-              "INSERT INTO custom_locks (lock_name, token) VALUES ('x', 42)"
+              "INSERT INTO custom_locks (lock_name, lock_type, token) VALUES ('x', 'LEASE', 42)"
             );
         }
 

@@ -5,7 +5,6 @@ import com.pivovarit.fencepost.lock.FencingToken;
 import javax.sql.DataSource;
 import java.net.InetAddress;
 import java.sql.Connection;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Optional;
@@ -22,6 +21,8 @@ abstract class TableBasedLock {
 
     volatile FencingToken currentToken;
 
+    private volatile boolean rowExists;
+
     TableBasedLock(String lockName, DataSource dataSource, String tableName, LockType lockType) {
         this.lockName = lockName;
         this.dataSource = dataSource;
@@ -37,6 +38,9 @@ abstract class TableBasedLock {
     }
 
     void ensureRowExists() {
+        if (rowExists) {
+            return;
+        }
         String type = lockType.name();
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(true);
@@ -59,6 +63,7 @@ abstract class TableBasedLock {
                 throw new FencepostException(
                     String.format("Lock '%s' is already registered as %s, cannot use as %s", lockName, storedType, type));
             }
+            rowExists = true;
         } catch (FencepostException e) {
             throw e;
         } catch (SQLException e) {
