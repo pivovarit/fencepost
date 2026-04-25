@@ -30,9 +30,7 @@ public final class Fencepost {
 
     public static LeaseBuilder leaseLock(DataSource dataSource, Duration lockAtMost) {
         Objects.requireNonNull(dataSource, "dataSource must not be null");
-        if (lockAtMost.isNegative() || lockAtMost.isZero()) {
-            throw new IllegalArgumentException("lockAtMost must be positive");
-        }
+        Durations.requireAtLeastOneMillisecond(lockAtMost, "lockAtMost");
         return new LeaseBuilder(dataSource, lockAtMost);
     }
 
@@ -96,9 +94,7 @@ public final class Fencepost {
         }
 
         public LeaseBuilder withAutoRenew(Duration refreshInterval) {
-            if (refreshInterval.isNegative() || refreshInterval.isZero()) {
-                throw new IllegalArgumentException("Refresh interval must be positive");
-            }
+            Durations.requireAtLeastOneMillisecond(refreshInterval, "Refresh interval");
             if (refreshInterval.compareTo(leaseDuration) >= 0) {
                 throw new IllegalArgumentException("Refresh interval must be less than lease duration");
             }
@@ -107,17 +103,13 @@ public final class Fencepost {
         }
 
         public LeaseBuilder withQuietPeriod(Duration quietPeriod) {
-            if (quietPeriod.isNegative() || quietPeriod.isZero()) {
-                throw new IllegalArgumentException("quietPeriod must be positive");
-            }
+            Durations.requireAtLeastOneMillisecond(quietPeriod, "quietPeriod");
             this.quietPeriod = quietPeriod;
             return this;
         }
 
         public LeaseBuilder withPollInterval(Duration pollInterval) {
-            if (pollInterval.isNegative() || pollInterval.isZero()) {
-                throw new IllegalArgumentException("Poll interval must be positive");
-            }
+            Durations.requireAtLeastOneMillisecond(pollInterval, "Poll interval");
             this.pollInterval = pollInterval;
             return this;
         }
@@ -155,9 +147,7 @@ public final class Fencepost {
             throw new IllegalArgumentException("electionName must not be empty");
         }
         Objects.requireNonNull(leaseDuration, "leaseDuration must not be null");
-        if (leaseDuration.isNegative() || leaseDuration.isZero()) {
-            throw new IllegalArgumentException("leaseDuration must be positive");
-        }
+        Durations.requireAtLeastOneMillisecond(leaseDuration, "leaseDuration");
         return new LeaderElectionBuilder(dataSource, electionName, leaseDuration);
     }
 
@@ -194,10 +184,7 @@ public final class Fencepost {
         }
 
         public LeaderElectionBuilder withRenewInterval(Duration renewInterval) {
-            Objects.requireNonNull(renewInterval, "renewInterval must not be null");
-            if (renewInterval.isNegative() || renewInterval.isZero()) {
-                throw new IllegalArgumentException("renewInterval must be positive");
-            }
+            Durations.requireAtLeastOneMillisecond(renewInterval, "renewInterval");
             if (renewInterval.compareTo(leaseDuration) >= 0) {
                 throw new IllegalArgumentException("renewInterval must be less than leaseDuration");
             }
@@ -206,19 +193,13 @@ public final class Fencepost {
         }
 
         public LeaderElectionBuilder withPollInterval(Duration pollInterval) {
-            Objects.requireNonNull(pollInterval, "pollInterval must not be null");
-            if (pollInterval.isNegative() || pollInterval.isZero()) {
-                throw new IllegalArgumentException("pollInterval must be positive");
-            }
+            Durations.requireAtLeastOneMillisecond(pollInterval, "pollInterval");
             this.pollInterval = pollInterval;
             return this;
         }
 
         public LeaderElectionBuilder withQuietPeriod(Duration quietPeriod) {
-            Objects.requireNonNull(quietPeriod, "quietPeriod must not be null");
-            if (quietPeriod.isNegative() || quietPeriod.isZero()) {
-                throw new IllegalArgumentException("quietPeriod must be positive");
-            }
+            Durations.requireAtLeastOneMillisecond(quietPeriod, "quietPeriod");
             this.quietPeriod = quietPeriod;
             return this;
         }
@@ -262,6 +243,8 @@ public final class Fencepost {
             if (effectivePoll.isZero()) {
                 throw new IllegalArgumentException("Default pollInterval (leaseDuration/2) is zero — leaseDuration is too small");
             }
+            Durations.requireAtLeastOneMillisecond(effectiveRenew, "renewInterval");
+            Durations.requireAtLeastOneMillisecond(effectivePoll, "pollInterval");
             return new LeaderElectionInstance(
                 electionName,
                 dataSource,
@@ -297,18 +280,13 @@ public final class Fencepost {
         }
 
         public QueueBuilder visibilityTimeout(Duration visibilityTimeout) {
-            if (visibilityTimeout.isNegative() || visibilityTimeout.isZero()) {
-                throw new IllegalArgumentException("visibilityTimeout must be positive");
-            }
+            Durations.requireAtLeastOneMillisecond(visibilityTimeout, "visibilityTimeout");
             this.visibilityTimeout = visibilityTimeout;
             return this;
         }
 
         public QueueBuilder pollInterval(Duration pollInterval) {
-            if (pollInterval.isNegative() || pollInterval.isZero()) {
-                throw new IllegalArgumentException("pollInterval must be positive");
-            }
-            this.pollIntervalMs = pollInterval.toMillis();
+            this.pollIntervalMs = Durations.toPositiveMillis(pollInterval, "pollInterval");
             return this;
         }
 
