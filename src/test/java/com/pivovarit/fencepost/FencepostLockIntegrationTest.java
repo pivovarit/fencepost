@@ -75,6 +75,23 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void shouldClearMetadataOnSessionLockUnlock() throws Exception {
+        Factory<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
+
+        FencedLock lock = provider.forName("session-meta-test");
+        lock.lock();
+        lock.unlock();
+
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.createStatement()
+               .executeQuery("SELECT locked_by, locked_at FROM fencepost_locks WHERE lock_name = 'session-meta-test'")) {
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("locked_by")).isNull();
+            assertThat(rs.getTimestamp("locked_at")).isNull();
+        }
+    }
+
+    @Test
     void shouldReturnStrictlyIncreasingTokens() {
         Factory<FencedLock> provider = Fencepost.sessionLock(dataSource).build();
 
