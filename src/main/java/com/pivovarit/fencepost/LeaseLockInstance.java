@@ -150,20 +150,21 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         if (duration.isNegative() || duration.isZero()) {
             throw new IllegalArgumentException("duration must be positive");
         }
-        if (currentToken == null) {
+        FencingToken token = currentToken;
+        if (token == null) {
             throw new LockNotHeldException(lockName);
         }
         try {
-            int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET expires_at = GREATEST(expires_at, now() + %s) WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis()))
+            int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET expires_at = GREATEST(expires_at, now() + %s) %s", tableName, Jdbc.intervalMillis(), activeLeasePredicate()))
                     .bind(duration.toMillis())
                     .bind(lockName)
-                    .bind(currentToken.value())
+                    .bind(token.value())
                     .execute();
             if (updated == 0) {
-                currentToken = null;
+                invalidateCurrentToken(token.value());
                 throw new LockNotHeldException(lockName);
             }
-            logger.debug("renewed lease lock '{}', token={}, duration={}", lockName, currentToken.value(), duration);
+            logger.debug("renewed lease lock '{}', token={}, duration={}", lockName, token.value(), duration);
             if (autoRenewThread != null) {
                 autoRenewWindowMillis = duration.toMillis();
             }
@@ -176,29 +177,29 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     @Override
     public void unlock() {
-        if (currentToken == null) {
+        FencingToken token = currentToken;
+        if (token == null) {
             throw new LockNotHeldException(lockName);
         }
-        long token = currentToken.value();
         stopAutoRenew();
         try {
             int updated;
             if (quietPeriod != null) {
-                updated = Jdbc.update(dataSource, String.format("UPDATE %s SET token = token + 1, locked_at = NULL, expires_at = now() + %s WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis()))
+                updated = Jdbc.update(dataSource, String.format("UPDATE %s SET token = token + 1, locked_at = NULL, expires_at = now() + %s %s", tableName, Jdbc.intervalMillis(), activeLeasePredicate()))
                         .bind(quietPeriod.toMillis())
                         .bind(lockName)
-                        .bind(currentToken.value())
+                        .bind(token.value())
                         .execute();
             } else {
-                updated = Jdbc.update(dataSource, String.format("UPDATE %s SET token = token + 1, locked_by = NULL, locked_at = NULL, expires_at = NULL WHERE lock_name = ? AND token = ?", tableName))
+                updated = Jdbc.update(dataSource, String.format("UPDATE %s SET token = token + 1, locked_by = NULL, locked_at = NULL, expires_at = NULL %s", tableName, activeLeasePredicate()))
                         .bind(lockName)
-                        .bind(currentToken.value())
+                        .bind(token.value())
                         .execute();
             }
             if (updated == 0) {
                 throw new LockNotHeldException(lockName);
             }
-            logger.debug("released lease lock '{}', token={}", lockName, token);
+            logger.debug("released lease lock '{}', token={}", lockName, token.value());
         } catch (SQLException e) {
             throw new FencepostException("Failed to release lock: " + lockName, e);
         } finally {
@@ -251,7 +252,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     }
 
     private void refreshWithRetry(long windowMillis, long token) throws SQLException, InterruptedException {
-        String sql = String.format("UPDATE %s SET expires_at = GREATEST(expires_at, now() + %s) WHERE lock_name = ? AND token = ?", tableName, Jdbc.intervalMillis());
+        String sql = String.format("UPDATE %s SET expires_at = GREATEST(expires_at, now() + %s) %s", tableName, Jdbc.intervalMillis(), activeLeasePredicate());
 
         SQLException lastException = null;
         for (int attempt = 0; attempt < AUTO_RENEW_MAX_RETRIES; attempt++) {
@@ -264,7 +265,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                         .bind(token)
                         .execute();
                 if (updated == 0) {
-                    throw new SQLException("Lock lost - token no longer matches");
+                    throw new SQLException("Lock lost - token no longer matches or lease expired");
                 }
                 return;
             } catch (SQLException e) {
@@ -280,6 +281,17 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             }
         }
         throw lastException;
+    }
+
+    private static String activeLeasePredicate() {
+        return "WHERE lock_name = ? AND token = ? AND expires_at > now()";
+    }
+
+    private void invalidateCurrentToken(long token) {
+        FencingToken held = currentToken;
+        if (held != null && held.value() == token) {
+            currentToken = null;
+        }
     }
 
     private void stopAutoRenew() {

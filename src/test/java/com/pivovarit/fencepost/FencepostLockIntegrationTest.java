@@ -327,6 +327,27 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void autoRenewShouldFailAfterLeaseExpired() throws Exception {
+        AtomicBoolean callbackFired = new AtomicBoolean(false);
+
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10))
+          .withAutoRenew(Duration.ofMillis(100))
+          .onAutoRenewFailure(ex -> callbackFired.set(true))
+          .build();
+
+        RenewableLock lock = provider.forName("expired-auto-renew-test");
+        lock.lock();
+
+        expireLease("expired-auto-renew-test");
+
+        await().atMost(Duration.ofSeconds(5)).untilTrue(callbackFired);
+
+        assertThat(isExpired("expired-auto-renew-test")).isTrue();
+        assertThatThrownBy(lock::unlock)
+          .isInstanceOf(LockNotHeldException.class);
+    }
+
+    @Test
     void renewShouldExtendExpiry() throws Exception {
         Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(2)).build();
 
@@ -341,6 +362,20 @@ class FencepostLockIntegrationTest {
         assertThat(renewedExpiry).isGreaterThan(initialExpiry);
 
         lock.unlock();
+    }
+
+    @Test
+    void renewShouldFailAfterLeaseExpired() throws Exception {
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10)).build();
+
+        RenewableLock lock = provider.forName("expired-renew-test");
+        lock.lock();
+
+        expireLease("expired-renew-test");
+
+        assertThatThrownBy(() -> lock.renew(Duration.ofSeconds(30)))
+          .isInstanceOf(LockNotHeldException.class);
+        assertThat(isExpired("expired-renew-test")).isTrue();
     }
 
     @Test
@@ -500,6 +535,25 @@ class FencepostLockIntegrationTest {
             assertThat(rs.getTimestamp("locked_at")).isNull();
             assertThat(rs.getTimestamp("expires_at")).isNotNull();
         }
+    }
+
+    @Test
+    void unlockShouldFailAfterLeaseExpiredAndNotApplyQuietPeriod() throws Exception {
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10))
+          .withQuietPeriod(Duration.ofSeconds(30))
+          .build();
+
+        RenewableLock lock = provider.forName("expired-unlock-test");
+        lock.lock();
+
+        expireLease("expired-unlock-test");
+
+        assertThatThrownBy(lock::unlock)
+          .isInstanceOf(LockNotHeldException.class);
+
+        RenewableLock next = provider.forName("expired-unlock-test");
+        assertThat(next.tryLock()).isPresent();
+        next.unlock();
     }
 
     @Test
@@ -1095,6 +1149,25 @@ class FencepostLockIntegrationTest {
             try (ResultSet rs = ps.executeQuery()) {
                 rs.next();
                 return rs.getLong(1);
+            }
+        }
+    }
+
+    private void expireLease(String lockName) throws SQLException {
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement("UPDATE fencepost_locks SET expires_at = now() - interval '1 second' WHERE lock_name = ?")) {
+            ps.setString(1, lockName);
+            ps.executeUpdate();
+        }
+    }
+
+    private boolean isExpired(String lockName) throws SQLException {
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement("SELECT expires_at <= now() FROM fencepost_locks WHERE lock_name = ?")) {
+            ps.setString(1, lockName);
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getBoolean(1);
             }
         }
     }

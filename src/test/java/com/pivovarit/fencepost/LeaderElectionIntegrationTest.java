@@ -189,6 +189,29 @@ class LeaderElectionIntegrationTest {
     }
 
     @Test
+    void revokeFiresWhenLeaseExpiresBeforeRenew() throws Exception {
+        CountDownLatch elected = new CountDownLatch(1);
+        CountDownLatch revoked = new CountDownLatch(1);
+
+        try (LeaderElection election = Fencepost.leaderElection(dataSource, "expired-renew", Duration.ofSeconds(3))
+          .withRenewInterval(Duration.ofMillis(300))
+          .withPollInterval(Duration.ofMillis(200))
+          .onElected(elected::countDown)
+          .onRevoked(revoked::countDown)
+          .build()) {
+            election.start();
+            assertThat(elected.await(5, TimeUnit.SECONDS)).isTrue();
+
+            try (Connection conn = dataSource.getConnection()) {
+                conn.createStatement().execute(
+                  "UPDATE fencepost_locks SET expires_at = now() - interval '1 second' WHERE lock_name = 'expired-renew'");
+            }
+
+            assertThat(revoked.await(10, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
     void callbackExceptionGoesToErrorHandlerAndLoopContinues() throws Exception {
         CountDownLatch electedFired = new CountDownLatch(1);
         AtomicReference<Throwable> seenError = new AtomicReference<>();
