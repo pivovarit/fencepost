@@ -142,6 +142,9 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
         }
         long token = currentToken.value();
         try {
+            Jdbc.update(connection, String.format("UPDATE %s SET locked_by = NULL, locked_at = NULL WHERE lock_name = ?", tableName))
+                .bind(lockName)
+                .execute();
             connection.commit();
             logger.debug("released session lock '{}', token={}", lockName, token);
         } catch (SQLException e) {
