@@ -28,7 +28,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     private volatile Connection connection;
 
     SessionLockInstance(String lockName, DataSource dataSource, String tableName) {
-        super(lockName, dataSource, tableName);
+        super(lockName, dataSource, tableName, LockType.SESSION);
     }
 
     @Override

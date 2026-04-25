@@ -49,6 +49,7 @@ class DashboardApiTest {
             conn.createStatement().execute(
               "CREATE TABLE fencepost_locks (" +
               "  lock_name TEXT PRIMARY KEY," +
+              "  lock_type TEXT NOT NULL," +
               "  token BIGINT NOT NULL DEFAULT 0," +
               "  locked_by TEXT," +
               "  locked_at TIMESTAMPTZ," +
@@ -126,8 +127,8 @@ class DashboardApiTest {
         createLocksTable();
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
-              "INSERT INTO fencepost_locks (lock_name, token, locked_by, locked_at, expires_at) " +
-              "VALUES ('my-lock', 42, 'worker-1', now(), now() + interval '1 hour')"
+              "INSERT INTO fencepost_locks (lock_name, lock_type, token, locked_by, locked_at, expires_at) " +
+              "VALUES ('my-lock', 'LEASE', 42, 'worker-1', now(), now() + interval '1 hour')"
             );
         }
 
@@ -144,7 +145,7 @@ class DashboardApiTest {
         createLocksTable();
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
-              "INSERT INTO fencepost_locks (lock_name, token) VALUES ('lock-a', 1), ('lock-b', 2)"
+              "INSERT INTO fencepost_locks (lock_name, lock_type, token) VALUES ('lock-a', 'LEASE', 1), ('lock-b', 'LEASE', 2)"
             );
         }
 

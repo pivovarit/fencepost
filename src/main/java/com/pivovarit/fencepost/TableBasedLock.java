@@ -18,14 +18,16 @@ abstract class TableBasedLock {
     final DataSource dataSource;
     final String tableName;
     final String tokenTableName;
+    final LockType lockType;
 
     volatile FencingToken currentToken;
 
-    TableBasedLock(String lockName, DataSource dataSource, String tableName) {
+    TableBasedLock(String lockName, DataSource dataSource, String tableName, LockType lockType) {
         this.lockName = lockName;
         this.dataSource = dataSource;
         this.tableName = tableName;
         this.tokenTableName = tokenTableName(tableName);
+        this.lockType = lockType;
     }
 
     void ensureNotHeld() {
@@ -35,16 +37,30 @@ abstract class TableBasedLock {
     }
 
     void ensureRowExists() {
+        String type = lockType.name();
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(true);
-            boolean exists = Jdbc.query(conn, String.format("SELECT 1 FROM %s WHERE lock_name = ?", tableName))
+            String storedType = Jdbc.query(conn, String.format("SELECT lock_type FROM %s WHERE lock_name = ?", tableName))
                     .bind(lockName)
-                    .map(ResultSet::next);
-            if (!exists) {
-                Jdbc.update(conn, "INSERT INTO " + tableName + " (lock_name) VALUES (?) ON CONFLICT DO NOTHING")
+                    .map(rs -> rs.next() ? rs.getString(1) : null);
+            if (storedType == null) {
+                Jdbc.update(conn, String.format("INSERT INTO %s (lock_name, lock_type) VALUES (?, ?) ON CONFLICT DO NOTHING", tableName))
                         .bind(lockName)
+                        .bind(type)
                         .execute();
+                storedType = Jdbc.query(conn, String.format("SELECT lock_type FROM %s WHERE lock_name = ?", tableName))
+                        .bind(lockName)
+                        .map(rs -> {
+                            rs.next();
+                            return rs.getString(1);
+                        });
             }
+            if (!type.equals(storedType)) {
+                throw new FencepostException(
+                    String.format("Lock '%s' is already registered as %s, cannot use as %s", lockName, storedType, type));
+            }
+        } catch (FencepostException e) {
+            throw e;
         } catch (SQLException e) {
             throw new FencepostException("Failed to ensure lock row exists: " + lockName, e);
         }
