@@ -15,6 +15,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
+import java.io.IOException;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -26,6 +27,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -277,10 +279,10 @@ class FencepostLockIntegrationTest {
         FencedLock lock = provider.forName("withlock-checked-test");
 
         assertThatThrownBy(() -> lock.runLocked(token -> {
-            throw new java.io.IOException("disk full");
+            throw new IOException("disk full");
         }))
           .isInstanceOf(FencepostException.class)
-          .hasCauseInstanceOf(java.io.IOException.class);
+          .hasCauseInstanceOf(IOException.class);
 
         FencedLock second = provider.forName("withlock-checked-test");
         Optional<FencingToken> secondToken = second.tryLock();
@@ -943,10 +945,10 @@ class FencepostLockIntegrationTest {
         FencedLock lock = provider.forName("supplylocked-checked-test");
 
         assertThatThrownBy(() -> lock.supplyLocked(token -> {
-            throw new java.io.IOException("disk full");
+            throw new IOException("disk full");
         }))
           .isInstanceOf(FencepostException.class)
-          .hasCauseInstanceOf(java.io.IOException.class);
+          .hasCauseInstanceOf(IOException.class);
 
         FencedLock second = provider.forName("supplylocked-checked-test");
         Optional<FencingToken> secondToken = second.tryLock();
@@ -1186,6 +1188,32 @@ class FencepostLockIntegrationTest {
                 rs.next();
                 return rs.getBoolean(1);
             }
+        }
+    }
+
+    @Test
+    void leaseTryLockShouldNotBlockOnConcurrentRowLock() throws Exception {
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10)).build();
+
+        try (RenewableLock setup = provider.forName("skip-locked-test")) {
+            setup.lock();
+        }
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.setAutoCommit(false);
+            conn.createStatement().executeQuery("SELECT 1 FROM fencepost_locks WHERE lock_name = 'skip-locked-test' FOR UPDATE");
+
+            CompletableFuture<Optional<FencingToken>> future = CompletableFuture.supplyAsync(() -> {
+                  try (RenewableLock contender = provider.forName("skip-locked-test")) {
+                      return contender.tryLock();
+                  }
+              }, Executors.newSingleThreadExecutor());
+
+            assertThat(future.get(2, TimeUnit.SECONDS))
+              .as("tryLock should return empty immediately via SKIP LOCKED, not block on the row lock")
+              .isEmpty();
+
+            conn.rollback();
         }
     }
 
