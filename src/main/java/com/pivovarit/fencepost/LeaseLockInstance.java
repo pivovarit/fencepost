@@ -247,8 +247,6 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                     return;
                 } catch (SQLException e) {
                     logger.warn("auto-renew failed for lease lock '{}', token={}", lockName, token, e);
-                    autoRenewThread = null;
-                    autoRenewStatement = null;
                     FencepostException ex = new FencepostException("Auto-renew failed for lock: " + lockName, e);
                     if (onAutoRenewFailure != null) {
                         onAutoRenewFailure.accept(ex);

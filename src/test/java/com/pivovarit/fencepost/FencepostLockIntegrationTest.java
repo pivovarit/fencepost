@@ -764,6 +764,45 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void unlockShouldWaitForAutoRenewFailureCallbackToComplete() throws Exception {
+        CountDownLatch callbackStarted = new CountDownLatch(1);
+        CountDownLatch callbackFinished = new CountDownLatch(1);
+        AtomicBoolean callbackWasRunningDuringUnlock = new AtomicBoolean(false);
+
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10))
+          .withAutoRenew(Duration.ofMillis(100))
+          .onAutoRenewFailure(ex -> {
+              callbackStarted.countDown();
+              try {
+                  Thread.sleep(1000);
+              } catch (InterruptedException e) {
+                  Thread.currentThread().interrupt();
+              }
+              if (callbackFinished.getCount() > 0) {
+                  callbackWasRunningDuringUnlock.set(true);
+              }
+              callbackFinished.countDown();
+          })
+          .build();
+
+        RenewableLock lock = provider.forName("callback-join-test");
+        lock.lock();
+
+        expireLease("callback-join-test");
+
+        assertThat(callbackStarted.await(5, TimeUnit.SECONDS))
+          .as("callback should have started")
+          .isTrue();
+
+        assertThatThrownBy(lock::unlock)
+          .isInstanceOf(LockNotHeldException.class);
+
+        assertThat(callbackFinished.await(0, TimeUnit.SECONDS))
+          .as("onAutoRenewFailure callback must have completed before unlock() returned")
+          .isTrue();
+    }
+
+    @Test
     void unlockShouldNotBlockForeverWhenAutoRenewIsStuckInDb() throws Exception {
         CountDownLatch renewEnteredExecute = new CountDownLatch(1);
         CountDownLatch releaseHang = new CountDownLatch(1);
