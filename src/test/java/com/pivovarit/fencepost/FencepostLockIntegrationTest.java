@@ -30,6 +30,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -1181,6 +1182,24 @@ class FencepostLockIntegrationTest {
           });
     }
 
+    private static DataSource exhaustedPoolDataSource(DataSource real, int failAfter, int failCount) {
+        AtomicInteger calls = new AtomicInteger();
+        AtomicInteger failures = new AtomicInteger();
+        return (DataSource) Proxy.newProxyInstance(
+          DataSource.class.getClassLoader(),
+          new Class[]{DataSource.class},
+          (proxy, method, args) -> {
+              if ("getConnection".equals(method.getName()) && (args == null || args.length == 0)) {
+                  int n = calls.incrementAndGet();
+                  if (n > failAfter && failures.incrementAndGet() <= failCount) {
+                      throw new SQLException("Connection pool exhausted (simulated)");
+                  }
+                  return real.getConnection();
+              }
+              return method.invoke(real, args);
+          });
+    }
+
     private void terminateBackends(String state) throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement()
@@ -1287,6 +1306,30 @@ class FencepostLockIntegrationTest {
         FencingToken token = lock2.lock();
         assertThat(token).isNotNull();
         lock2.unlock();
+    }
+
+    @Test
+    void shouldRetryTokenAllocationOnPoolExhaustion() {
+        DataSource limited = exhaustedPoolDataSource(dataSource, 2, 1);
+        Factory<FencedLock> provider = Fencepost.sessionLock(limited).build();
+
+        FencedLock lock = provider.forName("retry-success-test");
+        FencingToken token = lock.lock();
+        assertThat(token).isNotNull();
+        lock.unlock();
+    }
+
+    @Test
+    void shouldFailWithClearErrorWhenTokenAllocationRetriesExhausted() {
+        DataSource limited = exhaustedPoolDataSource(dataSource, 2, 3);
+        Factory<FencedLock> provider = Fencepost.sessionLock(limited).build();
+
+        FencedLock lock = provider.forName("retry-exhausted-test");
+        assertThatThrownBy(lock::lock)
+          .isInstanceOf(FencepostException.class)
+          .hasMessageContaining("Failed to acquire lock")
+          .cause()
+          .hasMessageContaining("connection pool may be exhausted");
     }
 
     @Test

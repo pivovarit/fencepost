@@ -76,16 +76,39 @@ abstract class TableBasedLock {
     }
 
     FencingToken allocateSessionToken(String lockedBy) throws SQLException {
-        return Jdbc.query(dataSource, String.format(
-                "INSERT INTO %s AS t (lock_name, token, last_locked_by, last_locked_at) VALUES (?, 1, ?, now()) " +
-                "ON CONFLICT (lock_name) DO UPDATE SET token = t.token + 1, last_locked_by = EXCLUDED.last_locked_by, last_locked_at = now() RETURNING token",
-                tokenTableName))
-            .bind(lockName)
-            .bind(lockedBy)
-            .map(rs -> {
-                rs.next();
-                return new FencingToken(rs.getLong(1));
-            });
+        String sql = String.format(
+            "INSERT INTO %s AS t (lock_name, token, last_locked_by, last_locked_at) VALUES (?, 1, ?, now()) " +
+            "ON CONFLICT (lock_name) DO UPDATE SET token = t.token + 1, last_locked_by = EXCLUDED.last_locked_by, last_locked_at = now() RETURNING token",
+            tokenTableName);
+
+        int maxAttempts = 3;
+        long backoffMs = 50;
+        SQLException lastException = null;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try (Connection conn = dataSource.getConnection()) {
+                conn.setNetworkTimeout(Runnable::run, 2000);
+                return Jdbc.query(conn, sql)
+                    .bind(lockName)
+                    .bind(lockedBy)
+                    .map(rs -> {
+                        rs.next();
+                        return new FencingToken(rs.getLong(1));
+                    });
+            } catch (SQLException e) {
+                lastException = e;
+                if (attempt < maxAttempts) {
+                    try {
+                        Thread.sleep(backoffMs * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new SQLException("Interrupted while allocating fencing token for lock: " + lockName, e);
+                    }
+                }
+            }
+        }
+        throw new SQLException("Failed to allocate fencing token for lock '" + lockName +
+            "' after " + maxAttempts + " attempts — connection pool may be exhausted", lastException);
     }
 
 
