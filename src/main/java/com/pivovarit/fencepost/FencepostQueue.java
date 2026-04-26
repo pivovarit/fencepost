@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 final class FencepostQueue implements Queue {
 
@@ -127,16 +128,24 @@ final class FencepostQueue implements Queue {
           : Long.MAX_VALUE;
 
         while (true) {
+            if (timeout != null && System.nanoTime() >= deadlineNanos) {
+                throw new FencepostException("Dequeue timed out on queue: " + queueName);
+            }
+
             Optional<Message> result = tryDequeue();
             if (result.isPresent()) {
                 return result.get();
             }
 
-            if (timeout != null && System.nanoTime() >= deadlineNanos) {
-                throw new FencepostException("Dequeue timed out on queue: " + queueName);
+            long waitMs = pollIntervalMs;
+            if (timeout != null) {
+                long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime());
+                if (remainingMs <= 0) {
+                    throw new FencepostException("Dequeue timed out on queue: " + queueName);
+                }
+                waitMs = Math.min(waitMs, remainingMs);
             }
-
-            waitForNotification(ensureListening());
+            waitForNotification(ensureListening(), waitMs);
         }
     }
 
@@ -224,16 +233,16 @@ final class FencepostQueue implements Queue {
         }
     }
 
-    private void waitForNotification(Connection conn) {
+    private void waitForNotification(Connection conn, long waitMs) {
         try {
             var pgConn = conn.unwrap(PGConnection.class);
             synchronized (listenerLock) {
-                pgConn.getNotifications((int) pollIntervalMs);
+                pgConn.getNotifications((int) waitMs);
             }
         } catch (Exception e) {
             closeListenerConnection();
             try {
-                Thread.sleep(pollIntervalMs);
+                Thread.sleep(waitMs);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 throw new FencepostException("Interrupted while waiting for messages on queue: " + queueName);

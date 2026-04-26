@@ -12,6 +12,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
@@ -99,6 +100,11 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         ensureRowExists();
 
         while (true) {
+            if (timeout != null && System.nanoTime() >= deadlineNanos) {
+                logger.debug("timed out acquiring lease lock '{}' after {}", lockName, timeout);
+                throw new LockAcquisitionTimeoutException(lockName);
+            }
+
             Optional<FencingToken> result = tryAcquireTimestamp();
             if (result.isPresent()) {
                 currentToken = result.get();
@@ -109,13 +115,17 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                 return currentToken;
             }
 
-            if (timeout != null && System.nanoTime() >= deadlineNanos) {
-                logger.debug("timed out acquiring lease lock '{}' after {}", lockName, timeout);
-                throw new LockAcquisitionTimeoutException(lockName);
-            }
-
             try {
-                Thread.sleep(pollIntervalMs);
+                long sleepMs = pollIntervalMs;
+                if (timeout != null) {
+                    long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime());
+                    if (remainingMs <= 0) {
+                        logger.debug("timed out acquiring lease lock '{}' after {}", lockName, timeout);
+                        throw new LockAcquisitionTimeoutException(lockName);
+                    }
+                    sleepMs = Math.min(sleepMs, remainingMs);
+                }
+                Thread.sleep(sleepMs);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new FencepostException("Interrupted while waiting for lock: " + lockName);

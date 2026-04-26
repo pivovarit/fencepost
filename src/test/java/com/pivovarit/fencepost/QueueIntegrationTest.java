@@ -302,6 +302,26 @@ class QueueIntegrationTest {
     }
 
     @Test
+    void dequeueTimeoutShouldNotOvershootByPollInterval() {
+        Queue queue = Fencepost.queue(dataSource)
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .pollInterval(Duration.ofSeconds(5))
+          .build()
+          .forName("timeout-overshoot");
+
+        long start = System.nanoTime();
+        assertThatThrownBy(() -> queue.dequeue(Duration.ofMillis(500)))
+          .isInstanceOf(FencepostException.class)
+          .hasMessageContaining("timed out");
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+        assertThat(elapsedMs)
+          .as("dequeue() should time out near the requested 500ms, not after a full 5s poll interval")
+          .isLessThan(2000);
+        queue.close();
+    }
+
+    @Test
     void concurrentConsumersShouldNotReceiveSameMessage() throws Exception {
         Queue queue = newQueue();
         int messageCount = 50;
