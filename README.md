@@ -24,6 +24,25 @@ Fencepost provides three lock strategies, leader election, and a message queue, 
 
 - **Lease** - does not hold a connection or transaction. Acquires the lock by writing a timestamp to a table and releases the connection immediately. The lock is held purely via a TTL (`expires_at`) - if a holder crashes, the lock automatically becomes available after the lease duration. An optional auto-renew thread extends the lease periodically to prevent expiry during long-running work. Supports a quiet period to enforce a minimum gap between consecutive acquisitions. Best suited for long-running tasks where occupying a connection pool slot is not acceptable.
 
+## Thread Safety
+
+Lock instances are **not thread-safe**. Each instance should be confined to a single thread. If multiple threads need to compete for the same lock, each thread should create its own instance via `Factory.forName`:
+
+```java
+Factory<FencedLock> factory = Fencepost.sessionLock(dataSource).build();
+
+// correct — each thread gets its own instance
+executor.submit(() -> factory.forName("my-lock").runLocked(token -> { /* ... */ }));
+executor.submit(() -> factory.forName("my-lock").runLocked(token -> { /* ... */ }));
+
+// wrong — sharing one instance across threads
+FencedLock lock = factory.forName("my-lock");
+executor.submit(() -> lock.runLocked(token -> { /* ... */ }));
+executor.submit(() -> lock.runLocked(token -> { /* ... */ }));
+```
+
+This applies to all lock types (`advisory`, `session`, `lease`). The `Factory` itself is thread-safe and can be shared freely.
+
 ## Table Setup
 
 Session and lease locks require a table. Session locks also require a durable token table.

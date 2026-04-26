@@ -15,6 +15,10 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
+/**
+ * Not thread-safe. Each instance should be used by a single thread at a time.
+ * For concurrent access, create separate instances via {@code Factory.forName}.
+ */
 final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     private static final Logger logger = LoggerFactory.getLogger(LeaseLockInstance.class);
