@@ -254,7 +254,9 @@ public class FencepostExample {
                   + ");"
                   + "CREATE TABLE IF NOT EXISTS fencepost_locks_tokens ("
                   + "lock_name   TEXT PRIMARY KEY,"
-                  + "token       BIGINT NOT NULL DEFAULT 0"
+                  + "token       BIGINT NOT NULL DEFAULT 0,"
+                  + "locked_by   TEXT,"
+                  + "locked_at   TIMESTAMP WITH TIME ZONE"
                   + ")");
             }
         });
