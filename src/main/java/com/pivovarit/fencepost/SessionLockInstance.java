@@ -17,6 +17,9 @@ import java.util.Optional;
 /**
  * Session-scoped lock backed by PostgreSQL's {@code SELECT ... FOR UPDATE}.
  *
+ * <p>Not thread-safe. Each instance should be used by a single thread at a time.
+ * For concurrent access, create separate instances via {@code Factory.forName}.
+ *
  * <p>Fencing tokens are allocated from a separate durable token table after the row lock is
  * acquired, so token increments survive holder crashes even though the row-lock transaction is
  * rolled back.

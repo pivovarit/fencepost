@@ -7,6 +7,10 @@ import com.pivovarit.fencepost.function.ThrowingFunction;
 import java.time.Duration;
 import java.util.Optional;
 
+/**
+ * Instances are not thread-safe. Each instance should be confined to a single thread.
+ * For concurrent locking, create separate instances via {@code Factory.forName}.
+ */
 public interface FencedLock extends FencepostLock {
 
     FencingToken lock();
