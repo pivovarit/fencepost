@@ -72,8 +72,8 @@ class FencepostDashboardTest {
               "CREATE TABLE fencepost_locks_tokens (" +
               "  lock_name TEXT PRIMARY KEY," +
               "  token BIGINT NOT NULL DEFAULT 0," +
-              "  locked_by TEXT," +
-              "  locked_at TIMESTAMPTZ" +
+              "  last_locked_by TEXT," +
+              "  last_locked_at TIMESTAMPTZ" +
               ");" +
               "CREATE TABLE fencepost_queue (" +
               "  id BIGSERIAL PRIMARY KEY," +
@@ -124,7 +124,7 @@ class FencepostDashboardTest {
 
         assertThat(response).contains("\"name\":\"test-lock\"");
         assertThat(response).contains("\"token\":5");
-        assertThat(response).contains("\"locked_by\":\"worker-1\"");
+        assertThat(response).contains("\"last_locked_by\":\"worker-1\"");
     }
 
     @Test
@@ -264,8 +264,8 @@ class FencepostDashboardTest {
                 + "CREATE TABLE custom_locks_tokens ("
                 + "lock_name TEXT PRIMARY KEY,"
                 + "token BIGINT NOT NULL DEFAULT 0,"
-                + "locked_by TEXT,"
-                + "locked_at TIMESTAMPTZ)"
+                + "last_locked_by TEXT,"
+                + "last_locked_at TIMESTAMPTZ)"
             );
             conn.createStatement().execute(
               "INSERT INTO custom_locks (lock_name, lock_type, token) VALUES ('x', 'LEASE', 42)"

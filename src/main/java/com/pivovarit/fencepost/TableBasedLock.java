@@ -77,8 +77,8 @@ abstract class TableBasedLock {
 
     FencingToken allocateSessionToken(String lockedBy) throws SQLException {
         return Jdbc.query(dataSource, String.format(
-                "INSERT INTO %s AS t (lock_name, token, locked_by, locked_at) VALUES (?, 1, ?, now()) " +
-                "ON CONFLICT (lock_name) DO UPDATE SET token = t.token + 1, locked_by = EXCLUDED.locked_by, locked_at = now() RETURNING token",
+                "INSERT INTO %s AS t (lock_name, token, last_locked_by, last_locked_at) VALUES (?, 1, ?, now()) " +
+                "ON CONFLICT (lock_name) DO UPDATE SET token = t.token + 1, last_locked_by = EXCLUDED.last_locked_by, last_locked_at = now() RETURNING token",
                 tokenTableName))
             .bind(lockName)
             .bind(lockedBy)
@@ -88,15 +88,6 @@ abstract class TableBasedLock {
             });
     }
 
-    void clearSessionTokenMetadata() {
-        try {
-            Jdbc.update(dataSource, String.format("UPDATE %s SET locked_by = NULL, locked_at = NULL WHERE lock_name = ?", tokenTableName))
-                .bind(lockName)
-                .execute();
-        } catch (SQLException e) {
-            logger.trace("failed to clear session token metadata for lock '{}'", lockName, e);
-        }
-    }
 
     FencingToken recordSessionToken(Connection conn, FencingToken token) throws SQLException {
         String lockedBy = HOSTNAME + "/" + Thread.currentThread().getName();

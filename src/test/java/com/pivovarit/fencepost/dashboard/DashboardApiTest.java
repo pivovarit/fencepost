@@ -58,8 +58,8 @@ class DashboardApiTest {
               "CREATE TABLE fencepost_locks_tokens (" +
               "  lock_name TEXT PRIMARY KEY," +
               "  token BIGINT NOT NULL DEFAULT 0," +
-              "  locked_by TEXT," +
-              "  locked_at TIMESTAMPTZ" +
+              "  last_locked_by TEXT," +
+              "  last_locked_at TIMESTAMPTZ" +
               ")"
             );
         }
@@ -142,7 +142,7 @@ class DashboardApiTest {
 
         assertThat(json).contains("\"name\":\"my-lock\"");
         assertThat(json).contains("\"token\":42");
-        assertThat(json).contains("\"locked_by\":\"worker-1\"");
+        assertThat(json).contains("\"last_locked_by\":\"worker-1\"");
         assertThat(json).contains("\"is_held\":true");
     }
 
