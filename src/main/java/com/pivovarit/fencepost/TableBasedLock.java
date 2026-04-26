@@ -71,16 +71,27 @@ abstract class TableBasedLock {
         }
     }
 
-    FencingToken allocateSessionToken() throws SQLException {
+    FencingToken allocateSessionToken(String lockedBy) throws SQLException {
         return Jdbc.query(dataSource, String.format(
-                "INSERT INTO %s AS t (lock_name, token) VALUES (?, 1) " +
-                "ON CONFLICT (lock_name) DO UPDATE SET token = t.token + 1 RETURNING token",
+                "INSERT INTO %s AS t (lock_name, token, locked_by, locked_at) VALUES (?, 1, ?, now()) " +
+                "ON CONFLICT (lock_name) DO UPDATE SET token = t.token + 1, locked_by = EXCLUDED.locked_by, locked_at = now() RETURNING token",
                 tokenTableName))
             .bind(lockName)
+            .bind(lockedBy)
             .map(rs -> {
                 rs.next();
                 return new FencingToken(rs.getLong(1));
             });
+    }
+
+    void clearSessionTokenMetadata() {
+        try {
+            Jdbc.update(dataSource, String.format("UPDATE %s SET locked_by = NULL, locked_at = NULL WHERE lock_name = ?", tokenTableName))
+                .bind(lockName)
+                .execute();
+        } catch (SQLException e) {
+            // best-effort: metadata visibility is non-critical
+        }
     }
 
     FencingToken recordSessionToken(Connection conn, FencingToken token) throws SQLException {

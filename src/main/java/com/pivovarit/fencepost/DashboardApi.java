@@ -188,17 +188,31 @@ public final class DashboardApi {
           "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = ?)";
 
         static String allLocks(String table) {
-            return "SELECT lock_name, token, locked_by, locked_at, expires_at, " +
-              "  CASE WHEN locked_by IS NOT NULL AND (expires_at IS NULL OR expires_at > now()) " +
+            String tokenTable = tokenTableName(table);
+            return "SELECT l.lock_name, l.token, COALESCE(t.locked_by, l.locked_by) AS locked_by, " +
+              "COALESCE(t.locked_at, l.locked_at) AS locked_at, l.expires_at, " +
+              "  CASE WHEN COALESCE(t.locked_by, l.locked_by) IS NOT NULL AND (l.expires_at IS NULL OR l.expires_at > now()) " +
               "       THEN true ELSE false END AS is_held " +
-              "FROM " + table + " ORDER BY lock_name";
+              "FROM " + table + " l LEFT JOIN " + tokenTable + " t ON l.lock_name = t.lock_name " +
+              "ORDER BY l.lock_name";
         }
 
         static String lockByName(String table) {
-            return "SELECT lock_name, token, locked_by, locked_at, expires_at, " +
-              "  CASE WHEN locked_by IS NOT NULL AND (expires_at IS NULL OR expires_at > now()) " +
+            String tokenTable = tokenTableName(table);
+            return "SELECT l.lock_name, l.token, COALESCE(t.locked_by, l.locked_by) AS locked_by, " +
+              "COALESCE(t.locked_at, l.locked_at) AS locked_at, l.expires_at, " +
+              "  CASE WHEN COALESCE(t.locked_by, l.locked_by) IS NOT NULL AND (l.expires_at IS NULL OR l.expires_at > now()) " +
               "       THEN true ELSE false END AS is_held " +
-              "FROM " + table + " WHERE lock_name = ?";
+              "FROM " + table + " l LEFT JOIN " + tokenTable + " t ON l.lock_name = t.lock_name " +
+              "WHERE l.lock_name = ?";
+        }
+
+        private static String tokenTableName(String tableName) {
+            int dot = tableName.lastIndexOf('.');
+            if (dot == -1) {
+                return tableName + "_tokens";
+            }
+            return tableName.substring(0, dot + 1) + tableName.substring(dot + 1) + "_tokens";
         }
 
         static String allQueues(String table) {

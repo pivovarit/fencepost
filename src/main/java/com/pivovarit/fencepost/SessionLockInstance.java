@@ -61,7 +61,8 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
                     .bind(lockName)
                     .map(ResultSet::next);
 
-            currentToken = recordSessionToken(connection, allocateSessionToken());
+            String lockedBy = resolveLockedBy();
+            currentToken = recordSessionToken(connection, allocateSessionToken(lockedBy));
             logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
             return currentToken;
         } catch (Exception e) {
@@ -87,7 +88,8 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
             Jdbc.resetStatementTimeout(connection);
 
-            currentToken = recordSessionToken(connection, allocateSessionToken());
+            String lockedBy = resolveLockedBy();
+            currentToken = recordSessionToken(connection, allocateSessionToken(lockedBy));
             logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
             return currentToken;
         } catch (Exception e) {
@@ -119,7 +121,8 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
                 return Optional.empty();
             }
 
-            currentToken = recordSessionToken(connection, allocateSessionToken());
+            String lockedBy = resolveLockedBy();
+            currentToken = recordSessionToken(connection, allocateSessionToken(lockedBy));
             logger.debug("acquired session lock '{}' via tryLock, token={}", lockName, currentToken.value());
             return Optional.of(currentToken);
         } catch (Exception e) {
@@ -146,6 +149,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
                 .bind(lockName)
                 .execute();
             connection.commit();
+            clearSessionTokenMetadata();
             logger.debug("released session lock '{}', token={}", lockName, token);
         } catch (SQLException e) {
             try {
@@ -190,5 +194,9 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
         } catch (SQLException e) {
             logger.trace("failed to close session lock '{}' connection", lockName, e);
         }
+    }
+
+    private static String resolveLockedBy() {
+        return HOSTNAME + "/" + Thread.currentThread().getName();
     }
 }
