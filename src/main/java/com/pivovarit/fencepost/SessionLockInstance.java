@@ -20,6 +20,10 @@ import java.util.Optional;
  * <p>Fencing tokens are allocated from a separate durable token table after the row lock is
  * acquired, so token increments survive holder crashes even though the row-lock transaction is
  * rolled back.
+ *
+ * <p><b>Pool sizing:</b> each lock attempt briefly holds two pooled connections — one for the
+ * row lock and one for the token allocation. The connection pool must be sized to accommodate
+ * this: at minimum 2&times; the expected number of concurrent lock attempts.
  */
 final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
