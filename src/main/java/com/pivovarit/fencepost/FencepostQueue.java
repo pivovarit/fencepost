@@ -27,7 +27,7 @@ final class FencepostQueue implements Queue {
     private final long pollIntervalMs;
 
     private final Object listenerLock = new Object();
-    private Connection listenerConnection;
+    private volatile Connection listenerConnection;
     private volatile boolean closed;
 
     FencepostQueue(String queueName, DataSource dataSource, String tableName,
@@ -152,6 +152,14 @@ final class FencepostQueue implements Queue {
     @Override
     public void close() {
         closed = true;
+        Connection conn = listenerConnection;
+        if (conn != null) {
+            try {
+                conn.abort(Runnable::run);
+            } catch (SQLException e) {
+                logger.trace("failed to abort listener connection", e);
+            }
+        }
         closeListenerConnection();
     }
 
@@ -241,6 +249,9 @@ final class FencepostQueue implements Queue {
             }
         } catch (Exception e) {
             closeListenerConnection();
+            if (closed) {
+                return;
+            }
             try {
                 Thread.sleep(waitMs);
             } catch (InterruptedException ie) {
