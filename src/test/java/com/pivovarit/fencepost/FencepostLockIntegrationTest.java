@@ -1333,6 +1333,30 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void lockTimeoutShouldNotOvershootByPollInterval() {
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30))
+          .withPollInterval(Duration.ofSeconds(5))
+          .build();
+
+        RenewableLock holder = provider.forName("timeout-overshoot-test");
+        holder.lock();
+
+        try {
+            RenewableLock contender = provider.forName("timeout-overshoot-test");
+            long start = System.nanoTime();
+            assertThatThrownBy(() -> contender.lock(Duration.ofMillis(500)))
+              .isInstanceOf(LockAcquisitionTimeoutException.class);
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+            assertThat(elapsedMs)
+              .as("lock() should time out near the requested 500ms, not after a full 5s poll interval")
+              .isLessThan(2000);
+        } finally {
+            holder.unlock();
+        }
+    }
+
+    @Test
     void shouldAllowSameTypeReuseForLease() {
         Factory<RenewableLock> factory1 = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10)).build();
         Factory<RenewableLock> factory2 = Fencepost.leaseLock(dataSource, Duration.ofSeconds(5)).build();
