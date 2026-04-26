@@ -60,7 +60,7 @@ class FencepostDashboardTest {
     void createTables() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
-              "DROP TABLE IF EXISTS fencepost_queue; DROP TABLE IF EXISTS fencepost_locks;" +
+              "DROP TABLE IF EXISTS fencepost_queue; DROP TABLE IF EXISTS fencepost_locks_tokens; DROP TABLE IF EXISTS fencepost_locks;" +
               "CREATE TABLE fencepost_locks (" +
               "  lock_name TEXT PRIMARY KEY," +
               "  lock_type TEXT NOT NULL," +
@@ -68,6 +68,12 @@ class FencepostDashboardTest {
               "  locked_by TEXT," +
               "  locked_at TIMESTAMPTZ," +
               "  expires_at TIMESTAMPTZ" +
+              ");" +
+              "CREATE TABLE fencepost_locks_tokens (" +
+              "  lock_name TEXT PRIMARY KEY," +
+              "  token BIGINT NOT NULL DEFAULT 0," +
+              "  locked_by TEXT," +
+              "  locked_at TIMESTAMPTZ" +
               ");" +
               "CREATE TABLE fencepost_queue (" +
               "  id BIGSERIAL PRIMARY KEY," +
@@ -246,7 +252,7 @@ class FencepostDashboardTest {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute("DROP TABLE IF EXISTS fencepost_locks");
             conn.createStatement().execute("DROP TABLE IF EXISTS fencepost_queue");
-            conn.createStatement().execute("DROP TABLE IF EXISTS custom_locks");
+            conn.createStatement().execute("DROP TABLE IF EXISTS custom_locks_tokens; DROP TABLE IF EXISTS custom_locks");
             conn.createStatement().execute(
               "CREATE TABLE custom_locks ("
                 + "lock_name TEXT PRIMARY KEY,"
@@ -254,7 +260,12 @@ class FencepostDashboardTest {
                 + "token BIGINT NOT NULL DEFAULT 0,"
                 + "locked_by TEXT,"
                 + "locked_at TIMESTAMPTZ,"
-                + "expires_at TIMESTAMPTZ)"
+                + "expires_at TIMESTAMPTZ);"
+                + "CREATE TABLE custom_locks_tokens ("
+                + "lock_name TEXT PRIMARY KEY,"
+                + "token BIGINT NOT NULL DEFAULT 0,"
+                + "locked_by TEXT,"
+                + "locked_at TIMESTAMPTZ)"
             );
             conn.createStatement().execute(
               "INSERT INTO custom_locks (lock_name, lock_type, token) VALUES ('x', 'LEASE', 42)"

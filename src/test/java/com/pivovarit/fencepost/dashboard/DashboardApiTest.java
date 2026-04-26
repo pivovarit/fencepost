@@ -39,7 +39,7 @@ class DashboardApiTest {
     void dropTables() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
-              "DROP TABLE IF EXISTS fencepost_queue; DROP TABLE IF EXISTS fencepost_locks;"
+              "DROP TABLE IF EXISTS fencepost_queue; DROP TABLE IF EXISTS fencepost_locks_tokens; DROP TABLE IF EXISTS fencepost_locks;"
             );
         }
     }
@@ -54,6 +54,12 @@ class DashboardApiTest {
               "  locked_by TEXT," +
               "  locked_at TIMESTAMPTZ," +
               "  expires_at TIMESTAMPTZ" +
+              ");" +
+              "CREATE TABLE fencepost_locks_tokens (" +
+              "  lock_name TEXT PRIMARY KEY," +
+              "  token BIGINT NOT NULL DEFAULT 0," +
+              "  locked_by TEXT," +
+              "  locked_at TIMESTAMPTZ" +
               ")"
             );
         }
