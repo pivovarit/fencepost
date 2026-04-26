@@ -734,6 +734,36 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void autoRenewFailureShouldCleanUpThreadState() throws Exception {
+        AtomicBoolean callbackFired = new AtomicBoolean(false);
+
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10))
+          .withAutoRenew(Duration.ofMillis(100))
+          .onAutoRenewFailure(ex -> callbackFired.set(true))
+          .build();
+
+        RenewableLock lock = provider.forName("auto-renew-cleanup-test");
+        lock.lock();
+
+        expireLease("auto-renew-cleanup-test");
+
+        await().atMost(Duration.ofSeconds(5)).untilTrue(callbackFired);
+
+        Thread.sleep(200);
+
+        long autoRenewThreads = Thread.getAllStackTraces().keySet().stream()
+          .filter(t -> t.getName().contains("auto-renew-cleanup-test"))
+          .filter(Thread::isAlive)
+          .count();
+        assertThat(autoRenewThreads)
+          .as("auto-renew thread should have exited after failure")
+          .isZero();
+
+        assertThatThrownBy(lock::unlock)
+          .isInstanceOf(LockNotHeldException.class);
+    }
+
+    @Test
     void unlockShouldNotBlockForeverWhenAutoRenewIsStuckInDb() throws Exception {
         CountDownLatch renewEnteredExecute = new CountDownLatch(1);
         CountDownLatch releaseHang = new CountDownLatch(1);
