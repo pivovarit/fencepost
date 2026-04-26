@@ -142,7 +142,7 @@ class DashboardApiTest {
 
         assertThat(json).contains("\"name\":\"my-lock\"");
         assertThat(json).contains("\"token\":42");
-        assertThat(json).contains("\"last_locked_by\":\"worker-1\"");
+        assertThat(json).contains("\"locked_by\":\"worker-1\"");
         assertThat(json).contains("\"is_held\":true");
     }
 
