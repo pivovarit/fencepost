@@ -124,7 +124,7 @@ class FencepostDashboardTest {
 
         assertThat(response).contains("\"name\":\"test-lock\"");
         assertThat(response).contains("\"token\":5");
-        assertThat(response).contains("\"last_locked_by\":\"worker-1\"");
+        assertThat(response).contains("\"locked_by\":\"worker-1\"");
     }
 
     @Test
