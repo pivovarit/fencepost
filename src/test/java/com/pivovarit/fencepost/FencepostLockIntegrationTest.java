@@ -1387,6 +1387,70 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void timedSessionLockShouldCapTokenAllocationToDeadline() {
+        DataSource limited = exhaustedPoolDataSource(dataSource, 2, 10);
+        Factory<FencedLock> provider = Fencepost.sessionLock(limited).build();
+
+        FencedLock lock = provider.forName("timed-token-alloc-test");
+        long start = System.nanoTime();
+        assertThatThrownBy(() -> lock.lock(Duration.ofMillis(500)))
+          .isInstanceOf(FencepostException.class);
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+        assertThat(elapsedMs)
+          .as("lock(Duration) should not overshoot far past deadline during token allocation retries")
+          .isLessThan(2000);
+    }
+
+    @Test
+    void tokenAllocationShouldRestoreNetworkTimeoutOnPooledConnection() {
+        List<Integer> networkTimeoutsAtClose = new CopyOnWriteArrayList<>();
+
+        DataSource tracking = networkTimeoutTrackingDataSource(dataSource, 2, networkTimeoutsAtClose);
+        Factory<FencedLock> provider = Fencepost.sessionLock(tracking).build();
+
+        FencedLock lock = provider.forName("restore-timeout-test");
+        lock.lock();
+        lock.unlock();
+
+        assertThat(networkTimeoutsAtClose).isNotEmpty();
+        assertThat(networkTimeoutsAtClose).allSatisfy(timeout ->
+          assertThat(timeout).as("networkTimeout should be restored to original value before close").isZero()
+        );
+    }
+
+    private static DataSource networkTimeoutTrackingDataSource(DataSource real, int skipCalls, List<Integer> closingTimeouts) {
+        AtomicInteger calls = new AtomicInteger();
+        return (DataSource) Proxy.newProxyInstance(
+          DataSource.class.getClassLoader(),
+          new Class[]{DataSource.class},
+          (proxy, method, args) -> {
+              if ("getConnection".equals(method.getName()) && (args == null || args.length == 0)) {
+                  Connection conn = real.getConnection();
+                  int n = calls.incrementAndGet();
+                  if (n > skipCalls) {
+                      return trackingTimeoutConnection(conn, closingTimeouts);
+                  }
+                  return conn;
+              }
+              return method.invoke(real, args);
+          });
+    }
+
+    private static Connection trackingTimeoutConnection(Connection real, List<Integer> closingTimeouts) {
+        return (Connection) Proxy.newProxyInstance(
+          Connection.class.getClassLoader(),
+          new Class[]{Connection.class},
+          (proxy, method, args) -> {
+              if ("close".equals(method.getName())) {
+                  closingTimeouts.add(real.getNetworkTimeout());
+                  return method.invoke(real, args);
+              }
+              return method.invoke(real, args);
+          });
+    }
+
+    @Test
     void shouldAllowSameTypeReuseForLease() {
         Factory<RenewableLock> factory1 = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10)).build();
         Factory<RenewableLock> factory2 = Fencepost.leaseLock(dataSource, Duration.ofSeconds(5)).build();
