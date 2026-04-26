@@ -496,6 +496,42 @@ class QueueIntegrationTest {
     }
 
     @Test
+    void closeShouldUnblockConsumerWaitingForNotification() throws Exception {
+        Queue queue = Fencepost.queue(dataSource)
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .pollInterval(Duration.ofSeconds(30))
+          .build()
+          .forName("close-unblock-test");
+
+        AtomicReference<Throwable> consumerError = new AtomicReference<>();
+        CountDownLatch consumerDone = new CountDownLatch(1);
+        Thread consumer = new Thread(() -> {
+            try {
+                queue.dequeue();
+            } catch (Throwable t) {
+                consumerError.set(t);
+            } finally {
+                consumerDone.countDown();
+            }
+        }, "close-unblock-consumer");
+        consumer.start();
+
+        Thread.sleep(500);
+
+        long start = System.nanoTime();
+        queue.close();
+        long closeMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+        assertThat(closeMs)
+          .as("close() should return promptly, not wait for the 30s poll interval")
+          .isLessThan(5000);
+
+        assertThat(consumerDone.await(5, TimeUnit.SECONDS))
+          .as("consumer thread should exit after close()")
+          .isTrue();
+    }
+
+    @Test
     void closeShouldNotHangWhenListenerAcquireIsBlocked() throws Exception {
         GatingDataSource gated = new GatingDataSource(dataSource);
         Queue queue = Fencepost.queue(gated)
