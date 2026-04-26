@@ -137,9 +137,9 @@ public final class DashboardApi {
         sb.append("{");
         sb.append("\"name\":").append(jsonString(rs.getString("lock_name"))).append(",");
         sb.append("\"token\":").append(rs.getLong("token")).append(",");
-        sb.append("\"locked_by\":").append(jsonString(rs.getString("locked_by"))).append(",");
-        Object lockedAt = rs.getObject("locked_at");
-        sb.append("\"locked_at\":").append(lockedAt == null ? "null" : jsonString(lockedAt.toString())).append(",");
+        sb.append("\"last_locked_by\":").append(jsonString(rs.getString("last_locked_by"))).append(",");
+        Object lastLockedAt = rs.getObject("last_locked_at");
+        sb.append("\"last_locked_at\":").append(lastLockedAt == null ? "null" : jsonString(lastLockedAt.toString())).append(",");
         Object expiresAt = rs.getObject("expires_at");
         sb.append("\"expires_at\":").append(expiresAt == null ? "null" : jsonString(expiresAt.toString())).append(",");
         sb.append("\"is_held\":").append(rs.getBoolean("is_held"));
@@ -189,9 +189,9 @@ public final class DashboardApi {
 
         static String allLocks(String table) {
             String tokenTable = tokenTableName(table);
-            return "SELECT l.lock_name, l.token, COALESCE(t.locked_by, l.locked_by) AS locked_by, " +
-              "COALESCE(t.locked_at, l.locked_at) AS locked_at, l.expires_at, " +
-              "  CASE WHEN COALESCE(t.locked_by, l.locked_by) IS NOT NULL AND (l.expires_at IS NULL OR l.expires_at > now()) " +
+            return "SELECT l.lock_name, l.token, COALESCE(t.last_locked_by, l.locked_by) AS last_locked_by, " +
+              "COALESCE(t.last_locked_at, l.locked_at) AS last_locked_at, l.expires_at, " +
+              "  CASE WHEN COALESCE(t.last_locked_by, l.locked_by) IS NOT NULL AND (l.expires_at IS NULL OR l.expires_at > now()) " +
               "       THEN true ELSE false END AS is_held " +
               "FROM " + table + " l LEFT JOIN " + tokenTable + " t ON l.lock_name = t.lock_name " +
               "ORDER BY l.lock_name";
@@ -199,9 +199,9 @@ public final class DashboardApi {
 
         static String lockByName(String table) {
             String tokenTable = tokenTableName(table);
-            return "SELECT l.lock_name, l.token, COALESCE(t.locked_by, l.locked_by) AS locked_by, " +
-              "COALESCE(t.locked_at, l.locked_at) AS locked_at, l.expires_at, " +
-              "  CASE WHEN COALESCE(t.locked_by, l.locked_by) IS NOT NULL AND (l.expires_at IS NULL OR l.expires_at > now()) " +
+            return "SELECT l.lock_name, l.token, COALESCE(t.last_locked_by, l.locked_by) AS last_locked_by, " +
+              "COALESCE(t.last_locked_at, l.locked_at) AS last_locked_at, l.expires_at, " +
+              "  CASE WHEN COALESCE(t.last_locked_by, l.locked_by) IS NOT NULL AND (l.expires_at IS NULL OR l.expires_at > now()) " +
               "       THEN true ELSE false END AS is_held " +
               "FROM " + table + " l LEFT JOIN " + tokenTable + " t ON l.lock_name = t.lock_name " +
               "WHERE l.lock_name = ?";

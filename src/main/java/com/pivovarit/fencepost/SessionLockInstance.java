@@ -149,7 +149,6 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
                 .bind(lockName)
                 .execute();
             connection.commit();
-            clearSessionTokenMetadata();
             logger.debug("released session lock '{}', token={}", lockName, token);
         } catch (SQLException e) {
             try {

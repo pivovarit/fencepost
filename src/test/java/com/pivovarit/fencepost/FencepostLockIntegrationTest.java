@@ -59,7 +59,7 @@ class FencepostLockIntegrationTest {
             conn.createStatement()
               .execute("DROP TABLE IF EXISTS fencepost_locks_tokens; DROP TABLE IF EXISTS fencepost_locks; " +
                 "CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  lock_type TEXT NOT NULL,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE); " +
-                "CREATE TABLE fencepost_locks_tokens (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE)");
+                "CREATE TABLE fencepost_locks_tokens (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0,  last_locked_by TEXT,  last_locked_at TIMESTAMP WITH TIME ZONE)");
         }
     }
 
@@ -103,16 +103,16 @@ class FencepostLockIntegrationTest {
         try {
             try (Connection conn = dataSource.getConnection();
                  ResultSet rs = conn.createStatement()
-                   .executeQuery("SELECT COALESCE(t.locked_by, l.locked_by) AS locked_by, " +
-                     "COALESCE(t.locked_at, l.locked_at) AS locked_at " +
+                   .executeQuery("SELECT COALESCE(t.last_locked_by, l.locked_by) AS last_locked_by, " +
+                     "COALESCE(t.last_locked_at, l.locked_at) AS last_locked_at " +
                      "FROM fencepost_locks l LEFT JOIN fencepost_locks_tokens t ON l.lock_name = t.lock_name " +
                      "WHERE l.lock_name = 'session-visible-meta-test'")) {
                 assertThat(rs.next()).isTrue();
-                assertThat(rs.getString("locked_by"))
-                  .as("locked_by should be visible to other connections while the session lock is held")
+                assertThat(rs.getString("last_locked_by"))
+                  .as("last_locked_by should be visible to other connections while the session lock is held")
                   .isNotNull();
-                assertThat(rs.getTimestamp("locked_at"))
-                  .as("locked_at should be visible to other connections while the session lock is held")
+                assertThat(rs.getTimestamp("last_locked_at"))
+                  .as("last_locked_at should be visible to other connections while the session lock is held")
                   .isNotNull();
             }
         } finally {
