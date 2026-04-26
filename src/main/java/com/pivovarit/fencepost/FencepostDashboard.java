@@ -314,6 +314,17 @@ public final class FencepostDashboard {
         Thread thread = listenerThread;
         if (thread != null) {
             thread.interrupt();
+            Connection conn;
+            synchronized (listenerLock) {
+                conn = listenerConnection;
+            }
+            if (conn != null) {
+                try {
+                    conn.abort(Runnable::run);
+                } catch (SQLException e) {
+                    logger.trace("failed to abort listener connection", e);
+                }
+            }
             closeListenerConnection();
             try {
                 thread.join(2000);
