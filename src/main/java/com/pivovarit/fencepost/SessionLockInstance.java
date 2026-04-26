@@ -62,7 +62,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
                     .map(ResultSet::next);
 
             String lockedBy = resolveLockedBy();
-            currentToken = recordSessionToken(connection, allocateSessionToken(lockedBy));
+            currentToken = recordSessionToken(connection, allocateSessionToken(lockedBy, Long.MAX_VALUE));
             logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
             return currentToken;
         } catch (Exception e) {
@@ -76,6 +76,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     @Override
     FencingToken doLock(Duration timeout) {
         ensureRowExists();
+        long deadlineNanos = System.nanoTime() + timeout.toNanos();
         try {
             connection = dataSource.getConnection();
             connection.setAutoCommit(false);
@@ -89,7 +90,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
             Jdbc.resetStatementTimeout(connection);
 
             String lockedBy = resolveLockedBy();
-            currentToken = recordSessionToken(connection, allocateSessionToken(lockedBy));
+            currentToken = recordSessionToken(connection, allocateSessionToken(lockedBy, deadlineNanos));
             logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
             return currentToken;
         } catch (Exception e) {
@@ -122,7 +123,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
             }
 
             String lockedBy = resolveLockedBy();
-            currentToken = recordSessionToken(connection, allocateSessionToken(lockedBy));
+            currentToken = recordSessionToken(connection, allocateSessionToken(lockedBy, Long.MAX_VALUE));
             logger.debug("acquired session lock '{}' via tryLock, token={}", lockName, currentToken.value());
             return Optional.of(currentToken);
         } catch (Exception e) {

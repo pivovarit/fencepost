@@ -10,6 +10,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 abstract class TableBasedLock {
 
@@ -75,7 +76,9 @@ abstract class TableBasedLock {
         }
     }
 
-    FencingToken allocateSessionToken(String lockedBy) throws SQLException {
+    static final int TOKEN_ALLOCATION_NETWORK_TIMEOUT_MS = 2000;
+
+    FencingToken allocateSessionToken(String lockedBy, long deadlineNanos) throws SQLException {
         String sql = String.format(
             "INSERT INTO %s AS t (lock_name, token, last_locked_by, last_locked_at) VALUES (?, 1, ?, now()) " +
             "ON CONFLICT (lock_name) DO UPDATE SET token = t.token + 1, last_locked_by = EXCLUDED.last_locked_by, last_locked_at = now() RETURNING token",
@@ -86,20 +89,39 @@ abstract class TableBasedLock {
         SQLException lastException = null;
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            int networkTimeoutMs = TOKEN_ALLOCATION_NETWORK_TIMEOUT_MS;
+            if (deadlineNanos != Long.MAX_VALUE) {
+                long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime());
+                if (remainingMs <= 0) {
+                    throw new SQLException("Token allocation deadline exceeded for lock: " + lockName);
+                }
+                networkTimeoutMs = (int) Math.min(networkTimeoutMs, remainingMs);
+            }
             try (Connection conn = dataSource.getConnection()) {
-                conn.setNetworkTimeout(Runnable::run, 2000);
-                return Jdbc.query(conn, sql)
-                    .bind(lockName)
-                    .bind(lockedBy)
-                    .map(rs -> {
-                        rs.next();
-                        return new FencingToken(rs.getLong(1));
-                    });
+                int savedNetworkTimeout = conn.getNetworkTimeout();
+                conn.setNetworkTimeout(Runnable::run, Math.max(networkTimeoutMs, 1));
+                try {
+                    return Jdbc.query(conn, sql)
+                        .bind(lockName)
+                        .bind(lockedBy)
+                        .map(rs -> {
+                            rs.next();
+                            return new FencingToken(rs.getLong(1));
+                        });
+                } finally {
+                    conn.setNetworkTimeout(Runnable::run, savedNetworkTimeout);
+                }
             } catch (SQLException e) {
                 lastException = e;
                 if (attempt < maxAttempts) {
+                    long sleepMs = backoffMs * attempt;
+                    if (deadlineNanos != Long.MAX_VALUE) {
+                        long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime());
+                        sleepMs = Math.min(sleepMs, remainingMs);
+                        if (sleepMs <= 0) break;
+                    }
                     try {
-                        Thread.sleep(backoffMs * attempt);
+                        Thread.sleep(sleepMs);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         throw new SQLException("Interrupted while allocating fencing token for lock: " + lockName, e);
