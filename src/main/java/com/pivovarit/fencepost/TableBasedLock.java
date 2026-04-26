@@ -1,6 +1,8 @@
 package com.pivovarit.fencepost;
 
 import com.pivovarit.fencepost.lock.FencingToken;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.net.InetAddress;
@@ -10,6 +12,8 @@ import java.time.Duration;
 import java.util.Optional;
 
 abstract class TableBasedLock {
+
+    private static final Logger logger = LoggerFactory.getLogger(TableBasedLock.class);
 
     static final String HOSTNAME = resolveHostname();
 
@@ -90,7 +94,7 @@ abstract class TableBasedLock {
                 .bind(lockName)
                 .execute();
         } catch (SQLException e) {
-            // best-effort: metadata visibility is non-critical
+            logger.trace("failed to clear session token metadata for lock '{}'", lockName, e);
         }
     }
 
