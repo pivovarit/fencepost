@@ -1190,6 +1190,33 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void leaseTryLockShouldNotBlockOnConcurrentRowLock() throws Exception {
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10)).build();
+
+        RenewableLock setup = provider.forName("skip-locked-test");
+        setup.lock();
+        setup.unlock();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.setAutoCommit(false);
+            conn.createStatement().executeQuery(
+              "SELECT 1 FROM fencepost_locks WHERE lock_name = 'skip-locked-test' FOR UPDATE"
+            );
+
+            RenewableLock contender = provider.forName("skip-locked-test");
+            CompletableFuture<Optional<FencingToken>> future =
+              CompletableFuture.supplyAsync(contender::tryLock);
+
+            Optional<FencingToken> result = future.get(2, TimeUnit.SECONDS);
+            assertThat(result)
+              .as("tryLock should return empty immediately via SKIP LOCKED, not block on the row lock")
+              .isEmpty();
+
+            conn.rollback();
+        }
+    }
+
+    @Test
     void shouldRejectLeaseAfterSessionForSameName() {
         Factory<FencedLock> sessionFactory = Fencepost.sessionLock(dataSource).build();
         Factory<RenewableLock> leaseFactory = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10)).build();
