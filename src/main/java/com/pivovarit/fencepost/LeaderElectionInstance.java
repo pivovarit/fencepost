@@ -17,6 +17,7 @@ import java.util.function.Consumer;
 final class LeaderElectionInstance implements LeaderElection {
 
     private static final Logger logger = LoggerFactory.getLogger(LeaderElectionInstance.class);
+    private static final long CLOSE_JOIN_TIMEOUT_MS = 10_000;
 
     private final String electionName;
     private final DataSource dataSource;
@@ -94,9 +95,12 @@ final class LeaderElectionInstance implements LeaderElection {
             LockSupport.unpark(thread);
             if (Thread.currentThread() != thread) {
                 try {
-                    thread.join();
+                    thread.join(CLOSE_JOIN_TIMEOUT_MS);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                }
+                if (thread.isAlive()) {
+                    logger.warn("election thread for '{}' did not exit within {} ms; detaching (daemon)", electionName, CLOSE_JOIN_TIMEOUT_MS);
                 }
             }
         }
