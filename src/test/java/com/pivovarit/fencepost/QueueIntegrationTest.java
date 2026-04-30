@@ -424,7 +424,7 @@ class QueueIntegrationTest {
     }
 
     @Test
-    void nackShouldStillBeCallableAfterAckLosesOwnership() throws Exception {
+    void nackAfterLostOwnershipShouldThrowIllegalState() throws Exception {
         Queue queue = newQueue();
         queue.enqueue("contested".getBytes(UTF_8));
 
@@ -440,8 +440,57 @@ class QueueIntegrationTest {
         assertThatThrownBy(msgA::ack).isInstanceOf(LostOwnershipException.class);
 
         assertThatThrownBy(msgA::nack)
-          .as("after failed ack, nack must not throw IllegalStateException")
-          .isInstanceOf(LostOwnershipException.class);
+          .as("after lost ownership, nack must reject immediately rather than hit the DB")
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("lost");
+
+        msgB.ack();
+    }
+
+    @Test
+    void ackRetryAfterLostOwnershipShouldThrowIllegalState() throws Exception {
+        Queue queue = newQueue();
+        queue.enqueue("contested".getBytes(UTF_8));
+
+        Message msgA = queue.tryDequeue().get();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute(
+              "UPDATE fencepost_queue SET visible_at = now() - interval '1 second' WHERE id = " + msgA.id());
+        }
+
+        Message msgB = queue.tryDequeue().get();
+
+        assertThatThrownBy(msgA::ack).isInstanceOf(LostOwnershipException.class);
+
+        assertThatThrownBy(msgA::ack)
+          .as("retrying ack after lost ownership must reject immediately")
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("lost");
+
+        msgB.ack();
+    }
+
+    @Test
+    void nackRetryAfterLostOwnershipShouldThrowIllegalState() throws Exception {
+        Queue queue = newQueue();
+        queue.enqueue("contested".getBytes(UTF_8));
+
+        Message msgA = queue.tryDequeue().get();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute(
+              "UPDATE fencepost_queue SET visible_at = now() - interval '1 second' WHERE id = " + msgA.id());
+        }
+
+        Message msgB = queue.tryDequeue().get();
+
+        assertThatThrownBy(msgA::nack).isInstanceOf(LostOwnershipException.class);
+
+        assertThatThrownBy(msgA::nack)
+          .as("retrying nack after lost ownership must reject immediately")
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("lost");
 
         msgB.ack();
     }

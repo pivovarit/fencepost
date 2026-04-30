@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 final class AckableMessage implements Message {
 
-    private enum State {ACTIVE, ACKED, NACKED, CLOSED}
+    private enum State {ACTIVE, ACKED, NACKED, CLOSED, LOST}
 
     private final long id;
     private final byte[] payload;
@@ -74,7 +74,7 @@ final class AckableMessage implements Message {
               .execute();
 
             if (updated != 1) {
-                state.set(State.ACTIVE);
+                state.set(State.LOST);
                 throw new LostOwnershipException(id);
             }
         } catch (SQLException e) {
@@ -94,7 +94,7 @@ final class AckableMessage implements Message {
               .bind(pickToken)
               .execute();
             if (updated != 1) {
-                state.set(State.ACTIVE);
+                state.set(State.LOST);
                 throw new LostOwnershipException(id);
             }
         } catch (SQLException e) {
