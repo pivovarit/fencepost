@@ -138,12 +138,14 @@ public final class FencepostDashboard {
 
     private void serveDashboardHtml(HttpExchange exchange) throws IOException {
         String resourcePath = "/com/pivovarit/fencepost/dashboard/dashboard.html";
-        InputStream is = FencepostDashboard.class.getResourceAsStream(resourcePath);
-        if (is == null) {
-            sendJsonResponse(exchange, 500, "{\"error\":\"internal server error\"}");
-            return;
+        byte[] body;
+        try (InputStream is = FencepostDashboard.class.getResourceAsStream(resourcePath)) {
+            if (is == null) {
+                sendJsonResponse(exchange, 500, "{\"error\":\"internal server error\"}");
+                return;
+            }
+            body = is.readAllBytes();
         }
-        byte[] body = is.readAllBytes();
         exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
         exchange.sendResponseHeaders(200, body.length);
         try (OutputStream out = exchange.getResponseBody()) {
