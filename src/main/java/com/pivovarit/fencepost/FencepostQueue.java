@@ -160,6 +160,9 @@ final class FencepostQueue implements Queue {
                 logger.trace("failed to abort listener connection", e);
             }
         }
+        synchronized (listenerLock) {
+            listenerLock.notifyAll();
+        }
         closeListenerConnection();
     }
 
@@ -252,11 +255,16 @@ final class FencepostQueue implements Queue {
             if (closed) {
                 return;
             }
-            try {
-                Thread.sleep(waitMs);
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                throw new FencepostException("Interrupted while waiting for messages on queue: " + queueName);
+            synchronized (listenerLock) {
+                if (closed) {
+                    return;
+                }
+                try {
+                    listenerLock.wait(waitMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new FencepostException("Interrupted while waiting for messages on queue: " + queueName);
+                }
             }
         }
     }
