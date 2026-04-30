@@ -190,11 +190,11 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     @Override
     public void unlock() {
+        stopAutoRenew();
         FencingToken token = currentToken;
         if (token == null) {
             throw new LockNotHeldException(lockName);
         }
-        stopAutoRenew();
         try {
             int updated;
             if (quietPeriod != null) {
@@ -222,6 +222,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     @Override
     public void close() {
+        stopAutoRenew();
         if (currentToken != null) {
             try {
                 unlock();

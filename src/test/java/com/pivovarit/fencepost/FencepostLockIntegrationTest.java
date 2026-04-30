@@ -764,6 +764,63 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void unlockShouldStopAutoRenewThreadAfterManualRenewInvalidatesToken() throws Exception {
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(60))
+          .withAutoRenew(Duration.ofSeconds(30))
+          .build();
+
+        RenewableLock lock = provider.forName("unlock-renew-leak-test");
+        lock.lock();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement()
+              .execute("UPDATE fencepost_locks SET token = token + 1 WHERE lock_name = 'unlock-renew-leak-test'");
+        }
+
+        assertThatThrownBy(() -> lock.renew(Duration.ofSeconds(5)))
+          .isInstanceOf(LockNotHeldException.class);
+
+        assertThatThrownBy(lock::unlock)
+          .isInstanceOf(LockNotHeldException.class);
+
+        long autoRenewThreads = Thread.getAllStackTraces().keySet().stream()
+          .filter(t -> t.getName().contains("unlock-renew-leak-test"))
+          .filter(Thread::isAlive)
+          .count();
+        assertThat(autoRenewThreads)
+          .as("auto-renew thread should be stopped by unlock() even after renew() invalidated the token")
+          .isZero();
+    }
+
+    @Test
+    void closeShouldStopAutoRenewThreadAfterManualRenewInvalidatesToken() throws Exception {
+        Factory<RenewableLock> provider = Fencepost.leaseLock(dataSource, Duration.ofSeconds(60))
+          .withAutoRenew(Duration.ofSeconds(30))
+          .build();
+
+        RenewableLock lock = provider.forName("close-renew-leak-test");
+        lock.lock();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement()
+              .execute("UPDATE fencepost_locks SET token = token + 1 WHERE lock_name = 'close-renew-leak-test'");
+        }
+
+        assertThatThrownBy(() -> lock.renew(Duration.ofSeconds(5)))
+          .isInstanceOf(LockNotHeldException.class);
+
+        lock.close();
+
+        long autoRenewThreads = Thread.getAllStackTraces().keySet().stream()
+          .filter(t -> t.getName().contains("close-renew-leak-test"))
+          .filter(Thread::isAlive)
+          .count();
+        assertThat(autoRenewThreads)
+          .as("auto-renew thread should be stopped by close() even after renew() invalidated the token")
+          .isZero();
+    }
+
+    @Test
     void unlockShouldWaitForAutoRenewFailureCallbackToComplete() throws Exception {
         CountDownLatch callbackStarted = new CountDownLatch(1);
         CountDownLatch callbackFinished = new CountDownLatch(1);
