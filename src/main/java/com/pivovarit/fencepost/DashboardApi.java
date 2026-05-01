@@ -1,6 +1,7 @@
 package com.pivovarit.fencepost;
 
 import javax.sql.DataSource;
+import java.sql.Connection;
 import java.sql.SQLException;
 
 public final class DashboardApi {
@@ -16,9 +17,11 @@ public final class DashboardApi {
     }
 
     public String status() throws SQLException {
-        boolean locksEnabled = tableExists(locksTable);
-        boolean queuesEnabled = tableExists(queueTable);
-        return "{\"locks_enabled\":" + locksEnabled + ",\"queues_enabled\":" + queuesEnabled + "}";
+        try (Connection conn = dataSource.getConnection()) {
+            boolean locksEnabled = tableExists(conn, locksTable);
+            boolean queuesEnabled = tableExists(conn, queueTable);
+            return "{\"locks_enabled\":" + locksEnabled + ",\"queues_enabled\":" + queuesEnabled + "}";
+        }
     }
 
     public String locks() throws SQLException {
@@ -64,31 +67,33 @@ public final class DashboardApi {
     }
 
     public String queue(String name) throws SQLException {
-        String summaryJson = Jdbc.query(dataSource, Queries.queueByName(queueTable)).bind(name).map(rs -> {
-            if (!rs.next()) {
-                return "{\"name\":" + jsonString(name) +
-                       ",\"total\":0,\"visible\":0,\"in_flight\":0,\"oldest_age_seconds\":null";
-            }
-            StringBuilder sb = new StringBuilder();
-            appendQueueSummaryRow(sb, rs);
-            return sb.substring(0, sb.length() - 1);
-        });
-
-        String messagesJson = Jdbc.query(dataSource, Queries.messagesByQueue(queueTable)).bind(name).map(rs -> {
-            StringBuilder sb = new StringBuilder("[");
-            boolean first = true;
-            while (rs.next()) {
-                if (!first) {
-                    sb.append(",");
+        try (Connection conn = dataSource.getConnection()) {
+            String summaryJson = Jdbc.query(conn, Queries.queueByName(queueTable)).bind(name).map(rs -> {
+                if (!rs.next()) {
+                    return "{\"name\":" + jsonString(name) +
+                           ",\"total\":0,\"visible\":0,\"in_flight\":0,\"oldest_age_seconds\":null";
                 }
-                first = false;
-                appendMessageRow(sb, rs);
-            }
-            sb.append("]");
-            return sb.toString();
-        });
+                StringBuilder sb = new StringBuilder();
+                appendQueueSummaryRow(sb, rs);
+                return sb.substring(0, sb.length() - 1);
+            });
 
-        return summaryJson + ",\"messages\":" + messagesJson + "}";
+            String messagesJson = Jdbc.query(conn, Queries.messagesByQueue(queueTable)).bind(name).map(rs -> {
+                StringBuilder sb = new StringBuilder("[");
+                boolean first = true;
+                while (rs.next()) {
+                    if (!first) {
+                        sb.append(",");
+                    }
+                    first = false;
+                    appendMessageRow(sb, rs);
+                }
+                sb.append("]");
+                return sb.toString();
+            });
+
+            return summaryJson + ",\"messages\":" + messagesJson + "}";
+        }
     }
 
     public String message(String queueName, long id) throws SQLException {
@@ -116,17 +121,17 @@ public final class DashboardApi {
         });
     }
 
-    private boolean tableExists(String tableName) throws SQLException {
+    private static boolean tableExists(Connection conn, String tableName) throws SQLException {
         String[] parts = tableName.split("\\.", 2);
         if (parts.length == 2) {
             String schema = parts[0];
             String table = parts[1];
-            return Jdbc.query(dataSource, Queries.TABLE_EXISTS_IN_SCHEMA).bind(schema).bind(table).map(rs -> {
+            return Jdbc.query(conn, Queries.TABLE_EXISTS_IN_SCHEMA).bind(schema).bind(table).map(rs -> {
                 rs.next();
                 return rs.getBoolean(1);
             });
         } else {
-            return Jdbc.query(dataSource, Queries.TABLE_EXISTS).bind(tableName).map(rs -> {
+            return Jdbc.query(conn, Queries.TABLE_EXISTS).bind(tableName).map(rs -> {
                 rs.next();
                 return rs.getBoolean(1);
             });
