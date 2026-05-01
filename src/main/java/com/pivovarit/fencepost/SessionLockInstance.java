@@ -24,9 +24,9 @@ import java.util.Optional;
  * acquired, so token increments survive holder crashes even though the row-lock transaction is
  * rolled back.
  *
- * <p><b>Pool sizing:</b> each lock attempt briefly holds two pooled connections — one for the
- * row lock and one for the token allocation. The connection pool must be sized to accommodate
- * this: at minimum 2&times; the expected number of concurrent lock attempts.
+ * <p><b>Pool sizing:</b> each lock attempt briefly needs a second pooled connection for token
+ * allocation while the row lock connection is held. The connection pool must have headroom
+ * beyond the number of concurrent lock waiters.
  */
 final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
@@ -59,9 +59,9 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     @Override
     FencingToken doLock() {
-        ensureRowExists();
         try {
             connection = dataSource.getConnection();
+            ensureRowExists(connection);
             connection.setAutoCommit(false);
 
             Jdbc.query(connection, "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE")
@@ -82,10 +82,10 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     @Override
     FencingToken doLock(Duration timeout) {
-        ensureRowExists();
         long deadlineNanos = System.nanoTime() + timeout.toNanos();
         try {
             connection = dataSource.getConnection();
+            ensureRowExists(connection);
             connection.setAutoCommit(false);
 
             Jdbc.setStatementTimeout(connection, timeout);
@@ -114,9 +114,9 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     @Override
     Optional<FencingToken> doTryLock() {
-        ensureRowExists();
         try {
             connection = dataSource.getConnection();
+            ensureRowExists(connection);
             connection.setAutoCommit(false);
 
             boolean locked = Jdbc.query(connection, "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE SKIP LOCKED")
