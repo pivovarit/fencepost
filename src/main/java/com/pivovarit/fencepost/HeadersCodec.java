@@ -12,6 +12,7 @@ final class HeadersCodec {
         if (headers == null || headers.isEmpty()) {
             return null;
         }
+        validateHeaders(headers);
         StringBuilder sb = new StringBuilder("{");
         boolean first = true;
         for (Map.Entry<String, String> entry : headers.entrySet()) {
@@ -99,6 +100,26 @@ final class HeadersCodec {
             }
         }
         return sb.toString();
+    }
+
+    private static void validateHeaders(Map<String, String> headers) {
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            requirePrintable(entry.getKey(), "Header key");
+            requirePrintable(entry.getValue(), "Header value");
+        }
+    }
+
+    private static void requirePrintable(String value, String label) {
+        if (value == null) {
+            return;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c < 0x20 || c == 0x7F) {
+                throw new IllegalArgumentException(
+                  String.format("%s contains control character at index %d (0x%02X)", label, i, (int) c));
+            }
+        }
     }
 
     private static String jsonString(String value) {
