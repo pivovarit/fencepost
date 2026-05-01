@@ -46,34 +46,41 @@ abstract class TableBasedLock {
         if (rowExists) {
             return;
         }
-        String type = lockType.name();
         try (Connection conn = dataSource.getConnection()) {
-            conn.setAutoCommit(true);
-            String storedType = Jdbc.query(conn, String.format("SELECT lock_type FROM %s WHERE lock_name = ?", tableName))
-                    .bind(lockName)
-                    .map(rs -> rs.next() ? rs.getString(1) : null);
-            if (storedType == null) {
-                Jdbc.update(conn, String.format("INSERT INTO %s (lock_name, lock_type) VALUES (?, ?) ON CONFLICT DO NOTHING", tableName))
-                        .bind(lockName)
-                        .bind(type)
-                        .execute();
-                storedType = Jdbc.query(conn, String.format("SELECT lock_type FROM %s WHERE lock_name = ?", tableName))
-                        .bind(lockName)
-                        .map(rs -> {
-                            rs.next();
-                            return rs.getString(1);
-                        });
-            }
-            if (!type.equals(storedType)) {
-                throw new FencepostException(
-                    String.format("Lock '%s' is already registered as %s, cannot use as %s", lockName, storedType, type));
-            }
-            rowExists = true;
+            ensureRowExists(conn);
         } catch (FencepostException e) {
             throw e;
         } catch (SQLException e) {
             throw new FencepostException("Failed to ensure lock row exists: " + lockName, e);
         }
+    }
+
+    void ensureRowExists(Connection conn) throws SQLException {
+        if (rowExists) {
+            return;
+        }
+        String type = lockType.name();
+        conn.setAutoCommit(true);
+        String storedType = Jdbc.query(conn, String.format("SELECT lock_type FROM %s WHERE lock_name = ?", tableName))
+                .bind(lockName)
+                .map(rs -> rs.next() ? rs.getString(1) : null);
+        if (storedType == null) {
+            Jdbc.update(conn, String.format("INSERT INTO %s (lock_name, lock_type) VALUES (?, ?) ON CONFLICT DO NOTHING", tableName))
+                    .bind(lockName)
+                    .bind(type)
+                    .execute();
+            storedType = Jdbc.query(conn, String.format("SELECT lock_type FROM %s WHERE lock_name = ?", tableName))
+                    .bind(lockName)
+                    .map(rs -> {
+                        rs.next();
+                        return rs.getString(1);
+                    });
+        }
+        if (!type.equals(storedType)) {
+            throw new FencepostException(
+                String.format("Lock '%s' is already registered as %s, cannot use as %s", lockName, storedType, type));
+        }
+        rowExists = true;
     }
 
     static final int TOKEN_ALLOCATION_NETWORK_TIMEOUT_MS = 2000;

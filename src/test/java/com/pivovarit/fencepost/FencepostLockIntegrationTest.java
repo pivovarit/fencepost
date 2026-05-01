@@ -1436,7 +1436,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void shouldRetryTokenAllocationOnPoolExhaustion() {
-        DataSource limited = exhaustedPoolDataSource(dataSource, 2, 1);
+        DataSource limited = exhaustedPoolDataSource(dataSource, 1, 1);
         Factory<FencedLock> provider = Fencepost.sessionLock(limited).build();
 
         FencedLock lock = provider.forName("retry-success-test");
@@ -1447,7 +1447,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void shouldFailWithClearErrorWhenTokenAllocationRetriesExhausted() {
-        DataSource limited = exhaustedPoolDataSource(dataSource, 2, 3);
+        DataSource limited = exhaustedPoolDataSource(dataSource, 1, 3);
         Factory<FencedLock> provider = Fencepost.sessionLock(limited).build();
 
         FencedLock lock = provider.forName("retry-exhausted-test");
@@ -1484,7 +1484,7 @@ class FencepostLockIntegrationTest {
 
     @Test
     void timedSessionLockShouldCapTokenAllocationToDeadline() {
-        DataSource limited = exhaustedPoolDataSource(dataSource, 2, 10);
+        DataSource limited = exhaustedPoolDataSource(dataSource, 1, 10);
         Factory<FencedLock> provider = Fencepost.sessionLock(limited).build();
 
         FencedLock lock = provider.forName("timed-token-alloc-test");
@@ -1502,7 +1502,7 @@ class FencepostLockIntegrationTest {
     void tokenAllocationShouldRestoreNetworkTimeoutOnPooledConnection() {
         List<Integer> networkTimeoutsAtClose = new CopyOnWriteArrayList<>();
 
-        DataSource tracking = networkTimeoutTrackingDataSource(dataSource, 2, networkTimeoutsAtClose);
+        DataSource tracking = networkTimeoutTrackingDataSource(dataSource, 1, networkTimeoutsAtClose);
         Factory<FencedLock> provider = Fencepost.sessionLock(tracking).build();
 
         FencedLock lock = provider.forName("restore-timeout-test");
