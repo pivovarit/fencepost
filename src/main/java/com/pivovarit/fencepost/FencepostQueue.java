@@ -22,20 +22,30 @@ final class FencepostQueue implements Queue {
 
     private final String queueName;
     private final DataSource dataSource;
-    private final String tableName;
     private final Duration visibilityTimeout;
     private final long pollIntervalMs;
     private final ListenerConnection listener;
+    private final String enqueueSql;
+    private final String dequeueSql;
+    private final AckableMessage.Sql ackSql;
 
     FencepostQueue(String queueName, DataSource dataSource, String tableName,
                    Duration visibilityTimeout, long pollIntervalMs) {
         this.queueName = queueName;
         this.dataSource = dataSource;
-        this.tableName = tableName;
         this.visibilityTimeout = visibilityTimeout;
         this.pollIntervalMs = pollIntervalMs;
         this.listener = new ListenerConnection(dataSource,
           "fencepost_q_" + Long.toUnsignedString(HashUtils.fnv1a64("fencepost:" + queueName)));
+        this.enqueueSql = String.format(
+            "INSERT INTO %s (queue_name, payload, type, headers, visible_at) VALUES (?, ?, ?, ?::jsonb, now() + %s)",
+            tableName, Jdbc.intervalMillis());
+        this.dequeueSql = String.format(
+            "UPDATE %s SET visible_at = now() + %s, picked_by = ?, attempts = attempts + 1 "
+              + "WHERE id = (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now() "
+              + "ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, payload, type, headers, attempts",
+            tableName, Jdbc.intervalMillis(), tableName);
+        this.ackSql = new AckableMessage.Sql(tableName);
     }
 
     @Override
@@ -59,9 +69,7 @@ final class FencepostQueue implements Queue {
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(false);
             try {
-                Jdbc.update(conn, String.format(
-                    "INSERT INTO %s (queue_name, payload, type, headers, visible_at) VALUES (?, ?, ?, ?::jsonb, now() + %s)",
-                    tableName, Jdbc.intervalMillis()))
+                Jdbc.update(conn, enqueueSql)
                   .bind(queueName)
                   .bind(payload)
                   .bind(type)
@@ -84,14 +92,9 @@ final class FencepostQueue implements Queue {
     @Override
     public Optional<Message> tryDequeue() {
         String pickToken = TableBasedLock.HOSTNAME + "/" + Thread.currentThread().getName() + "/" + Long.toHexString(ThreadLocalRandom.current().nextLong()) + Long.toHexString(ThreadLocalRandom.current().nextLong());
-        String sql = String.format(
-            "UPDATE %s SET visible_at = now() + %s, picked_by = ?, attempts = attempts + 1 "
-              + "WHERE id = (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now() "
-              + "ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, payload, type, headers, attempts",
-            tableName, Jdbc.intervalMillis(), tableName);
 
         try {
-            return Jdbc.query(dataSource, sql)
+            return Jdbc.query(dataSource, dequeueSql)
               .bind(visibilityTimeout.toMillis())
               .bind(pickToken)
               .bind(queueName)
@@ -103,7 +106,7 @@ final class FencepostQueue implements Queue {
                   logger.debug("dequeued message id={} from queue '{}'", id, queueName);
                   return Optional.of(new AckableMessage(
                     id, rs.getBytes(2), rs.getString(3), HeadersCodec.fromJson(rs.getString(4)), rs.getInt(5),
-                    pickToken, dataSource, tableName));
+                    pickToken, dataSource, ackSql));
               });
         } catch (SQLException e) {
             throw new FencepostException("Failed to dequeue from queue: " + queueName, e);
