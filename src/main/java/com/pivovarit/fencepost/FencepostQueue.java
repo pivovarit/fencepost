@@ -13,7 +13,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 final class FencepostQueue implements Queue {
@@ -83,7 +83,7 @@ final class FencepostQueue implements Queue {
 
     @Override
     public Optional<Message> tryDequeue() {
-        String pickToken = TableBasedLock.HOSTNAME + "/" + Thread.currentThread().getName() + "/" + UUID.randomUUID();
+        String pickToken = TableBasedLock.HOSTNAME + "/" + Thread.currentThread().getName() + "/" + Long.toHexString(ThreadLocalRandom.current().nextLong()) + Long.toHexString(ThreadLocalRandom.current().nextLong());
         String sql = String.format(
             "UPDATE %s SET visible_at = now() + %s, picked_by = ?, attempts = attempts + 1 "
               + "WHERE id = (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now() "
