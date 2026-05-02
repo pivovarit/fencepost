@@ -26,6 +26,8 @@ public final class FencepostDashboard {
     private static final String DEFAULT_LOCKS_TABLE = "fencepost_locks";
     private static final String DEFAULT_QUEUE_TABLE = "fencepost_queue";
     private static final int LISTEN_TIMEOUT_MS = 5000;
+    private static final byte[] REFRESH_EVENT = "data: refresh\n\n".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] DASHBOARD_HTML = loadDashboardHtml();
 
     private final DashboardApi api;
     private final ListenerConnection listener;
@@ -133,19 +135,22 @@ public final class FencepostDashboard {
     }
 
     private void serveDashboardHtml(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+        exchange.sendResponseHeaders(200, DASHBOARD_HTML.length);
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write(DASHBOARD_HTML);
+        }
+    }
+
+    private static byte[] loadDashboardHtml() {
         String resourcePath = "/com/pivovarit/fencepost/dashboard/dashboard.html";
-        byte[] body;
         try (InputStream is = FencepostDashboard.class.getResourceAsStream(resourcePath)) {
             if (is == null) {
-                sendJsonResponse(exchange, 500, "{\"error\":\"internal server error\"}");
-                return;
+                throw new IllegalStateException("dashboard.html not found on classpath");
             }
-            body = is.readAllBytes();
-        }
-        exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
-        exchange.sendResponseHeaders(200, body.length);
-        try (OutputStream out = exchange.getResponseBody()) {
-            out.write(body);
+            return is.readAllBytes();
+        } catch (IOException e) {
+            throw new IllegalStateException("failed to load dashboard.html", e);
         }
     }
 
@@ -169,10 +174,9 @@ public final class FencepostDashboard {
     }
 
     private void broadcastRefresh() {
-        byte[] event = "data: refresh\n\n".getBytes(StandardCharsets.UTF_8);
         for (OutputStream out : sseClients) {
             try {
-                out.write(event);
+                out.write(REFRESH_EVENT);
                 out.flush();
             } catch (IOException e) {
                 sseClients.remove(out);
