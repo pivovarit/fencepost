@@ -25,6 +25,7 @@ final class FencepostQueue implements Queue {
     private final Duration visibilityTimeout;
     private final long pollIntervalMs;
     private final ListenerConnection listener;
+    private final String notifyQueueSql;
     private final String enqueueSql;
     private final String dequeueSql;
     private final AckableMessage.Sql ackSql;
@@ -35,8 +36,9 @@ final class FencepostQueue implements Queue {
         this.dataSource = dataSource;
         this.visibilityTimeout = visibilityTimeout;
         this.pollIntervalMs = pollIntervalMs;
-        this.listener = new ListenerConnection(dataSource,
-          "fencepost_q_" + Long.toUnsignedString(HashUtils.fnv1a64("fencepost:" + queueName)));
+        var channelName = "fencepost_q_" + Long.toUnsignedString(HashUtils.fnv1a64("fencepost:" + queueName));
+        this.listener = new ListenerConnection(dataSource, channelName);
+        this.notifyQueueSql = "NOTIFY " + channelName;
         this.enqueueSql = String.format(
             "INSERT INTO %s (queue_name, payload, type, headers, visible_at) VALUES (?, ?, ?, ?::jsonb, now() + %s)",
             tableName, Jdbc.intervalMillis());
@@ -76,7 +78,7 @@ final class FencepostQueue implements Queue {
                   .bind(HeadersCodec.toJson(headers))
                   .bind(delayMillis)
                   .execute();
-                Jdbc.execute(conn, "NOTIFY " + channelName());
+                Jdbc.execute(conn, notifyQueueSql);
                 Jdbc.execute(conn, "NOTIFY " + FencepostDashboard.DASHBOARD_CHANNEL);
                 conn.commit();
                 logger.debug("enqueued message to queue '{}'", queueName);
@@ -153,10 +155,6 @@ final class FencepostQueue implements Queue {
                 throw new FencepostException("Failed to set up listener for queue: " + queueName, e);
             }
         }
-    }
-
-    private String channelName() {
-        return "fencepost_q_" + Long.toUnsignedString(HashUtils.fnv1a64("fencepost:" + queueName));
     }
 
     @Override
