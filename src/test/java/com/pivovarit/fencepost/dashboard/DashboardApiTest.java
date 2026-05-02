@@ -143,7 +143,37 @@ class DashboardApiTest {
         assertThat(json).contains("\"name\":\"my-lock\"");
         assertThat(json).contains("\"token\":42");
         assertThat(json).contains("\"locked_by\":\"worker-1\"");
-        assertThat(json).contains("\"is_held\":true");
+        assertThat(json).contains("\"status\":\"held\"");
+    }
+
+    @Test
+    void shouldReturnQuietStatusDuringQuietPeriod() throws Exception {
+        createLocksTable();
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute(
+              "INSERT INTO fencepost_locks (lock_name, lock_type, token, locked_by, locked_at, expires_at) " +
+              "VALUES ('quiet-lock', 'LEASE', 5, 'worker-1', NULL, now() + interval '10 seconds')"
+            );
+        }
+
+        String json = api().locks();
+
+        assertThat(json).contains("\"status\":\"quiet\"");
+        assertThat(json).contains("\"locked_by\":\"worker-1\"");
+    }
+
+    @Test
+    void shouldReturnFreeStatusForReleasedLock() throws Exception {
+        createLocksTable();
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute(
+              "INSERT INTO fencepost_locks (lock_name, lock_type, token) VALUES ('free-lock', 'LEASE', 3)"
+            );
+        }
+
+        String json = api().locks();
+
+        assertThat(json).contains("\"status\":\"free\"");
     }
 
     @Test

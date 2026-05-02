@@ -161,6 +161,7 @@
 
     .status-held { color: #c00; font-weight: 700; }
     .status-free { color: #2a7a2a; }
+    .status-quiet { color: #b08000; font-style: italic; }
     .status-expired { color: #888; }
 
     .empty-msg {
@@ -272,16 +273,9 @@
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
   function lockStatus(lock) {
-    if (!lock.locked_by && !lock.is_held) {
-      return '<span class="status-free">free</span>';
-    }
-    if (lock.expires_at) {
-      const exp = new Date(lock.expires_at);
-      if (exp < new Date()) {
-        return '<span class="status-expired">expired</span>';
-      }
-    }
-    return '<span class="status-held">held</span>';
+    if (lock.status === 'held') return '<span class="status-held">held</span>';
+    if (lock.status === 'quiet') return '<span class="status-quiet">quiet</span>';
+    return '<span class="status-free">free</span>';
   }
 
   function formatAge(seconds) {

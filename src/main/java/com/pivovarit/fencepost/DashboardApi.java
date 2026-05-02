@@ -147,7 +147,7 @@ public final class DashboardApi {
         sb.append("\"locked_at\":").append(lockedAt == null ? "null" : jsonString(lockedAt.toString())).append(",");
         Object expiresAt = rs.getObject("expires_at");
         sb.append("\"expires_at\":").append(expiresAt == null ? "null" : jsonString(expiresAt.toString())).append(",");
-        sb.append("\"is_held\":").append(rs.getBoolean("is_held"));
+        sb.append("\"status\":").append(jsonString(rs.getString("status")));
         sb.append("}");
     }
 
@@ -194,16 +194,22 @@ public final class DashboardApi {
 
         static String allLocks(String table) {
             return "SELECT lock_name, token, locked_by, locked_at, expires_at, " +
-              "  CASE WHEN locked_by IS NOT NULL AND (expires_at IS NULL OR expires_at > now()) " +
-              "       THEN true ELSE false END AS is_held " +
+              lockStatusExpression() +
               "FROM " + table + " ORDER BY lock_name";
         }
 
         static String lockByName(String table) {
             return "SELECT lock_name, token, locked_by, locked_at, expires_at, " +
-              "  CASE WHEN locked_by IS NOT NULL AND (expires_at IS NULL OR expires_at > now()) " +
-              "       THEN true ELSE false END AS is_held " +
+              lockStatusExpression() +
               "FROM " + table + " WHERE lock_name = ?";
+        }
+
+        private static String lockStatusExpression() {
+            return "  CASE WHEN locked_by IS NOT NULL AND locked_at IS NOT NULL AND (expires_at IS NULL OR expires_at > now()) " +
+              "       THEN 'held' " +
+              "       WHEN locked_by IS NOT NULL AND locked_at IS NULL AND expires_at IS NOT NULL AND expires_at > now() " +
+              "       THEN 'quiet' " +
+              "       ELSE 'free' END AS status " ;
         }
 
         static String allQueues(String table) {
