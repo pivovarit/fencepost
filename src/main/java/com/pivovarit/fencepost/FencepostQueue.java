@@ -69,6 +69,7 @@ final class FencepostQueue implements Queue {
 
     @Override
     public void enqueue(byte[] payload, String type, Map<String, String> headers, Duration delay) {
+        HeadersCodec.requirePrintable(type, "Message type");
         long delayMillis = Durations.toNonNegativeMillis(delay, "delay");
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(false);

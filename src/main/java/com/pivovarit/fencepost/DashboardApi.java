@@ -7,25 +7,23 @@ import java.sql.SQLException;
 public final class DashboardApi {
 
     private final DataSource dataSource;
-    private final String locksTable;
-    private final String queueTable;
+    private final Queries queries;
 
     public DashboardApi(DataSource dataSource, String locksTable, String queueTable) {
         this.dataSource = dataSource;
-        this.locksTable = locksTable;
-        this.queueTable = queueTable;
+        this.queries = new Queries(locksTable, queueTable);
     }
 
     public String status() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
-            boolean locksEnabled = tableExists(conn, locksTable);
-            boolean queuesEnabled = tableExists(conn, queueTable);
+            boolean locksEnabled = tableExists(conn, queries.locksTable);
+            boolean queuesEnabled = tableExists(conn, queries.queueTable);
             return "{\"locks_enabled\":" + locksEnabled + ",\"queues_enabled\":" + queuesEnabled + "}";
         }
     }
 
     public String locks() throws SQLException {
-        return Jdbc.query(dataSource, Queries.allLocks(locksTable)).map(rs -> {            StringBuilder sb = new StringBuilder("[");
+        return Jdbc.query(dataSource, queries.allLocks).map(rs -> {            StringBuilder sb = new StringBuilder("[");
             boolean first = true;
             while (rs.next()) {
                 if (!first) {
@@ -40,7 +38,7 @@ public final class DashboardApi {
     }
 
     public String lock(String name) throws SQLException {
-        return Jdbc.query(dataSource, Queries.lockByName(locksTable)).bind(name).map(rs -> {
+        return Jdbc.query(dataSource, queries.lockByName).bind(name).map(rs -> {
             if (!rs.next()) {
                 return "null";
             }
@@ -51,7 +49,7 @@ public final class DashboardApi {
     }
 
     public String queues() throws SQLException {
-        return Jdbc.query(dataSource, Queries.allQueues(queueTable)).map(rs -> {
+        return Jdbc.query(dataSource, queries.allQueues).map(rs -> {
             StringBuilder sb = new StringBuilder("[");
             boolean first = true;
             while (rs.next()) {
@@ -68,7 +66,7 @@ public final class DashboardApi {
 
     public String queue(String name) throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
-            String summaryJson = Jdbc.query(conn, Queries.queueByName(queueTable)).bind(name).map(rs -> {
+            String summaryJson = Jdbc.query(conn, queries.queueByName).bind(name).map(rs -> {
                 if (!rs.next()) {
                     return "{\"name\":" + jsonString(name) +
                            ",\"total\":0,\"visible\":0,\"in_flight\":0,\"oldest_age_seconds\":null";
@@ -78,7 +76,7 @@ public final class DashboardApi {
                 return sb.substring(0, sb.length() - 1);
             });
 
-            String messagesJson = Jdbc.query(conn, Queries.messagesByQueue(queueTable)).bind(name).map(rs -> {
+            String messagesJson = Jdbc.query(conn, queries.messagesByQueue).bind(name).map(rs -> {
                 StringBuilder sb = new StringBuilder("[");
                 boolean first = true;
                 while (rs.next()) {
@@ -97,7 +95,7 @@ public final class DashboardApi {
     }
 
     public String message(String queueName, long id) throws SQLException {
-        return Jdbc.query(dataSource, Queries.messageById(queueTable)).bind(queueName).bind(id).map(rs -> {
+        return Jdbc.query(dataSource, queries.messageById).bind(queueName).bind(id).map(rs -> {
             if (!rs.next()) {
                 return "null";
             }
@@ -181,7 +179,28 @@ public final class DashboardApi {
         if (value == null) {
             return "null";
         }
-        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        StringBuilder sb = new StringBuilder(value.length() + 2);
+        sb.append('"');
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '"':  sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\b': sb.append("\\b"); break;
+                case '\f': sb.append("\\f"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default:
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+            }
+        }
+        sb.append('"');
+        return sb.toString();
     }
 
     static final class Queries {
@@ -192,58 +211,56 @@ public final class DashboardApi {
         static final String TABLE_EXISTS =
           "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = ?)";
 
-        static String allLocks(String table) {
-            return "SELECT lock_name, token, locked_by, locked_at, expires_at, " +
-              lockStatusExpression() +
-              "FROM " + table + " ORDER BY lock_name";
-        }
+        final String locksTable;
+        final String queueTable;
+        final String allLocks;
+        final String lockByName;
+        final String allQueues;
+        final String queueByName;
+        final String messagesByQueue;
+        final String messageById;
 
-        static String lockByName(String table) {
-            return "SELECT lock_name, token, locked_by, locked_at, expires_at, " +
-              lockStatusExpression() +
-              "FROM " + table + " WHERE lock_name = ?";
-        }
+        Queries(String locksTable, String queueTable) {
+            this.locksTable = locksTable;
+            this.queueTable = queueTable;
 
-        private static String lockStatusExpression() {
-            return "  CASE WHEN locked_by IS NOT NULL AND locked_at IS NOT NULL AND (expires_at IS NULL OR expires_at > now()) " +
+            String statusExpr = "  CASE WHEN locked_by IS NOT NULL AND locked_at IS NOT NULL AND (expires_at IS NULL OR expires_at > now()) " +
               "       THEN 'held' " +
               "       WHEN locked_by IS NOT NULL AND locked_at IS NULL AND expires_at IS NOT NULL AND expires_at > now() " +
               "       THEN 'quiet' " +
-              "       ELSE 'free' END AS status " ;
-        }
+              "       ELSE 'free' END AS status ";
 
-        static String allQueues(String table) {
-            return "SELECT queue_name, " +
+            this.allLocks = "SELECT lock_name, token, locked_by, locked_at, expires_at, " +
+              statusExpr + "FROM " + locksTable + " ORDER BY lock_name";
+
+            this.lockByName = "SELECT lock_name, token, locked_by, locked_at, expires_at, " +
+              statusExpr + "FROM " + locksTable + " WHERE lock_name = ?";
+
+            this.allQueues = "SELECT queue_name, " +
               "  COUNT(*) AS total, " +
               "  COUNT(*) FILTER (WHERE visible_at <= now() AND picked_by IS NULL) AS visible, " +
               "  COUNT(*) FILTER (WHERE picked_by IS NOT NULL) AS in_flight, " +
               "  EXTRACT(EPOCH FROM now() - MIN(visible_at) FILTER (WHERE visible_at <= now())) AS oldest_age_seconds " +
-              "FROM " + table + " GROUP BY queue_name ORDER BY queue_name";
-        }
+              "FROM " + queueTable + " GROUP BY queue_name ORDER BY queue_name";
 
-        static String queueByName(String table) {
-            return "SELECT queue_name, " +
+            this.queueByName = "SELECT queue_name, " +
               "  COUNT(*) AS total, " +
               "  COUNT(*) FILTER (WHERE visible_at <= now() AND picked_by IS NULL) AS visible, " +
               "  COUNT(*) FILTER (WHERE picked_by IS NOT NULL) AS in_flight, " +
               "  EXTRACT(EPOCH FROM now() - MIN(visible_at) FILTER (WHERE visible_at <= now())) AS oldest_age_seconds " +
-              "FROM " + table + " WHERE queue_name = ? GROUP BY queue_name";
-        }
+              "FROM " + queueTable + " WHERE queue_name = ? GROUP BY queue_name";
 
-        static String messagesByQueue(String table) {
-            return "SELECT id, encode(substring(payload from 1 for 200), 'base64') AS payload_preview, type, picked_by, attempts, visible_at, created_at, " +
+            this.messagesByQueue = "SELECT id, encode(substring(payload from 1 for 200), 'base64') AS payload_preview, type, picked_by, attempts, visible_at, created_at, " +
               "  CASE WHEN picked_by IS NOT NULL THEN 'in_flight' " +
               "       WHEN visible_at > now() THEN 'delayed' " +
               "       ELSE 'visible' END AS status " +
-              "FROM " + table + " WHERE queue_name = ? ORDER BY id";
-        }
+              "FROM " + queueTable + " WHERE queue_name = ? ORDER BY id";
 
-        static String messageById(String table) {
-            return "SELECT id, encode(payload, 'base64') AS payload_b64, type, headers, picked_by, attempts, visible_at, created_at, " +
+            this.messageById = "SELECT id, encode(payload, 'base64') AS payload_b64, type, headers, picked_by, attempts, visible_at, created_at, " +
               "  CASE WHEN picked_by IS NOT NULL THEN 'in_flight' " +
               "       WHEN visible_at > now() THEN 'delayed' " +
               "       ELSE 'visible' END AS status " +
-              "FROM " + table + " WHERE queue_name = ? AND id = ?";
+              "FROM " + queueTable + " WHERE queue_name = ? AND id = ?";
         }
     }
 }

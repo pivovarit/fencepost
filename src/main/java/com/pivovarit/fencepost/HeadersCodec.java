@@ -109,7 +109,7 @@ final class HeadersCodec {
         }
     }
 
-    private static void requirePrintable(String value, String label) {
+    static void requirePrintable(String value, String label) {
         if (value == null) {
             return;
         }
