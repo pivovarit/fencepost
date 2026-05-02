@@ -14,8 +14,6 @@ import java.util.concurrent.TimeUnit;
 
 abstract class TableBasedLock {
 
-    private static final Logger logger = LoggerFactory.getLogger(TableBasedLock.class);
-
     static final String HOSTNAME = resolveHostname();
 
     final String lockName;
@@ -23,6 +21,7 @@ abstract class TableBasedLock {
     final String tableName;
     final String tokenTableName;
     final LockType lockType;
+    final Sql sql;
 
     volatile FencingToken currentToken;
 
@@ -34,6 +33,17 @@ abstract class TableBasedLock {
         this.tableName = tableName;
         this.tokenTableName = tokenTableName(tableName);
         this.lockType = lockType;
+        this.sql = new Sql(tableName);
+    }
+
+    static final class Sql {
+        final String selectLockType;
+        final String insertLockRow;
+
+        Sql(String tableName) {
+            this.selectLockType = String.format("SELECT lock_type FROM %s WHERE lock_name = ?", tableName);
+            this.insertLockRow = String.format("INSERT INTO %s (lock_name, lock_type) VALUES (?, ?) ON CONFLICT DO NOTHING", tableName);
+        }
     }
 
     void ensureNotHeld() {
@@ -61,15 +71,15 @@ abstract class TableBasedLock {
         }
         String type = lockType.name();
         conn.setAutoCommit(true);
-        String storedType = Jdbc.query(conn, String.format("SELECT lock_type FROM %s WHERE lock_name = ?", tableName))
+        String storedType = Jdbc.query(conn, sql.selectLockType)
                 .bind(lockName)
                 .map(rs -> rs.next() ? rs.getString(1) : null);
         if (storedType == null) {
-            Jdbc.update(conn, String.format("INSERT INTO %s (lock_name, lock_type) VALUES (?, ?) ON CONFLICT DO NOTHING", tableName))
+            Jdbc.update(conn, sql.insertLockRow)
                     .bind(lockName)
                     .bind(type)
                     .execute();
-            storedType = Jdbc.query(conn, String.format("SELECT lock_type FROM %s WHERE lock_name = ?", tableName))
+            storedType = Jdbc.query(conn, sql.selectLockType)
                     .bind(lockName)
                     .map(rs -> {
                         rs.next();
