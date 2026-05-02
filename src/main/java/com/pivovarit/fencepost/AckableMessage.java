@@ -22,7 +22,7 @@ final class AckableMessage implements Message {
     private final int attempts;
     private final String pickToken;
     private final DataSource dataSource;
-    private final String tableName;
+    private final Sql sql;
 
     private final AtomicReference<State> state = new AtomicReference<>(State.ACTIVE);
 
@@ -34,7 +34,17 @@ final class AckableMessage implements Message {
         this.attempts = attempts;
         this.pickToken = pickToken;
         this.dataSource = dataSource;
-        this.tableName = tableName;
+        this.sql = new Sql(tableName);
+    }
+
+    static final class Sql {
+        final String ack;
+        final String nack;
+
+        Sql(String tableName) {
+            this.ack = String.format("DELETE FROM %s WHERE id = ? AND picked_by = ?", tableName);
+            this.nack = String.format("UPDATE %s SET visible_at = now(), picked_by = NULL WHERE id = ? AND picked_by = ?", tableName);
+        }
     }
 
     @Override
@@ -68,7 +78,7 @@ final class AckableMessage implements Message {
             throw new IllegalStateException("Message already " + state.get().name().toLowerCase());
         }
         try {
-            int updated = Jdbc.update(dataSource, String.format("DELETE FROM %s WHERE id = ? AND picked_by = ?", tableName))
+            int updated = Jdbc.update(dataSource, sql.ack)
               .bind(id)
               .bind(pickToken)
               .execute();
@@ -89,7 +99,7 @@ final class AckableMessage implements Message {
             throw new IllegalStateException("Message already " + state.get().name().toLowerCase());
         }
         try {
-            int updated = Jdbc.update(dataSource, String.format("UPDATE %s SET visible_at = now(), picked_by = NULL WHERE id = ? AND picked_by = ?", tableName))
+            int updated = Jdbc.update(dataSource, sql.nack)
               .bind(id)
               .bind(pickToken)
               .execute();
