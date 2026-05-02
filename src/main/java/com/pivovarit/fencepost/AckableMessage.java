@@ -26,7 +26,7 @@ final class AckableMessage implements Message {
 
     private final AtomicReference<State> state = new AtomicReference<>(State.ACTIVE);
 
-    AckableMessage(long id, byte[] payload, String type, Map<String, String> headers, int attempts, String pickToken, DataSource dataSource, String tableName) {
+    AckableMessage(long id, byte[] payload, String type, Map<String, String> headers, int attempts, String pickToken, DataSource dataSource, Sql sql) {
         this.id = id;
         this.payload = payload;
         this.type = type;
@@ -34,7 +34,7 @@ final class AckableMessage implements Message {
         this.attempts = attempts;
         this.pickToken = pickToken;
         this.dataSource = dataSource;
-        this.sql = new Sql(tableName);
+        this.sql = sql;
     }
 
     static final class Sql {
