@@ -42,7 +42,7 @@ final class HeadersCodec {
         int i = 0;
         while (i < content.length()) {
             i = skipWhitespace(content, i);
-            if (content.charAt(i) != '"') {
+            if (i >= content.length() || content.charAt(i) != '"') {
                 break;
             }
             int[] keyResult = readString(content, i);
@@ -52,7 +52,7 @@ final class HeadersCodec {
                 break;
             }
             i = skipWhitespace(content, i + 1);
-            if (content.charAt(i) != '"') {
+            if (i >= content.length() || content.charAt(i) != '"') {
                 break;
             }
             int[] valResult = readString(content, i);

@@ -27,8 +27,10 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     private static final long STOP_AUTO_RENEW_JOIN_TIMEOUT_MS = 5_000;
 
     private final Duration leaseDuration;
+    private final long leaseDurationMs;
     private final Duration refreshInterval;
     private final Duration quietPeriod;
+    private final long quietPeriodMs;
     private final long pollIntervalMs;
     private final Consumer<FencepostException> onAutoRenewFailure;
     private final String instanceId;
@@ -45,8 +47,10 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                          String instanceId) {
         super(lockName, dataSource, tableName, LockType.LEASE);
         this.leaseDuration = leaseDuration;
+        this.leaseDurationMs = leaseDuration.toMillis();
         this.refreshInterval = refreshInterval;
         this.quietPeriod = quietPeriod;
+        this.quietPeriodMs = quietPeriod != null ? quietPeriod.toMillis() : 0;
         this.pollIntervalMs = pollInterval != null ? Durations.toPositiveMillis(pollInterval, "pollInterval") : DEFAULT_POLL_INTERVAL_MS;
         this.onAutoRenewFailure = onAutoRenewFailure;
         this.instanceId = instanceId;
@@ -161,7 +165,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         try {
             return Jdbc.query(dataSource, leaseSql.acquire)
                     .bind(lockedBy)
-                    .bind(leaseDuration.toMillis())
+                    .bind(leaseDurationMs)
                     .bind(lockName)
                     .map(rs -> rs.next() ? Optional.of(new FencingToken(rs.getLong(1))) : Optional.empty());
         } catch (SQLException e) {
@@ -213,7 +217,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             int updated;
             if (quietPeriod != null) {
                 updated = Jdbc.update(dataSource, leaseSql.unlockWithQuietPeriod)
-                        .bind(quietPeriod.toMillis())
+                        .bind(quietPeriodMs)
                         .bind(lockName)
                         .bind(token.value())
                         .execute();
@@ -252,7 +256,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     private void startAutoRenew() {
         long token = currentToken.value();
-        autoRenewWindowMillis = leaseDuration.toMillis();
+        autoRenewWindowMillis = leaseDurationMs;
         logger.debug("starting auto-renew for lease lock '{}', token={}, interval={}", lockName, token, refreshInterval);
         autoRenewThread = new Thread(() -> {
             long intervalMillis = refreshInterval.toMillis();

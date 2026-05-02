@@ -20,9 +20,11 @@ final class FencepostQueue implements Queue {
 
     private static final Logger logger = LoggerFactory.getLogger(FencepostQueue.class);
 
+    private static final String NOTIFY_DASHBOARD_SQL = "NOTIFY " + FencepostDashboard.DASHBOARD_CHANNEL;
+
     private final String queueName;
     private final DataSource dataSource;
-    private final Duration visibilityTimeout;
+    private final long visibilityTimeoutMs;
     private final long pollIntervalMs;
     private final ListenerConnection listener;
     private final String notifyQueueSql;
@@ -34,7 +36,7 @@ final class FencepostQueue implements Queue {
                    Duration visibilityTimeout, long pollIntervalMs) {
         this.queueName = queueName;
         this.dataSource = dataSource;
-        this.visibilityTimeout = visibilityTimeout;
+        this.visibilityTimeoutMs = visibilityTimeout.toMillis();
         this.pollIntervalMs = pollIntervalMs;
         var channelName = "fencepost_q_" + Long.toUnsignedString(HashUtils.fnv1a64("fencepost:" + queueName));
         this.listener = new ListenerConnection(dataSource, channelName);
@@ -79,7 +81,7 @@ final class FencepostQueue implements Queue {
                   .bind(delayMillis)
                   .execute();
                 Jdbc.execute(conn, notifyQueueSql);
-                Jdbc.execute(conn, "NOTIFY " + FencepostDashboard.DASHBOARD_CHANNEL);
+                Jdbc.execute(conn, NOTIFY_DASHBOARD_SQL);
                 conn.commit();
                 logger.debug("enqueued message to queue '{}'", queueName);
             } catch (SQLException e) {
@@ -97,7 +99,7 @@ final class FencepostQueue implements Queue {
 
         try {
             return Jdbc.query(dataSource, dequeueSql)
-              .bind(visibilityTimeout.toMillis())
+              .bind(visibilityTimeoutMs)
               .bind(pickToken)
               .bind(queueName)
               .map(rs -> {

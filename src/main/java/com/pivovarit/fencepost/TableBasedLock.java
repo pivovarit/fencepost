@@ -19,7 +19,6 @@ abstract class TableBasedLock {
     final String lockName;
     final DataSource dataSource;
     final String tableName;
-    final String tokenTableName;
     final LockType lockType;
     final Sql sql;
 
@@ -31,7 +30,6 @@ abstract class TableBasedLock {
         this.lockName = lockName;
         this.dataSource = dataSource;
         this.tableName = tableName;
-        this.tokenTableName = tokenTableName(tableName);
         this.lockType = lockType;
         this.sql = new Sql(tableName);
     }
@@ -39,10 +37,21 @@ abstract class TableBasedLock {
     static final class Sql {
         final String selectLockType;
         final String insertLockRow;
+        final String allocateToken;
+        final String recordToken;
+        final String checkSuperseded;
+        final String checkSupersededByTokenTable;
+        final String unlockSession;
 
         Sql(String tableName) {
+            String tokenTable = tokenTableName(tableName);
             this.selectLockType = String.format("SELECT lock_type FROM %s WHERE lock_name = ?", tableName);
             this.insertLockRow = String.format("INSERT INTO %s (lock_name, lock_type) VALUES (?, ?) ON CONFLICT DO NOTHING", tableName);
+            this.allocateToken = String.format("INSERT INTO %s AS t (lock_name, token, last_locked_by, last_locked_at) VALUES (?, 1, ?, now()) ON CONFLICT (lock_name) DO UPDATE SET token = t.token + 1, last_locked_by = EXCLUDED.last_locked_by, last_locked_at = now() RETURNING token", tokenTable);
+            this.recordToken = String.format("UPDATE %s SET token = ?, locked_by = ?, locked_at = now(), expires_at = NULL WHERE lock_name = ? RETURNING token", tableName);
+            this.checkSuperseded = String.format("SELECT token > ? FROM %s WHERE lock_name = ?", tableName);
+            this.checkSupersededByTokenTable = String.format("SELECT token > ? FROM %s WHERE lock_name = ?", tokenTable);
+            this.unlockSession = String.format("UPDATE %s SET locked_by = NULL, locked_at = NULL WHERE lock_name = ?", tableName);
         }
     }
 
@@ -96,11 +105,6 @@ abstract class TableBasedLock {
     static final int TOKEN_ALLOCATION_NETWORK_TIMEOUT_MS = 2000;
 
     FencingToken allocateSessionToken(String lockedBy, long deadlineNanos) throws SQLException {
-        String sql = String.format(
-            "INSERT INTO %s AS t (lock_name, token, last_locked_by, last_locked_at) VALUES (?, 1, ?, now()) " +
-            "ON CONFLICT (lock_name) DO UPDATE SET token = t.token + 1, last_locked_by = EXCLUDED.last_locked_by, last_locked_at = now() RETURNING token",
-            tokenTableName);
-
         int maxAttempts = 3;
         long backoffMs = 50;
         SQLException lastException = null;
@@ -118,7 +122,7 @@ abstract class TableBasedLock {
                 int savedNetworkTimeout = conn.getNetworkTimeout();
                 conn.setNetworkTimeout(Runnable::run, Math.max(networkTimeoutMs, 1));
                 try {
-                    return Jdbc.query(conn, sql)
+                    return Jdbc.query(conn, this.sql.allocateToken)
                         .bind(lockName)
                         .bind(lockedBy)
                         .map(rs -> {
@@ -153,7 +157,7 @@ abstract class TableBasedLock {
 
     FencingToken recordSessionToken(Connection conn, FencingToken token) throws SQLException {
         String lockedBy = HOSTNAME + "/" + Thread.currentThread().getName();
-        return Jdbc.query(conn, String.format("UPDATE %s SET token = ?, locked_by = ?, locked_at = now(), expires_at = NULL WHERE lock_name = ? RETURNING token", tableName))
+        return Jdbc.query(conn, sql.recordToken)
                 .bind(token.value())
                 .bind(lockedBy)
                 .bind(lockName)
@@ -165,7 +169,7 @@ abstract class TableBasedLock {
 
     boolean checkSuperseded(FencingToken token) {
         try {
-            return Jdbc.query(dataSource, String.format("SELECT token > ? FROM %s WHERE lock_name = ?", tableName))
+            return Jdbc.query(dataSource, sql.checkSuperseded)
                     .bind(token.value())
                     .bind(lockName)
                     .map(rs -> {
@@ -181,7 +185,7 @@ abstract class TableBasedLock {
 
     boolean checkSupersededByTokenTable(FencingToken token) {
         try {
-            return Jdbc.query(dataSource, String.format("SELECT token > ? FROM %s WHERE lock_name = ?", tokenTableName))
+            return Jdbc.query(dataSource, sql.checkSupersededByTokenTable)
                     .bind(token.value())
                     .bind(lockName)
                     .map(rs -> {
