@@ -25,10 +25,7 @@ final class FencepostQueue implements Queue {
     private final String tableName;
     private final Duration visibilityTimeout;
     private final long pollIntervalMs;
-
-    private final Object listenerLock = new Object();
-    private volatile Connection listenerConnection;
-    private volatile boolean closed;
+    private final ListenerConnection listener;
 
     FencepostQueue(String queueName, DataSource dataSource, String tableName,
                    Duration visibilityTimeout, long pollIntervalMs) {
@@ -37,6 +34,8 @@ final class FencepostQueue implements Queue {
         this.tableName = tableName;
         this.visibilityTimeout = visibilityTimeout;
         this.pollIntervalMs = pollIntervalMs;
+        this.listener = new ListenerConnection(dataSource,
+          "fencepost_q_" + Long.toUnsignedString(HashUtils.fnv1a64("fencepost:" + queueName)));
     }
 
     @Override
@@ -145,150 +144,48 @@ final class FencepostQueue implements Queue {
                 }
                 waitMs = Math.min(waitMs, remainingMs);
             }
-            waitForNotification(ensureListening(), waitMs);
-        }
-    }
-
-    @Override
-    public void close() {
-        closed = true;
-        Connection conn = listenerConnection;
-        if (conn != null) {
             try {
-                conn.abort(Runnable::run);
+                waitForNotification(listener.ensure(), waitMs);
             } catch (SQLException e) {
-                logger.trace("failed to abort listener connection", e);
+                throw new FencepostException("Failed to set up listener for queue: " + queueName, e);
             }
         }
-        synchronized (listenerLock) {
-            listenerLock.notifyAll();
-        }
-        closeListenerConnection();
     }
 
     private String channelName() {
         return "fencepost_q_" + Long.toUnsignedString(HashUtils.fnv1a64("fencepost:" + queueName));
     }
 
-
-    private Connection ensureListening() {
-        synchronized (listenerLock) {
-            if (closed) {
-                throw new FencepostException("Queue is closed: " + queueName);
-            }
-            if (listenerConnection != null) {
-                try {
-                    if (!listenerConnection.isClosed()) {
-                        return listenerConnection;
-                    }
-                } catch (SQLException e) {
-                    logger.trace("failed to check listener connection state", e);
-                    try {
-                        listenerConnection.close();
-                    } catch (SQLException ce) {
-                        logger.trace("failed to close listener connection", ce);
-                    }
-                    listenerConnection = null;
-                }
-            }
-        }
-
-        Connection newConn = null;
-        try {
-            newConn = dataSource.getConnection();
-            newConn.setAutoCommit(true);
-            Jdbc.execute(newConn, "LISTEN " + channelName());
-        } catch (SQLException e) {
-            if (newConn != null) {
-                try {
-                    newConn.close();
-                } catch (SQLException ce) {
-                    logger.trace("failed to close listener connection", ce);
-                }
-            }
-            throw new FencepostException("Failed to set up listener for queue: " + queueName, e);
-        }
-
-        synchronized (listenerLock) {
-            if (closed) {
-                try {
-                    newConn.close();
-                } catch (SQLException e) {
-                    logger.trace("failed to close listener connection", e);
-                }
-                throw new FencepostException("Queue is closed: " + queueName);
-            }
-            if (listenerConnection != null) {
-                try {
-                    if (!listenerConnection.isClosed()) {
-                        Connection winner = listenerConnection;
-                        try {
-                            newConn.close();
-                        } catch (SQLException e) {
-                            logger.trace("failed to close listener connection", e);
-                        }
-                        return winner;
-                    }
-                } catch (SQLException e) {
-                    logger.trace("failed to check listener connection state", e);
-                    try {
-                        listenerConnection.close();
-                    } catch (SQLException ce) {
-                        logger.trace("failed to close listener connection", ce);
-                    }
-                    listenerConnection = null;
-                }
-            }
-            listenerConnection = newConn;
-            return newConn;
+    @Override
+    public void close() {
+        listener.stop();
+        synchronized (listener.lock()) {
+            listener.lock().notifyAll();
         }
     }
 
     private void waitForNotification(Connection conn, long waitMs) {
         try {
             var pgConn = conn.unwrap(PGConnection.class);
-            synchronized (listenerLock) {
+            synchronized (listener.lock()) {
                 pgConn.getNotifications((int) waitMs);
             }
         } catch (Exception e) {
-            closeListenerConnection();
-            if (closed) {
+            listener.close();
+            if (listener.isStopped()) {
                 return;
             }
-            synchronized (listenerLock) {
-                if (closed) {
+            synchronized (listener.lock()) {
+                if (listener.isStopped()) {
                     return;
                 }
                 try {
-                    listenerLock.wait(waitMs);
+                    listener.lock().wait(waitMs);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     throw new FencepostException("Interrupted while waiting for messages on queue: " + queueName);
                 }
             }
-        }
-    }
-
-    private void closeListenerConnection() {
-        Connection toClose;
-        synchronized (listenerLock) {
-            toClose = listenerConnection;
-            listenerConnection = null;
-        }
-        if (toClose == null) {
-            return;
-        }
-        try {
-            if (!toClose.isClosed()) {
-                Jdbc.execute(toClose, "UNLISTEN *");
-            }
-        } catch (SQLException e) {
-            logger.trace("failed to UNLISTEN before releasing listener connection", e);
-        }
-        try {
-            toClose.close();
-        } catch (SQLException e) {
-            logger.trace("failed to close listener connection", e);
         }
     }
 
