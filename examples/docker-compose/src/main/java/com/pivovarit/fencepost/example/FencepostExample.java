@@ -60,7 +60,7 @@ public class FencepostExample {
     }
 
     private static void advisoryLockExample(DataSource dataSource) {
-        Factory<AdvisoryLock> factory = Fencepost.advisoryLock(dataSource).build();
+        Factory<AdvisoryLock> factory = Fencepost.Locks.advisory(dataSource).build();
 
         for (int round = 1; round <= ROUNDS; round++) {
             AdvisoryLock lock = factory.forName("counter-lock");
@@ -81,7 +81,7 @@ public class FencepostExample {
     }
 
     private static void sessionLockExample(DataSource dataSource) {
-        Factory<FencedLock> factory = Fencepost.sessionLock(dataSource).build();
+        Factory<FencedLock> factory = Fencepost.Locks.session(dataSource).build();
 
         for (int round = 1; round <= ROUNDS; round++) {
             FencedLock lock = factory.forName("session-counter-lock");
@@ -103,7 +103,7 @@ public class FencepostExample {
     }
 
     private static void leaseLockExample(DataSource dataSource) {
-        Factory<RenewableLock> factory = Fencepost.leaseLock(dataSource, Duration.ofSeconds(10))
+        Factory<RenewableLock> factory = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(10))
           .withAutoRenew(Duration.ofSeconds(3))
           .onAutoRenewFailure(e -> log("[lease]    auto-renew failed: " + e.getMessage()))
           .build();
@@ -128,7 +128,7 @@ public class FencepostExample {
     }
 
     private static void queueExample(DataSource dataSource) {
-        Factory<Queue> factory = Fencepost.queue(dataSource)
+        Factory<Queue> factory = Fencepost.Queues.queue(dataSource)
           .visibilityTimeout(Duration.ofSeconds(30))
           .build();
 

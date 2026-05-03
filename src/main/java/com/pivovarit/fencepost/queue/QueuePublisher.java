@@ -4,7 +4,6 @@ import java.time.Duration;
 import java.util.Map;
 
 public interface QueuePublisher {
-
     void publish(byte[] payload);
 
     void publish(byte[] payload, Duration delay);
