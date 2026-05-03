@@ -78,7 +78,7 @@ class LockStressTest {
         int iterationsPerThread = 50;
         int totalIterations = threads * iterationsPerThread;
 
-        Factory<FencedLock> factory = Fencepost.sessionLock(dataSource).build();
+        Factory<FencedLock> factory = Fencepost.Locks.session(dataSource).build();
         AtomicBoolean inside = new AtomicBoolean(false);
         AtomicInteger overlaps = new AtomicInteger(0);
         List<Long> tokens = new CopyOnWriteArrayList<>();
@@ -141,7 +141,7 @@ class LockStressTest {
         int iterationsPerThread = 50;
         int totalIterations = threads * iterationsPerThread;
 
-        Factory<RenewableLock> factory = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30)).build();
+        Factory<RenewableLock> factory = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(30)).build();
         AtomicBoolean inside = new AtomicBoolean(false);
         AtomicInteger overlaps = new AtomicInteger(0);
         List<Long> tokens = new CopyOnWriteArrayList<>();
@@ -193,7 +193,7 @@ class LockStressTest {
         int threads = 10;
         int iterationsPerThread = 50;
 
-        Factory<AdvisoryLock> factory = Fencepost.advisoryLock(dataSource).build();
+        Factory<AdvisoryLock> factory = Fencepost.Locks.advisory(dataSource).build();
         AtomicBoolean inside = new AtomicBoolean(false);
         AtomicInteger overlaps = new AtomicInteger(0);
         CountDownLatch startLatch = new CountDownLatch(1);
@@ -242,7 +242,7 @@ class LockStressTest {
         int iterationsPerThread = 100;
         int totalCycles = threads * iterationsPerThread;
 
-        Factory<RenewableLock> factory = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30)).build();
+        Factory<RenewableLock> factory = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(30)).build();
         List<Exception> exceptions = new CopyOnWriteArrayList<>();
         AtomicInteger completedCycles = new AtomicInteger(0);
         CountDownLatch startLatch = new CountDownLatch(1);
@@ -292,7 +292,7 @@ class LockStressTest {
     @Test
     @Order(5)
     void lockRecoveryAfterBackendTermination() throws Exception {
-        Factory<FencedLock> factory = Fencepost.sessionLock(dataSource).build();
+        Factory<FencedLock> factory = Fencepost.Locks.session(dataSource).build();
 
         FencedLock holder = factory.forName("stress-terminate");
         FencingToken firstToken = holder.lock();

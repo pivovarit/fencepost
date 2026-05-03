@@ -166,7 +166,7 @@ class QueueIntegrationTest {
 
     @Test
     void closeWithoutAckShouldLetVisibilityTimeoutExpire() {
-        Queue shortTimeout = Fencepost.queue(dataSource).visibilityTimeout(Duration.ofSeconds(1)).build()
+        Queue shortTimeout = Fencepost.Queues.queue(dataSource).visibilityTimeout(Duration.ofSeconds(1)).build()
           .forName("test-queue");
         shortTimeout.enqueue("to-expire".getBytes(UTF_8));
 
@@ -303,7 +303,7 @@ class QueueIntegrationTest {
 
     @Test
     void dequeueTimeoutShouldNotOvershootByPollInterval() {
-        Queue queue = Fencepost.queue(dataSource)
+        Queue queue = Fencepost.Queues.queue(dataSource)
           .visibilityTimeout(Duration.ofMinutes(5))
           .pollInterval(Duration.ofSeconds(5))
           .build()
@@ -358,7 +358,7 @@ class QueueIntegrationTest {
 
     @Test
     void shouldWorkWithBuilderAPI() {
-        Factory<Queue> factory = Fencepost.queue(dataSource)
+        Factory<Queue> factory = Fencepost.Queues.queue(dataSource)
           .visibilityTimeout(Duration.ofMinutes(5))
           .build();
 
@@ -373,22 +373,22 @@ class QueueIntegrationTest {
 
     @Test
     void builderShouldRequireVisibilityTimeout() {
-        assertThatThrownBy(() -> Fencepost.queue(dataSource).build())
+        assertThatThrownBy(() -> Fencepost.Queues.queue(dataSource).build())
           .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
     void builderShouldRejectNullDataSource() {
-        assertThatThrownBy(() -> Fencepost.queue(null))
+        assertThatThrownBy(() -> Fencepost.Queues.queue(null))
           .isInstanceOf(NullPointerException.class);
     }
 
     @Test
     void builderShouldRejectInvalidVisibilityTimeout() {
-        assertThatThrownBy(() -> Fencepost.queue(dataSource).visibilityTimeout(Duration.ZERO))
+        assertThatThrownBy(() -> Fencepost.Queues.queue(dataSource).visibilityTimeout(Duration.ZERO))
           .isInstanceOf(IllegalArgumentException.class);
 
-        assertThatThrownBy(() -> Fencepost.queue(dataSource).visibilityTimeout(Duration.ofSeconds(-1)))
+        assertThatThrownBy(() -> Fencepost.Queues.queue(dataSource).visibilityTimeout(Duration.ofSeconds(-1)))
           .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -523,7 +523,7 @@ class QueueIntegrationTest {
 
     @Test
     void messageShouldBecomeVisibleAfterVisibilityTimeoutExpires() throws Exception {
-        Queue shortTimeout = Fencepost.queue(dataSource)
+        Queue shortTimeout = Fencepost.Queues.queue(dataSource)
           .visibilityTimeout(Duration.ofSeconds(1))
           .build()
           .forName("timeout-redelivery");
@@ -546,7 +546,7 @@ class QueueIntegrationTest {
 
     @Test
     void closeShouldUnblockConsumerWaitingForNotification() throws Exception {
-        Queue queue = Fencepost.queue(dataSource)
+        Queue queue = Fencepost.Queues.queue(dataSource)
           .visibilityTimeout(Duration.ofMinutes(5))
           .pollInterval(Duration.ofSeconds(30))
           .build()
@@ -583,7 +583,7 @@ class QueueIntegrationTest {
     @Test
     void closeShouldNotHangWhenListenerAcquireIsBlocked() throws Exception {
         GatingDataSource gated = new GatingDataSource(dataSource);
-        Queue queue = Fencepost.queue(gated)
+        Queue queue = Fencepost.Queues.queue(gated)
           .visibilityTimeout(Duration.ofMinutes(5))
           .build()
           .forName("close-while-blocked");
@@ -625,7 +625,7 @@ class QueueIntegrationTest {
     @Test
     void ackShouldThrowAckUnknownExceptionWhenDbCallFails() {
         FailingDataSource fds = new FailingDataSource(dataSource);
-        Queue queue = Fencepost.queue(fds)
+        Queue queue = Fencepost.Queues.queue(fds)
           .visibilityTimeout(Duration.ofMinutes(5))
           .build()
           .forName("test-queue");
@@ -646,7 +646,7 @@ class QueueIntegrationTest {
     @Test
     void nackShouldThrowAckUnknownExceptionWhenDbCallFails() {
         FailingDataSource fds = new FailingDataSource(dataSource);
-        Queue queue = Fencepost.queue(fds)
+        Queue queue = Fencepost.Queues.queue(fds)
           .visibilityTimeout(Duration.ofMinutes(5))
           .build()
           .forName("test-queue");
@@ -669,7 +669,7 @@ class QueueIntegrationTest {
     }
 
     private Queue newQueue(String name) {
-        return Fencepost.queue(dataSource)
+        return Fencepost.Queues.queue(dataSource)
           .visibilityTimeout(Duration.ofMinutes(5))
           .build()
           .forName(name);

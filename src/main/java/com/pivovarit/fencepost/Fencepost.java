@@ -20,23 +20,70 @@ import java.util.regex.Pattern;
 
 public final class Fencepost {
 
-    private static final Pattern TABLE_NAME_PATTERN = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)*");
+    static final Pattern TABLE_NAME_PATTERN = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)*");
 
     private Fencepost() {
     }
 
-    public static AdvisoryBuilder advisoryLock(DataSource dataSource) {
-        return new AdvisoryBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
+    static void validateTableName(String tableName) {
+        Objects.requireNonNull(tableName);
+        if (!TABLE_NAME_PATTERN.matcher(tableName).matches()) {
+            throw new IllegalArgumentException("Invalid table name: " + tableName);
+        }
     }
 
-    public static SessionBuilder sessionLock(DataSource dataSource) {
-        return new SessionBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
+    public static final class Locks {
+
+        private Locks() {
+        }
+
+        public static AdvisoryBuilder advisory(DataSource dataSource) {
+            return new AdvisoryBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
+        }
+
+        public static SessionBuilder session(DataSource dataSource) {
+            return new SessionBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
+        }
+
+        public static LeaseBuilder lease(DataSource dataSource, Duration lockAtMost) {
+            Objects.requireNonNull(dataSource, "dataSource must not be null");
+            Durations.requireAtLeastOneMillisecond(lockAtMost, "lockAtMost");
+            return new LeaseBuilder(dataSource, lockAtMost);
+        }
+
+        public static LeaderElectionBuilder leaderElection(DataSource dataSource, String electionName, Duration leaseDuration) {
+            Objects.requireNonNull(dataSource, "dataSource must not be null");
+            Objects.requireNonNull(electionName, "electionName must not be null");
+            if (electionName.isEmpty()) {
+                throw new IllegalArgumentException("electionName must not be empty");
+            }
+            Objects.requireNonNull(leaseDuration, "leaseDuration must not be null");
+            Durations.requireAtLeastOneMillisecond(leaseDuration, "leaseDuration");
+            return new LeaderElectionBuilder(dataSource, electionName, leaseDuration);
+        }
     }
 
-    public static LeaseBuilder leaseLock(DataSource dataSource, Duration lockAtMost) {
-        Objects.requireNonNull(dataSource, "dataSource must not be null");
-        Durations.requireAtLeastOneMillisecond(lockAtMost, "lockAtMost");
-        return new LeaseBuilder(dataSource, lockAtMost);
+    public static final class Queues {
+
+        private Queues() {
+        }
+
+        public static PublisherBuilder publisher(DataSource dataSource) {
+            return new PublisherBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
+        }
+
+        public static ConsumerBuilder consumer(DataSource dataSource, String queueName) {
+            Objects.requireNonNull(dataSource, "dataSource must not be null");
+            Objects.requireNonNull(queueName, "queueName must not be null");
+            if (queueName.isEmpty()) {
+                throw new IllegalArgumentException("queueName must not be empty");
+            }
+            return new ConsumerBuilder(dataSource, queueName);
+        }
+
+        public static QueueBuilder queue(DataSource dataSource) {
+            return new QueueBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
+        }
     }
 
     public static final class AdvisoryBuilder {
@@ -60,10 +107,7 @@ public final class Fencepost {
         }
 
         public SessionBuilder tableName(String tableName) {
-            Objects.requireNonNull(tableName);
-            if (!TABLE_NAME_PATTERN.matcher(tableName).matches()) {
-                throw new IllegalArgumentException("Invalid table name: " + tableName);
-            }
+            validateTableName(tableName);
             this.tableName = tableName;
             return this;
         }
@@ -90,10 +134,7 @@ public final class Fencepost {
         }
 
         public LeaseBuilder tableName(String tableName) {
-            Objects.requireNonNull(tableName);
-            if (!TABLE_NAME_PATTERN.matcher(tableName).matches()) {
-                throw new IllegalArgumentException("Invalid table name: " + tableName);
-            }
+            validateTableName(tableName);
             this.tableName = tableName;
             return this;
         }
@@ -145,34 +186,6 @@ public final class Fencepost {
         }
     }
 
-    public static LeaderElectionBuilder leaderElection(DataSource dataSource, String electionName, Duration leaseDuration) {
-        Objects.requireNonNull(dataSource, "dataSource must not be null");
-        Objects.requireNonNull(electionName, "electionName must not be null");
-        if (electionName.isEmpty()) {
-            throw new IllegalArgumentException("electionName must not be empty");
-        }
-        Objects.requireNonNull(leaseDuration, "leaseDuration must not be null");
-        Durations.requireAtLeastOneMillisecond(leaseDuration, "leaseDuration");
-        return new LeaderElectionBuilder(dataSource, electionName, leaseDuration);
-    }
-
-    public static PublisherBuilder publisher(DataSource dataSource) {
-        return new PublisherBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
-    }
-
-    public static ConsumerBuilder consumer(DataSource dataSource, String queueName) {
-        Objects.requireNonNull(dataSource, "dataSource must not be null");
-        Objects.requireNonNull(queueName, "queueName must not be null");
-        if (queueName.isEmpty()) {
-            throw new IllegalArgumentException("queueName must not be empty");
-        }
-        return new ConsumerBuilder(dataSource, queueName);
-    }
-
-    public static QueueBuilder queue(DataSource dataSource) {
-        return new QueueBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
-    }
-
     public static final class LeaderElectionBuilder {
         private final DataSource dataSource;
         private final String electionName;
@@ -193,10 +206,7 @@ public final class Fencepost {
         }
 
         public LeaderElectionBuilder tableName(String tableName) {
-            Objects.requireNonNull(tableName);
-            if (!TABLE_NAME_PATTERN.matcher(tableName).matches()) {
-                throw new IllegalArgumentException("Invalid table name: " + tableName);
-            }
+            validateTableName(tableName);
             this.tableName = tableName;
             return this;
         }
@@ -287,10 +297,7 @@ public final class Fencepost {
         }
 
         public PublisherBuilder tableName(String tableName) {
-            Objects.requireNonNull(tableName);
-            if (!TABLE_NAME_PATTERN.matcher(tableName).matches()) {
-                throw new IllegalArgumentException("Invalid table name: " + tableName);
-            }
+            validateTableName(tableName);
             this.tableName = tableName;
             return this;
         }
@@ -317,10 +324,7 @@ public final class Fencepost {
         }
 
         public ConsumerBuilder tableName(String tableName) {
-            Objects.requireNonNull(tableName);
-            if (!TABLE_NAME_PATTERN.matcher(tableName).matches()) {
-                throw new IllegalArgumentException("Invalid table name: " + tableName);
-            }
+            validateTableName(tableName);
             this.tableName = tableName;
             return this;
         }
@@ -360,7 +364,7 @@ public final class Fencepost {
                 throw new IllegalStateException("visibilityTimeout must be set");
             }
             Objects.requireNonNull(handler, "handler must be set");
-            QueueBuilder qb = queue(dataSource).tableName(tableName).visibilityTimeout(visibilityTimeout);
+            QueueBuilder qb = Queues.queue(dataSource).tableName(tableName).visibilityTimeout(visibilityTimeout);
             if (pollInterval != null) {
                 qb.pollInterval(pollInterval);
             }
@@ -380,10 +384,7 @@ public final class Fencepost {
         }
 
         public QueueBuilder tableName(String tableName) {
-            Objects.requireNonNull(tableName);
-            if (!TABLE_NAME_PATTERN.matcher(tableName).matches()) {
-                throw new IllegalArgumentException("Invalid table name: " + tableName);
-            }
+            validateTableName(tableName);
             this.tableName = tableName;
             return this;
         }

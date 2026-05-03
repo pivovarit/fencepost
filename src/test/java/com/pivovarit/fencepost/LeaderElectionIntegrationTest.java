@@ -54,7 +54,7 @@ class LeaderElectionIntegrationTest {
     @Test
     void singleInstanceBecomesLeader() {
         AtomicReference<FencingToken> seenToken = new AtomicReference<>();
-        try (LeaderElection election = Fencepost.leaderElection(dataSource, "single", Duration.ofSeconds(5))
+        try (LeaderElection election = Fencepost.Locks.leaderElection(dataSource, "single", Duration.ofSeconds(5))
             .withRenewInterval(Duration.ofMillis(500))
             .withPollInterval(Duration.ofMillis(100))
             .onElected((Consumer<FencingToken>) seenToken::set)
@@ -71,13 +71,13 @@ class LeaderElectionIntegrationTest {
     @Test
     void exactlyOneOfTwoBecomesLeader() {
         AtomicInteger electedCount = new AtomicInteger();
-        try (LeaderElection a = Fencepost.leaderElection(dataSource, "two-way", Duration.ofSeconds(5))
+        try (LeaderElection a = Fencepost.Locks.leaderElection(dataSource, "two-way", Duration.ofSeconds(5))
                 .withRenewInterval(Duration.ofMillis(500))
                 .withPollInterval(Duration.ofMillis(100))
                 .withInstanceId("a")
                 .onElected(electedCount::incrementAndGet)
                 .build();
-             LeaderElection b = Fencepost.leaderElection(dataSource, "two-way", Duration.ofSeconds(5))
+             LeaderElection b = Fencepost.Locks.leaderElection(dataSource, "two-way", Duration.ofSeconds(5))
                 .withRenewInterval(Duration.ofMillis(500))
                 .withPollInterval(Duration.ofMillis(100))
                 .withInstanceId("b")
@@ -97,14 +97,14 @@ class LeaderElectionIntegrationTest {
         List<String> events = new CopyOnWriteArrayList<>();
         CountDownLatch aIsLeader = new CountDownLatch(1);
 
-        LeaderElection a = Fencepost.leaderElection(dataSource, "graceful-failover", Duration.ofSeconds(3))
+        LeaderElection a = Fencepost.Locks.leaderElection(dataSource, "graceful-failover", Duration.ofSeconds(3))
             .withRenewInterval(Duration.ofMillis(500))
             .withPollInterval(Duration.ofMillis(100))
             .withInstanceId("a")
             .onElected(() -> { events.add("a-elected"); aIsLeader.countDown(); })
             .onRevoked(() -> events.add("a-revoked"))
             .build();
-        LeaderElection b = Fencepost.leaderElection(dataSource, "graceful-failover", Duration.ofSeconds(3))
+        LeaderElection b = Fencepost.Locks.leaderElection(dataSource, "graceful-failover", Duration.ofSeconds(3))
             .withRenewInterval(Duration.ofMillis(500))
             .withPollInterval(Duration.ofMillis(100))
             .withInstanceId("b")
@@ -133,13 +133,13 @@ class LeaderElectionIntegrationTest {
         CountDownLatch aIsLeader = new CountDownLatch(1);
         CountDownLatch bIsLeader = new CountDownLatch(1);
 
-        try (LeaderElection a = Fencepost.leaderElection(dataSource, "ttl-failover", Duration.ofSeconds(10))
+        try (LeaderElection a = Fencepost.Locks.leaderElection(dataSource, "ttl-failover", Duration.ofSeconds(10))
                 .withRenewInterval(Duration.ofSeconds(2))
                 .withPollInterval(Duration.ofMillis(200))
                 .withInstanceId("a")
                 .onElected(aIsLeader::countDown)
                 .build();
-             LeaderElection b = Fencepost.leaderElection(dataSource, "ttl-failover", Duration.ofSeconds(10))
+             LeaderElection b = Fencepost.Locks.leaderElection(dataSource, "ttl-failover", Duration.ofSeconds(10))
                 .withRenewInterval(Duration.ofSeconds(2))
                 .withPollInterval(Duration.ofMillis(200))
                 .withInstanceId("b")
@@ -164,7 +164,7 @@ class LeaderElectionIntegrationTest {
         CountDownLatch revoked = new CountDownLatch(1);
         AtomicInteger electedCount = new AtomicInteger();
 
-        try (LeaderElection election = Fencepost.leaderElection(dataSource, "renew-fail", Duration.ofSeconds(3))
+        try (LeaderElection election = Fencepost.Locks.leaderElection(dataSource, "renew-fail", Duration.ofSeconds(3))
             .withRenewInterval(Duration.ofMillis(300))
             .withPollInterval(Duration.ofMillis(200))
             .onElected(() -> { electedCount.incrementAndGet(); firstElect.countDown(); })
@@ -193,7 +193,7 @@ class LeaderElectionIntegrationTest {
         CountDownLatch elected = new CountDownLatch(1);
         CountDownLatch revoked = new CountDownLatch(1);
 
-        try (LeaderElection election = Fencepost.leaderElection(dataSource, "expired-renew", Duration.ofSeconds(3))
+        try (LeaderElection election = Fencepost.Locks.leaderElection(dataSource, "expired-renew", Duration.ofSeconds(3))
           .withRenewInterval(Duration.ofMillis(300))
           .withPollInterval(Duration.ofMillis(200))
           .onElected(elected::countDown)
@@ -216,7 +216,7 @@ class LeaderElectionIntegrationTest {
         CountDownLatch electedFired = new CountDownLatch(1);
         AtomicReference<Throwable> seenError = new AtomicReference<>();
 
-        try (LeaderElection election = Fencepost.leaderElection(dataSource, "boom", Duration.ofSeconds(5))
+        try (LeaderElection election = Fencepost.Locks.leaderElection(dataSource, "boom", Duration.ofSeconds(5))
             .withRenewInterval(Duration.ofMillis(500))
             .withPollInterval(Duration.ofMillis(100))
             .onElected(() -> { electedFired.countDown(); throw new RuntimeException("boom"); })
@@ -235,13 +235,13 @@ class LeaderElectionIntegrationTest {
         AtomicInteger revokedCount = new AtomicInteger();
         CountDownLatch aIsLeader = new CountDownLatch(1);
 
-        LeaderElection a = Fencepost.leaderElection(dataSource, "standby-close", Duration.ofSeconds(5))
+        LeaderElection a = Fencepost.Locks.leaderElection(dataSource, "standby-close", Duration.ofSeconds(5))
             .withRenewInterval(Duration.ofMillis(500))
             .withPollInterval(Duration.ofMillis(100))
             .withInstanceId("a")
             .onElected(aIsLeader::countDown)
             .build();
-        LeaderElection b = Fencepost.leaderElection(dataSource, "standby-close", Duration.ofSeconds(5))
+        LeaderElection b = Fencepost.Locks.leaderElection(dataSource, "standby-close", Duration.ofSeconds(5))
             .withRenewInterval(Duration.ofMillis(500))
             .withPollInterval(Duration.ofMillis(100))
             .withInstanceId("b")
@@ -269,7 +269,7 @@ class LeaderElectionIntegrationTest {
         AtomicInteger revokedCount = new AtomicInteger();
         CountDownLatch elected = new CountDownLatch(1);
 
-        LeaderElection election = Fencepost.leaderElection(dataSource, "idempotent", Duration.ofSeconds(3))
+        LeaderElection election = Fencepost.Locks.leaderElection(dataSource, "idempotent", Duration.ofSeconds(3))
             .withRenewInterval(Duration.ofMillis(500))
             .withPollInterval(Duration.ofMillis(100))
             .onElected(() -> { electedCount.incrementAndGet(); elected.countDown(); })
@@ -291,7 +291,7 @@ class LeaderElectionIntegrationTest {
     void fencingTokenIsStrictlyIncreasingAcrossReacquisitions() throws Exception {
         List<Long> tokens = new CopyOnWriteArrayList<>();
 
-        try (LeaderElection a = Fencepost.leaderElection(dataSource, "tokens", Duration.ofSeconds(3))
+        try (LeaderElection a = Fencepost.Locks.leaderElection(dataSource, "tokens", Duration.ofSeconds(3))
             .withRenewInterval(Duration.ofMillis(500))
             .withPollInterval(Duration.ofMillis(100))
             .withInstanceId("a")
@@ -301,7 +301,7 @@ class LeaderElectionIntegrationTest {
             await().atMost(5, TimeUnit.SECONDS).until(a::isLeader);
             a.close();
 
-            try (LeaderElection b = Fencepost.leaderElection(dataSource, "tokens", Duration.ofSeconds(3))
+            try (LeaderElection b = Fencepost.Locks.leaderElection(dataSource, "tokens", Duration.ofSeconds(3))
                 .withRenewInterval(Duration.ofMillis(500))
                 .withPollInterval(Duration.ofMillis(100))
                 .withInstanceId("b")
@@ -319,7 +319,7 @@ class LeaderElectionIntegrationTest {
 
     @Test
     void startAfterCloseThrowsIllegalStateException() {
-        LeaderElection election = Fencepost.leaderElection(dataSource, "closed", Duration.ofSeconds(5))
+        LeaderElection election = Fencepost.Locks.leaderElection(dataSource, "closed", Duration.ofSeconds(5))
             .withRenewInterval(Duration.ofMillis(500))
             .withPollInterval(Duration.ofMillis(100))
             .build();
@@ -336,14 +336,14 @@ class LeaderElectionIntegrationTest {
         CountDownLatch aElected = new CountDownLatch(1);
         AtomicReference<Long> bElectedAt = new AtomicReference<>();
 
-        LeaderElection a = Fencepost.leaderElection(dataSource, "quiet", Duration.ofSeconds(5))
+        LeaderElection a = Fencepost.Locks.leaderElection(dataSource, "quiet", Duration.ofSeconds(5))
             .withRenewInterval(Duration.ofMillis(500))
             .withPollInterval(Duration.ofMillis(100))
             .withQuietPeriod(Duration.ofSeconds(2))
             .withInstanceId("a")
             .onElected(aElected::countDown)
             .build();
-        LeaderElection b = Fencepost.leaderElection(dataSource, "quiet", Duration.ofSeconds(5))
+        LeaderElection b = Fencepost.Locks.leaderElection(dataSource, "quiet", Duration.ofSeconds(5))
             .withRenewInterval(Duration.ofMillis(500))
             .withPollInterval(Duration.ofMillis(100))
             .withQuietPeriod(Duration.ofSeconds(2))

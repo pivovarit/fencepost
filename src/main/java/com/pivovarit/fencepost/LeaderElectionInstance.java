@@ -162,7 +162,7 @@ final class LeaderElectionInstance implements LeaderElection {
     }
 
     private RenewableLock newLock() {
-        Fencepost.LeaseBuilder builder = Fencepost.leaseLock(dataSource, leaseDuration)
+        Fencepost.LeaseBuilder builder = Fencepost.Locks.lease(dataSource, leaseDuration)
             .tableName(tableName)
             .withAutoRenew(renewInterval)
             .onAutoRenewFailure(this::onRenewFailure)

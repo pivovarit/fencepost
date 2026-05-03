@@ -329,7 +329,7 @@ class FencepostDashboardTest {
             String firstLine = reader.readLine();
             assertThat(firstLine).isEqualTo("data: connected");
 
-            Queue queue = Fencepost.queue(dataSource)
+            Queue queue = Fencepost.Queues.queue(dataSource)
               .visibilityTimeout(Duration.ofSeconds(30))
               .build()
               .forName("dash-enqueue-test");
@@ -363,7 +363,7 @@ class FencepostDashboardTest {
             String firstLine = reader.readLine();
             assertThat(firstLine).isEqualTo("data: connected");
 
-            Queue queue = Fencepost.queue(dataSource)
+            Queue queue = Fencepost.Queues.queue(dataSource)
               .visibilityTimeout(Duration.ofSeconds(30))
               .build()
               .forName("dash-delayed-test");
@@ -430,7 +430,7 @@ class FencepostDashboardTest {
             );
         }
 
-        var factory = Fencepost.queue(dataSource)
+        var factory = Fencepost.Queues.queue(dataSource)
           .visibilityTimeout(Duration.ofSeconds(30))
           .build();
 

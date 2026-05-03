@@ -68,7 +68,7 @@ class QueueConsumerIntegrationTest {
         List<String> received = new CopyOnWriteArrayList<>();
         CountDownLatch latch = new CountDownLatch(3);
 
-        QueueConsumer consumer = Fencepost.consumer(dataSource, "test-queue")
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
             .visibilityTimeout(Duration.ofMinutes(5))
             .handler(msg -> {
                 received.add(new String(msg.payload(), UTF_8));
@@ -89,7 +89,7 @@ class QueueConsumerIntegrationTest {
     void shouldAutoAckOnSuccess() throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
 
-        QueueConsumer consumer = Fencepost.consumer(dataSource, "test-queue")
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
             .visibilityTimeout(Duration.ofMinutes(5))
             .handler(msg -> latch.countDown())
             .build();
@@ -110,7 +110,7 @@ class QueueConsumerIntegrationTest {
         CountDownLatch secondAttempt = new CountDownLatch(2);
         List<Integer> attempts = new CopyOnWriteArrayList<>();
 
-        QueueConsumer consumer = Fencepost.consumer(dataSource, "test-queue")
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
             .visibilityTimeout(Duration.ofMinutes(5))
             .handler(msg -> {
                 attempts.add(msg.attempts());
@@ -138,7 +138,7 @@ class QueueConsumerIntegrationTest {
         AtomicReference<Throwable> capturedError = new AtomicReference<>();
         AtomicReference<Message> capturedMsg = new AtomicReference<>();
 
-        QueueConsumer consumer = Fencepost.consumer(dataSource, "test-queue")
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
             .visibilityTimeout(Duration.ofMinutes(5))
             .handler(msg -> { throw new IllegalArgumentException("bad payload"); })
             .onError((msg, t) -> {
@@ -167,7 +167,7 @@ class QueueConsumerIntegrationTest {
         CountDownLatch latch = new CountDownLatch(messageCount);
         List<String> threadNames = new CopyOnWriteArrayList<>();
 
-        QueueConsumer consumer = Fencepost.consumer(dataSource, "test-queue")
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
             .visibilityTimeout(Duration.ofMinutes(5))
             .handler(msg -> {
                 threadNames.add(Thread.currentThread().getName());
@@ -192,7 +192,7 @@ class QueueConsumerIntegrationTest {
     void shouldBlockUntilMessageArrives() throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
 
-        QueueConsumer consumer = Fencepost.consumer(dataSource, "test-queue")
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
             .visibilityTimeout(Duration.ofMinutes(5))
             .handler(msg -> latch.countDown())
             .build();
@@ -212,7 +212,7 @@ class QueueConsumerIntegrationTest {
         CountDownLatch started = new CountDownLatch(1);
         List<String> received = new CopyOnWriteArrayList<>();
 
-        QueueConsumer consumer = Fencepost.consumer(dataSource, "test-queue")
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
             .visibilityTimeout(Duration.ofMinutes(5))
             .handler(msg -> {
                 received.add(new String(msg.payload(), UTF_8));
@@ -234,7 +234,7 @@ class QueueConsumerIntegrationTest {
 
     @Test
     void startAfterCloseShouldThrow() {
-        QueueConsumer consumer = Fencepost.consumer(dataSource, "test-queue")
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
             .visibilityTimeout(Duration.ofMinutes(5))
             .handler(msg -> {})
             .build();
@@ -249,7 +249,7 @@ class QueueConsumerIntegrationTest {
     void startShouldBeIdempotent() throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
 
-        QueueConsumer consumer = Fencepost.consumer(dataSource, "test-queue")
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
             .visibilityTimeout(Duration.ofMinutes(5))
             .handler(msg -> latch.countDown())
             .build();
@@ -265,7 +265,7 @@ class QueueConsumerIntegrationTest {
 
     @Test
     void closeShouldBeIdempotent() {
-        QueueConsumer consumer = Fencepost.consumer(dataSource, "test-queue")
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
             .visibilityTimeout(Duration.ofMinutes(5))
             .handler(msg -> {})
             .build();
@@ -277,7 +277,7 @@ class QueueConsumerIntegrationTest {
 
     @Test
     void builderShouldRequireHandler() {
-        assertThatThrownBy(() -> Fencepost.consumer(dataSource, "test-queue")
+        assertThatThrownBy(() -> Fencepost.Queues.consumer(dataSource, "test-queue")
             .visibilityTimeout(Duration.ofMinutes(5))
             .build())
             .isInstanceOf(NullPointerException.class);
@@ -285,7 +285,7 @@ class QueueConsumerIntegrationTest {
 
     @Test
     void builderShouldRequireVisibilityTimeout() {
-        assertThatThrownBy(() -> Fencepost.consumer(dataSource, "test-queue")
+        assertThatThrownBy(() -> Fencepost.Queues.consumer(dataSource, "test-queue")
             .handler(msg -> {})
             .build())
             .isInstanceOf(IllegalStateException.class);
@@ -293,25 +293,25 @@ class QueueConsumerIntegrationTest {
 
     @Test
     void builderShouldRejectZeroConcurrency() {
-        assertThatThrownBy(() -> Fencepost.consumer(dataSource, "test-queue")
+        assertThatThrownBy(() -> Fencepost.Queues.consumer(dataSource, "test-queue")
             .concurrency(0))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void builderShouldRejectNullQueueName() {
-        assertThatThrownBy(() -> Fencepost.consumer(dataSource, null))
+        assertThatThrownBy(() -> Fencepost.Queues.consumer(dataSource, null))
             .isInstanceOf(NullPointerException.class);
     }
 
     @Test
     void builderShouldRejectEmptyQueueName() {
-        assertThatThrownBy(() -> Fencepost.consumer(dataSource, ""))
+        assertThatThrownBy(() -> Fencepost.Queues.consumer(dataSource, ""))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
     private void enqueue(String... messages) {
-        var queue = Fencepost.queue(dataSource)
+        var queue = Fencepost.Queues.queue(dataSource)
             .visibilityTimeout(Duration.ofMinutes(5))
             .build()
             .forName("test-queue");

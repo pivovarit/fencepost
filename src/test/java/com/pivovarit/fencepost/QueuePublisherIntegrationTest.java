@@ -62,7 +62,7 @@ class QueuePublisherIntegrationTest {
 
     @Test
     void shouldPublishAndDequeueViaQueue() {
-        QueuePublisher publisher = Fencepost.publisher(dataSource).build().forName("test-queue");
+        QueuePublisher publisher = Fencepost.Queues.publisher(dataSource).build().forName("test-queue");
         Queue queue = newQueue("test-queue");
 
         publisher.publish("hello".getBytes(UTF_8));
@@ -75,7 +75,7 @@ class QueuePublisherIntegrationTest {
 
     @Test
     void shouldPublishWithDelay() throws Exception {
-        QueuePublisher publisher = Fencepost.publisher(dataSource).build().forName("test-queue");
+        QueuePublisher publisher = Fencepost.Queues.publisher(dataSource).build().forName("test-queue");
         Queue queue = newQueue("test-queue");
 
         publisher.publish("delayed".getBytes(UTF_8), Duration.ofSeconds(2));
@@ -92,7 +92,7 @@ class QueuePublisherIntegrationTest {
 
     @Test
     void shouldPublishWithTypeAndHeaders() {
-        QueuePublisher publisher = Fencepost.publisher(dataSource).build().forName("test-queue");
+        QueuePublisher publisher = Fencepost.Queues.publisher(dataSource).build().forName("test-queue");
         Queue queue = newQueue("test-queue");
 
         publisher.publish("typed".getBytes(UTF_8), "email.send.v1", Map.of("priority", "high"));
@@ -105,7 +105,7 @@ class QueuePublisherIntegrationTest {
 
     @Test
     void shouldPublishWithTypeHeadersAndDelay() throws Exception {
-        QueuePublisher publisher = Fencepost.publisher(dataSource).build().forName("test-queue");
+        QueuePublisher publisher = Fencepost.Queues.publisher(dataSource).build().forName("test-queue");
         Queue queue = newQueue("test-queue");
 
         publisher.publish("full".getBytes(UTF_8), "event.v1", Map.of("key", "val"), Duration.ofSeconds(1));
@@ -123,7 +123,7 @@ class QueuePublisherIntegrationTest {
 
     @Test
     void shouldIsolateNamedQueues() {
-        Factory<QueuePublisher> factory = Fencepost.publisher(dataSource).build();
+        Factory<QueuePublisher> factory = Fencepost.Queues.publisher(dataSource).build();
         QueuePublisher emails = factory.forName("emails");
         QueuePublisher webhooks = factory.forName("webhooks");
 
@@ -136,7 +136,7 @@ class QueuePublisherIntegrationTest {
 
     @Test
     void shouldRejectControlCharactersInType() {
-        QueuePublisher publisher = Fencepost.publisher(dataSource).build().forName("test-queue");
+        QueuePublisher publisher = Fencepost.Queues.publisher(dataSource).build().forName("test-queue");
 
         assertThatThrownBy(() -> publisher.publish("x".getBytes(UTF_8), "bad\ntype", null))
             .isInstanceOf(IllegalArgumentException.class)
@@ -145,12 +145,12 @@ class QueuePublisherIntegrationTest {
 
     @Test
     void builderShouldRejectNullDataSource() {
-        assertThatThrownBy(() -> Fencepost.publisher(null))
+        assertThatThrownBy(() -> Fencepost.Queues.publisher(null))
             .isInstanceOf(NullPointerException.class);
     }
 
     private Queue newQueue(String name) {
-        return Fencepost.queue(dataSource)
+        return Fencepost.Queues.queue(dataSource)
             .visibilityTimeout(Duration.ofMinutes(5))
             .build()
             .forName(name);
