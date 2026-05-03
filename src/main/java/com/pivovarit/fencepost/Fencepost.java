@@ -9,6 +9,7 @@ import com.pivovarit.fencepost.lock.RenewableLock;
 import com.pivovarit.fencepost.queue.Message;
 import com.pivovarit.fencepost.queue.Queue;
 import com.pivovarit.fencepost.queue.QueueConsumer;
+import com.pivovarit.fencepost.queue.QueuePublisher;
 
 import javax.sql.DataSource;
 import java.time.Duration;
@@ -155,6 +156,10 @@ public final class Fencepost {
         return new LeaderElectionBuilder(dataSource, electionName, leaseDuration);
     }
 
+    public static PublisherBuilder publisher(DataSource dataSource) {
+        return new PublisherBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
+    }
+
     public static ConsumerBuilder consumer(DataSource dataSource, String queueName) {
         Objects.requireNonNull(dataSource, "dataSource must not be null");
         Objects.requireNonNull(queueName, "queueName must not be null");
@@ -270,6 +275,29 @@ public final class Fencepost {
                 onElected,
                 onRevoked,
                 onCallbackError);
+        }
+    }
+
+    public static final class PublisherBuilder {
+        private final DataSource dataSource;
+        private String tableName = "fencepost_queue";
+
+        private PublisherBuilder(DataSource dataSource) {
+            this.dataSource = dataSource;
+        }
+
+        public PublisherBuilder tableName(String tableName) {
+            Objects.requireNonNull(tableName);
+            if (!TABLE_NAME_PATTERN.matcher(tableName).matches()) {
+                throw new IllegalArgumentException("Invalid table name: " + tableName);
+            }
+            this.tableName = tableName;
+            return this;
+        }
+
+        public Factory<QueuePublisher> build() {
+            String t = this.tableName;
+            return new Factory<>(queueName -> new FencepostQueuePublisher(queueName, dataSource, t));
         }
     }
 
