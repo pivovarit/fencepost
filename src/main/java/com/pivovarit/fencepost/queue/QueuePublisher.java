@@ -4,14 +4,15 @@ import java.time.Duration;
 import java.util.Map;
 
 public interface QueuePublisher {
+
     void publish(byte[] payload, String type, Map<String, String> headers, Duration delay);
 
-    default void publish(byte[] payload) {
-        this.publish(payload, Duration.ZERO);
+    default void publish(byte[] payload, String type) {
+        this.publish(payload, type, Map.of());
     }
 
-    default void publish(byte[] payload, Duration delay) {
-        this.publish(payload, null, Map.of());
+    default void publish(byte[] payload, String type, Duration delay) {
+        this.publish(payload, type, Map.of(), delay);
     }
 
     default void publish(byte[] payload, String type, Map<String, String> headers) {

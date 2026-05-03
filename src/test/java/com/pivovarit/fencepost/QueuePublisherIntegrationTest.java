@@ -65,11 +65,12 @@ class QueuePublisherIntegrationTest {
         QueuePublisher publisher = Fencepost.Queues.publisher(dataSource).build().forName("test-queue");
         Queue queue = newQueue("test-queue");
 
-        publisher.publish("hello".getBytes(UTF_8));
+        publisher.publish("hello".getBytes(UTF_8), "test.v1");
 
         Optional<Message> msg = queue.tryDequeue();
         assertThat(msg).isPresent();
         assertThat(msg.get().payload()).isEqualTo("hello".getBytes(UTF_8));
+        assertThat(msg.get().type()).hasValue("test.v1");
         msg.get().ack();
     }
 
@@ -78,7 +79,7 @@ class QueuePublisherIntegrationTest {
         QueuePublisher publisher = Fencepost.Queues.publisher(dataSource).build().forName("test-queue");
         Queue queue = newQueue("test-queue");
 
-        publisher.publish("delayed".getBytes(UTF_8), Duration.ofSeconds(2));
+        publisher.publish("delayed".getBytes(UTF_8), "test.v1", Duration.ofSeconds(2));
 
         assertThat(queue.tryDequeue()).isEmpty();
 
@@ -127,8 +128,8 @@ class QueuePublisherIntegrationTest {
         QueuePublisher emails = factory.forName("emails");
         QueuePublisher webhooks = factory.forName("webhooks");
 
-        emails.publish("email-1".getBytes(UTF_8));
-        webhooks.publish("webhook-1".getBytes(UTF_8));
+        emails.publish("email-1".getBytes(UTF_8), "email.v1");
+        webhooks.publish("webhook-1".getBytes(UTF_8), "webhook.v1");
 
         assertThat(newQueue("emails").tryDequeue().get().payload()).isEqualTo("email-1".getBytes(UTF_8));
         assertThat(newQueue("webhooks").tryDequeue().get().payload()).isEqualTo("webhook-1".getBytes(UTF_8));
@@ -138,7 +139,7 @@ class QueuePublisherIntegrationTest {
     void shouldRejectControlCharactersInType() {
         QueuePublisher publisher = Fencepost.Queues.publisher(dataSource).build().forName("test-queue");
 
-        assertThatThrownBy(() -> publisher.publish("x".getBytes(UTF_8), "bad\ntype", null))
+        assertThatThrownBy(() -> publisher.publish("x".getBytes(UTF_8), "bad\ntype", Map.of()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("control character");
     }

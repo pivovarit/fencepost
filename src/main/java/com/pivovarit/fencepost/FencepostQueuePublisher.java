@@ -9,6 +9,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
 
 final class FencepostQueuePublisher implements QueuePublisher {
 
@@ -31,22 +32,8 @@ final class FencepostQueuePublisher implements QueuePublisher {
     }
 
     @Override
-    public void publish(byte[] payload) {
-        publish(payload, null, null, Duration.ZERO);
-    }
-
-    @Override
-    public void publish(byte[] payload, Duration delay) {
-        publish(payload, null, null, delay);
-    }
-
-    @Override
-    public void publish(byte[] payload, String type, Map<String, String> headers) {
-        publish(payload, type, headers, Duration.ZERO);
-    }
-
-    @Override
     public void publish(byte[] payload, String type, Map<String, String> headers, Duration delay) {
+        Objects.requireNonNull(type, "type must not be null");
         HeadersCodec.requirePrintable(type, "Message type");
         long delayMillis = Durations.toNonNegativeMillis(delay, "delay");
         try (Connection conn = dataSource.getConnection()) {
