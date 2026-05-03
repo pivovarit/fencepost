@@ -54,7 +54,7 @@ class DurationValidationTest {
 
     @Test
     void leaseLockBuilderShouldRejectDurationsBelowOneMillisecond() {
-        Fencepost.LeaseBuilder builder = Fencepost.Locks.lease(FAILING_DATA_SOURCE, Duration.ofSeconds(1));
+        Fencepost.Locks.LeaseBuilder builder = Fencepost.Locks.lease(FAILING_DATA_SOURCE, Duration.ofSeconds(1));
 
         assertThatThrownBy(() -> builder.withAutoRenew(SUB_MILLISECOND))
           .isInstanceOf(IllegalArgumentException.class);
@@ -69,7 +69,7 @@ class DurationValidationTest {
         assertThatThrownBy(() -> Fencepost.Locks.leaderElection(FAILING_DATA_SOURCE, "leader", SUB_MILLISECOND))
           .isInstanceOf(IllegalArgumentException.class);
 
-        Fencepost.LeaderElectionBuilder builder = Fencepost.Locks.leaderElection(FAILING_DATA_SOURCE, "leader", Duration.ofSeconds(1));
+        Fencepost.Locks.LeaderElectionBuilder builder = Fencepost.Locks.leaderElection(FAILING_DATA_SOURCE, "leader", Duration.ofSeconds(1));
         assertThatThrownBy(() -> builder.withRenewInterval(SUB_MILLISECOND))
           .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> builder.withQuietPeriod(SUB_MILLISECOND))

@@ -61,6 +61,208 @@ public final class Fencepost {
             Durations.requireAtLeastOneMillisecond(leaseDuration, "leaseDuration");
             return new LeaderElectionBuilder(dataSource, electionName, leaseDuration);
         }
+
+        public static final class AdvisoryBuilder {
+            private final DataSource dataSource;
+
+            private AdvisoryBuilder(DataSource dataSource) {
+                this.dataSource = dataSource;
+            }
+
+            public Factory<AdvisoryLock> build() {
+                return new Factory<>(lockName -> new AdvisoryLockInstance(lockName, dataSource));
+            }
+        }
+
+        public static final class SessionBuilder {
+            private final DataSource dataSource;
+            private String tableName = "fencepost_locks";
+
+            private SessionBuilder(DataSource dataSource) {
+                this.dataSource = dataSource;
+            }
+
+            public SessionBuilder tableName(String tableName) {
+                validateTableName(tableName);
+                this.tableName = tableName;
+                return this;
+            }
+
+            public Factory<FencedLock> build() {
+                String t = this.tableName;
+                return new Factory<>(lockName -> new SessionLockInstance(lockName, dataSource, t));
+            }
+        }
+
+        public static final class LeaseBuilder {
+            private final DataSource dataSource;
+            private final Duration leaseDuration;
+            private String tableName = "fencepost_locks";
+            private Duration refreshInterval;
+            private Duration quietPeriod;
+            private Duration pollInterval;
+            private Consumer<FencepostException> onAutoRenewFailure;
+            private String instanceId;
+
+            private LeaseBuilder(DataSource dataSource, Duration leaseDuration) {
+                this.dataSource = dataSource;
+                this.leaseDuration = leaseDuration;
+            }
+
+            public LeaseBuilder tableName(String tableName) {
+                validateTableName(tableName);
+                this.tableName = tableName;
+                return this;
+            }
+
+            public LeaseBuilder withAutoRenew(Duration refreshInterval) {
+                Durations.requireAtLeastOneMillisecond(refreshInterval, "Refresh interval");
+                if (refreshInterval.compareTo(leaseDuration) >= 0) {
+                    throw new IllegalArgumentException("Refresh interval must be less than lease duration");
+                }
+                this.refreshInterval = refreshInterval;
+                return this;
+            }
+
+            public LeaseBuilder withQuietPeriod(Duration quietPeriod) {
+                Durations.requireAtLeastOneMillisecond(quietPeriod, "quietPeriod");
+                this.quietPeriod = quietPeriod;
+                return this;
+            }
+
+            public LeaseBuilder withPollInterval(Duration pollInterval) {
+                Durations.requireAtLeastOneMillisecond(pollInterval, "Poll interval");
+                this.pollInterval = pollInterval;
+                return this;
+            }
+
+            public LeaseBuilder onAutoRenewFailure(Consumer<FencepostException> handler) {
+                this.onAutoRenewFailure = Objects.requireNonNull(handler);
+                return this;
+            }
+
+            public LeaseBuilder withInstanceId(String instanceId) {
+                Objects.requireNonNull(instanceId, "instanceId must not be null");
+                if (instanceId.isEmpty()) {
+                    throw new IllegalArgumentException("instanceId must not be empty");
+                }
+                this.instanceId = instanceId;
+                return this;
+            }
+
+            public Factory<RenewableLock> build() {
+                return new Factory<>(lockName -> new LeaseLockInstance(lockName, dataSource,
+                  this.tableName,
+                  this.leaseDuration,
+                  this.refreshInterval,
+                  this.quietPeriod,
+                  this.pollInterval,
+                  this.onAutoRenewFailure,
+                  this.instanceId));
+            }
+        }
+
+        public static final class LeaderElectionBuilder {
+            private final DataSource dataSource;
+            private final String electionName;
+            private final Duration leaseDuration;
+            private String tableName = "fencepost_locks";
+            private Duration renewInterval;
+            private Duration pollInterval;
+            private Duration quietPeriod;
+            private String instanceId;
+            private Consumer<FencingToken> onElected = token -> {};
+            private Runnable onRevoked = () -> {};
+            private Consumer<Throwable> onCallbackError = t -> {};
+
+            private LeaderElectionBuilder(DataSource dataSource, String electionName, Duration leaseDuration) {
+                this.dataSource = dataSource;
+                this.electionName = electionName;
+                this.leaseDuration = leaseDuration;
+            }
+
+            public LeaderElectionBuilder tableName(String tableName) {
+                validateTableName(tableName);
+                this.tableName = tableName;
+                return this;
+            }
+
+            public LeaderElectionBuilder withRenewInterval(Duration renewInterval) {
+                Durations.requireAtLeastOneMillisecond(renewInterval, "renewInterval");
+                if (renewInterval.compareTo(leaseDuration) >= 0) {
+                    throw new IllegalArgumentException("renewInterval must be less than leaseDuration");
+                }
+                this.renewInterval = renewInterval;
+                return this;
+            }
+
+            public LeaderElectionBuilder withPollInterval(Duration pollInterval) {
+                Durations.requireAtLeastOneMillisecond(pollInterval, "pollInterval");
+                this.pollInterval = pollInterval;
+                return this;
+            }
+
+            public LeaderElectionBuilder withQuietPeriod(Duration quietPeriod) {
+                Durations.requireAtLeastOneMillisecond(quietPeriod, "quietPeriod");
+                this.quietPeriod = quietPeriod;
+                return this;
+            }
+
+            public LeaderElectionBuilder withInstanceId(String instanceId) {
+                Objects.requireNonNull(instanceId, "instanceId must not be null");
+                if (instanceId.isEmpty()) {
+                    throw new IllegalArgumentException("instanceId must not be empty");
+                }
+                this.instanceId = instanceId;
+                return this;
+            }
+
+            public LeaderElectionBuilder onElected(Runnable callback) {
+                Objects.requireNonNull(callback, "callback must not be null");
+                this.onElected = token -> callback.run();
+                return this;
+            }
+
+            public LeaderElectionBuilder onElected(Consumer<FencingToken> callback) {
+                this.onElected = Objects.requireNonNull(callback, "callback must not be null");
+                return this;
+            }
+
+            public LeaderElectionBuilder onRevoked(Runnable callback) {
+                this.onRevoked = Objects.requireNonNull(callback, "callback must not be null");
+                return this;
+            }
+
+            public LeaderElectionBuilder onCallbackError(Consumer<Throwable> handler) {
+                this.onCallbackError = Objects.requireNonNull(handler, "handler must not be null");
+                return this;
+            }
+
+            public LeaderElection build() {
+                Duration effectiveRenew = renewInterval != null ? renewInterval : leaseDuration.dividedBy(3);
+                Duration effectivePoll = pollInterval != null ? pollInterval : leaseDuration.dividedBy(2);
+                if (effectiveRenew.isZero()) {
+                    throw new IllegalArgumentException("Default renewInterval (leaseDuration/3) is zero — leaseDuration is too small");
+                }
+                if (effectivePoll.isZero()) {
+                    throw new IllegalArgumentException("Default pollInterval (leaseDuration/2) is zero — leaseDuration is too small");
+                }
+                Durations.requireAtLeastOneMillisecond(effectiveRenew, "renewInterval");
+                Durations.requireAtLeastOneMillisecond(effectivePoll, "pollInterval");
+                return new LeaderElectionInstance(
+                    electionName,
+                    dataSource,
+                    tableName,
+                    leaseDuration,
+                    effectiveRenew,
+                    effectivePoll,
+                    quietPeriod,
+                    instanceId,
+                    onElected,
+                    onRevoked,
+                    onCallbackError);
+            }
+        }
     }
 
     public static final class Queues {
@@ -84,330 +286,128 @@ public final class Fencepost {
         public static QueueBuilder queue(DataSource dataSource) {
             return new QueueBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
         }
-    }
 
-    public static final class AdvisoryBuilder {
-        private final DataSource dataSource;
+        public static final class PublisherBuilder {
+            private final DataSource dataSource;
+            private String tableName = "fencepost_queue";
 
-        private AdvisoryBuilder(DataSource dataSource) {
-            this.dataSource = dataSource;
-        }
-
-        public Factory<AdvisoryLock> build() {
-            return new Factory<>(lockName -> new AdvisoryLockInstance(lockName, dataSource));
-        }
-    }
-
-    public static final class SessionBuilder {
-        private final DataSource dataSource;
-        private String tableName = "fencepost_locks";
-
-        private SessionBuilder(DataSource dataSource) {
-            this.dataSource = dataSource;
-        }
-
-        public SessionBuilder tableName(String tableName) {
-            validateTableName(tableName);
-            this.tableName = tableName;
-            return this;
-        }
-
-        public Factory<FencedLock> build() {
-            String t = this.tableName;
-            return new Factory<>(lockName -> new SessionLockInstance(lockName, dataSource, t));
-        }
-    }
-
-    public static final class LeaseBuilder {
-        private final DataSource dataSource;
-        private final Duration leaseDuration;
-        private String tableName = "fencepost_locks";
-        private Duration refreshInterval;
-        private Duration quietPeriod;
-        private Duration pollInterval;
-        private Consumer<FencepostException> onAutoRenewFailure;
-        private String instanceId;
-
-        private LeaseBuilder(DataSource dataSource, Duration leaseDuration) {
-            this.dataSource = dataSource;
-            this.leaseDuration = leaseDuration;
-        }
-
-        public LeaseBuilder tableName(String tableName) {
-            validateTableName(tableName);
-            this.tableName = tableName;
-            return this;
-        }
-
-        public LeaseBuilder withAutoRenew(Duration refreshInterval) {
-            Durations.requireAtLeastOneMillisecond(refreshInterval, "Refresh interval");
-            if (refreshInterval.compareTo(leaseDuration) >= 0) {
-                throw new IllegalArgumentException("Refresh interval must be less than lease duration");
+            private PublisherBuilder(DataSource dataSource) {
+                this.dataSource = dataSource;
             }
-            this.refreshInterval = refreshInterval;
-            return this;
-        }
 
-        public LeaseBuilder withQuietPeriod(Duration quietPeriod) {
-            Durations.requireAtLeastOneMillisecond(quietPeriod, "quietPeriod");
-            this.quietPeriod = quietPeriod;
-            return this;
-        }
-
-        public LeaseBuilder withPollInterval(Duration pollInterval) {
-            Durations.requireAtLeastOneMillisecond(pollInterval, "Poll interval");
-            this.pollInterval = pollInterval;
-            return this;
-        }
-
-        public LeaseBuilder onAutoRenewFailure(Consumer<FencepostException> handler) {
-            this.onAutoRenewFailure = Objects.requireNonNull(handler);
-            return this;
-        }
-
-        public LeaseBuilder withInstanceId(String instanceId) {
-            Objects.requireNonNull(instanceId, "instanceId must not be null");
-            if (instanceId.isEmpty()) {
-                throw new IllegalArgumentException("instanceId must not be empty");
+            public PublisherBuilder tableName(String tableName) {
+                validateTableName(tableName);
+                this.tableName = tableName;
+                return this;
             }
-            this.instanceId = instanceId;
-            return this;
-        }
 
-        public Factory<RenewableLock> build() {
-            return new Factory<>(lockName -> new LeaseLockInstance(lockName, dataSource,
-              this.tableName,
-              this.leaseDuration,
-              this.refreshInterval,
-              this.quietPeriod,
-              this.pollInterval,
-              this.onAutoRenewFailure,
-              this.instanceId));
-        }
-    }
-
-    public static final class LeaderElectionBuilder {
-        private final DataSource dataSource;
-        private final String electionName;
-        private final Duration leaseDuration;
-        private String tableName = "fencepost_locks";
-        private Duration renewInterval;
-        private Duration pollInterval;
-        private Duration quietPeriod;
-        private String instanceId;
-        private Consumer<FencingToken> onElected = token -> {};
-        private Runnable onRevoked = () -> {};
-        private Consumer<Throwable> onCallbackError = t -> {};
-
-        private LeaderElectionBuilder(DataSource dataSource, String electionName, Duration leaseDuration) {
-            this.dataSource = dataSource;
-            this.electionName = electionName;
-            this.leaseDuration = leaseDuration;
-        }
-
-        public LeaderElectionBuilder tableName(String tableName) {
-            validateTableName(tableName);
-            this.tableName = tableName;
-            return this;
-        }
-
-        public LeaderElectionBuilder withRenewInterval(Duration renewInterval) {
-            Durations.requireAtLeastOneMillisecond(renewInterval, "renewInterval");
-            if (renewInterval.compareTo(leaseDuration) >= 0) {
-                throw new IllegalArgumentException("renewInterval must be less than leaseDuration");
+            public Factory<QueuePublisher> build() {
+                String t = this.tableName;
+                return new Factory<>(queueName -> new FencepostQueuePublisher(queueName, dataSource, t));
             }
-            this.renewInterval = renewInterval;
-            return this;
         }
 
-        public LeaderElectionBuilder withPollInterval(Duration pollInterval) {
-            Durations.requireAtLeastOneMillisecond(pollInterval, "pollInterval");
-            this.pollInterval = pollInterval;
-            return this;
-        }
+        public static final class ConsumerBuilder {
+            private final DataSource dataSource;
+            private final String queueName;
+            private String tableName = "fencepost_queue";
+            private Duration visibilityTimeout;
+            private Duration pollInterval;
+            private ThrowingConsumer<Message> handler;
+            private int concurrency = 1;
+            private BiConsumer<Message, Throwable> onError = (msg, t) -> {};
 
-        public LeaderElectionBuilder withQuietPeriod(Duration quietPeriod) {
-            Durations.requireAtLeastOneMillisecond(quietPeriod, "quietPeriod");
-            this.quietPeriod = quietPeriod;
-            return this;
-        }
-
-        public LeaderElectionBuilder withInstanceId(String instanceId) {
-            Objects.requireNonNull(instanceId, "instanceId must not be null");
-            if (instanceId.isEmpty()) {
-                throw new IllegalArgumentException("instanceId must not be empty");
+            private ConsumerBuilder(DataSource dataSource, String queueName) {
+                this.dataSource = dataSource;
+                this.queueName = queueName;
             }
-            this.instanceId = instanceId;
-            return this;
-        }
 
-        public LeaderElectionBuilder onElected(Runnable callback) {
-            Objects.requireNonNull(callback, "callback must not be null");
-            this.onElected = token -> callback.run();
-            return this;
-        }
-
-        public LeaderElectionBuilder onElected(Consumer<FencingToken> callback) {
-            this.onElected = Objects.requireNonNull(callback, "callback must not be null");
-            return this;
-        }
-
-        public LeaderElectionBuilder onRevoked(Runnable callback) {
-            this.onRevoked = Objects.requireNonNull(callback, "callback must not be null");
-            return this;
-        }
-
-        public LeaderElectionBuilder onCallbackError(Consumer<Throwable> handler) {
-            this.onCallbackError = Objects.requireNonNull(handler, "handler must not be null");
-            return this;
-        }
-
-        public LeaderElection build() {
-            Duration effectiveRenew = renewInterval != null ? renewInterval : leaseDuration.dividedBy(3);
-            Duration effectivePoll = pollInterval != null ? pollInterval : leaseDuration.dividedBy(2);
-            if (effectiveRenew.isZero()) {
-                throw new IllegalArgumentException("Default renewInterval (leaseDuration/3) is zero — leaseDuration is too small");
+            public ConsumerBuilder tableName(String tableName) {
+                validateTableName(tableName);
+                this.tableName = tableName;
+                return this;
             }
-            if (effectivePoll.isZero()) {
-                throw new IllegalArgumentException("Default pollInterval (leaseDuration/2) is zero — leaseDuration is too small");
+
+            public ConsumerBuilder visibilityTimeout(Duration visibilityTimeout) {
+                Durations.requireAtLeastOneMillisecond(visibilityTimeout, "visibilityTimeout");
+                this.visibilityTimeout = visibilityTimeout;
+                return this;
             }
-            Durations.requireAtLeastOneMillisecond(effectiveRenew, "renewInterval");
-            Durations.requireAtLeastOneMillisecond(effectivePoll, "pollInterval");
-            return new LeaderElectionInstance(
-                electionName,
-                dataSource,
-                tableName,
-                leaseDuration,
-                effectiveRenew,
-                effectivePoll,
-                quietPeriod,
-                instanceId,
-                onElected,
-                onRevoked,
-                onCallbackError);
-        }
-    }
 
-    public static final class PublisherBuilder {
-        private final DataSource dataSource;
-        private String tableName = "fencepost_queue";
-
-        private PublisherBuilder(DataSource dataSource) {
-            this.dataSource = dataSource;
-        }
-
-        public PublisherBuilder tableName(String tableName) {
-            validateTableName(tableName);
-            this.tableName = tableName;
-            return this;
-        }
-
-        public Factory<QueuePublisher> build() {
-            String t = this.tableName;
-            return new Factory<>(queueName -> new FencepostQueuePublisher(queueName, dataSource, t));
-        }
-    }
-
-    public static final class ConsumerBuilder {
-        private final DataSource dataSource;
-        private final String queueName;
-        private String tableName = "fencepost_queue";
-        private Duration visibilityTimeout;
-        private Duration pollInterval;
-        private ThrowingConsumer<Message> handler;
-        private int concurrency = 1;
-        private BiConsumer<Message, Throwable> onError = (msg, t) -> {};
-
-        private ConsumerBuilder(DataSource dataSource, String queueName) {
-            this.dataSource = dataSource;
-            this.queueName = queueName;
-        }
-
-        public ConsumerBuilder tableName(String tableName) {
-            validateTableName(tableName);
-            this.tableName = tableName;
-            return this;
-        }
-
-        public ConsumerBuilder visibilityTimeout(Duration visibilityTimeout) {
-            Durations.requireAtLeastOneMillisecond(visibilityTimeout, "visibilityTimeout");
-            this.visibilityTimeout = visibilityTimeout;
-            return this;
-        }
-
-        public ConsumerBuilder pollInterval(Duration pollInterval) {
-            Durations.requireAtLeastOneMillisecond(pollInterval, "pollInterval");
-            this.pollInterval = pollInterval;
-            return this;
-        }
-
-        public ConsumerBuilder handler(ThrowingConsumer<Message> handler) {
-            this.handler = Objects.requireNonNull(handler, "handler must not be null");
-            return this;
-        }
-
-        public ConsumerBuilder concurrency(int concurrency) {
-            if (concurrency < 1) {
-                throw new IllegalArgumentException("concurrency must be at least 1");
+            public ConsumerBuilder pollInterval(Duration pollInterval) {
+                Durations.requireAtLeastOneMillisecond(pollInterval, "pollInterval");
+                this.pollInterval = pollInterval;
+                return this;
             }
-            this.concurrency = concurrency;
-            return this;
-        }
 
-        public ConsumerBuilder onError(BiConsumer<Message, Throwable> handler) {
-            this.onError = Objects.requireNonNull(handler, "handler must not be null");
-            return this;
-        }
-
-        public QueueConsumer build() {
-            if (visibilityTimeout == null) {
-                throw new IllegalStateException("visibilityTimeout must be set");
+            public ConsumerBuilder handler(ThrowingConsumer<Message> handler) {
+                this.handler = Objects.requireNonNull(handler, "handler must not be null");
+                return this;
             }
-            Objects.requireNonNull(handler, "handler must be set");
-            QueueBuilder qb = Queues.queue(dataSource).tableName(tableName).visibilityTimeout(visibilityTimeout);
-            if (pollInterval != null) {
-                qb.pollInterval(pollInterval);
+
+            public ConsumerBuilder concurrency(int concurrency) {
+                if (concurrency < 1) {
+                    throw new IllegalArgumentException("concurrency must be at least 1");
+                }
+                this.concurrency = concurrency;
+                return this;
             }
-            Queue queue = qb.build().forName(queueName);
-            return new QueueConsumerInstance(queueName, queue, handler, concurrency, onError);
-        }
-    }
 
-    public static final class QueueBuilder {
-        private final DataSource dataSource;
-        private String tableName = "fencepost_queue";
-        private Duration visibilityTimeout;
-        private long pollIntervalMs = 100;
-
-        private QueueBuilder(DataSource dataSource) {
-            this.dataSource = dataSource;
-        }
-
-        public QueueBuilder tableName(String tableName) {
-            validateTableName(tableName);
-            this.tableName = tableName;
-            return this;
-        }
-
-        public QueueBuilder visibilityTimeout(Duration visibilityTimeout) {
-            Durations.requireAtLeastOneMillisecond(visibilityTimeout, "visibilityTimeout");
-            this.visibilityTimeout = visibilityTimeout;
-            return this;
-        }
-
-        public QueueBuilder pollInterval(Duration pollInterval) {
-            this.pollIntervalMs = Durations.toPositiveMillis(pollInterval, "pollInterval");
-            return this;
-        }
-
-        public Factory<Queue> build() {
-            if (visibilityTimeout == null) {
-                throw new IllegalStateException("visibilityTimeout must be set");
+            public ConsumerBuilder onError(BiConsumer<Message, Throwable> handler) {
+                this.onError = Objects.requireNonNull(handler, "handler must not be null");
+                return this;
             }
-            String t = this.tableName;
-            Duration vt = this.visibilityTimeout;
-            long pi = this.pollIntervalMs;
-            return new Factory<>(queueName -> new FencepostQueue(queueName, dataSource, t, vt, pi));
+
+            public QueueConsumer build() {
+                if (visibilityTimeout == null) {
+                    throw new IllegalStateException("visibilityTimeout must be set");
+                }
+                Objects.requireNonNull(handler, "handler must be set");
+                QueueBuilder qb = Queues.queue(dataSource).tableName(tableName).visibilityTimeout(visibilityTimeout);
+                if (pollInterval != null) {
+                    qb.pollInterval(pollInterval);
+                }
+                Queue queue = qb.build().forName(queueName);
+                return new QueueConsumerInstance(queueName, queue, handler, concurrency, onError);
+            }
+        }
+
+        public static final class QueueBuilder {
+            private final DataSource dataSource;
+            private String tableName = "fencepost_queue";
+            private Duration visibilityTimeout;
+            private long pollIntervalMs = 100;
+
+            private QueueBuilder(DataSource dataSource) {
+                this.dataSource = dataSource;
+            }
+
+            public QueueBuilder tableName(String tableName) {
+                validateTableName(tableName);
+                this.tableName = tableName;
+                return this;
+            }
+
+            public QueueBuilder visibilityTimeout(Duration visibilityTimeout) {
+                Durations.requireAtLeastOneMillisecond(visibilityTimeout, "visibilityTimeout");
+                this.visibilityTimeout = visibilityTimeout;
+                return this;
+            }
+
+            public QueueBuilder pollInterval(Duration pollInterval) {
+                this.pollIntervalMs = Durations.toPositiveMillis(pollInterval, "pollInterval");
+                return this;
+            }
+
+            public Factory<Queue> build() {
+                if (visibilityTimeout == null) {
+                    throw new IllegalStateException("visibilityTimeout must be set");
+                }
+                String t = this.tableName;
+                Duration vt = this.visibilityTimeout;
+                long pi = this.pollIntervalMs;
+                return new Factory<>(queueName -> new FencepostQueue(queueName, dataSource, t, vt, pi));
+            }
         }
     }
 }

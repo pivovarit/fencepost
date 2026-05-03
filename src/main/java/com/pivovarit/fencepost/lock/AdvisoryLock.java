@@ -7,7 +7,7 @@ import java.util.function.Supplier;
 
 /**
  * Instances are not thread-safe. Each instance should be confined to a single thread.
- * For concurrent locking, create separate instances via the {@link Fencepost.AdvisoryBuilder}.
+ * For concurrent locking, create separate instances via the {@link Fencepost.Locks.AdvisoryBuilder}.
  */
 public interface AdvisoryLock extends FencepostLock {
 
