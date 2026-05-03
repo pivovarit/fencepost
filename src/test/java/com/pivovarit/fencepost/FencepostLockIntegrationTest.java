@@ -891,7 +891,7 @@ class FencepostLockIntegrationTest {
     private static DataSource hangingDataSource(DataSource real, CountDownLatch entered, CountDownLatch release) {
         return (DataSource) Proxy.newProxyInstance(
           DataSource.class.getClassLoader(),
-          new Class[]{DataSource.class},
+          new Class<?>[]{DataSource.class},
           (proxy, method, args) -> {
               if ("getConnection".equals(method.getName()) && (args == null || args.length == 0)) {
                   Connection raw = real.getConnection();
@@ -904,7 +904,7 @@ class FencepostLockIntegrationTest {
     private static Connection hangingConnection(Connection real, CountDownLatch entered, CountDownLatch release) {
         return (Connection) Proxy.newProxyInstance(
           Connection.class.getClassLoader(),
-          new Class[]{Connection.class},
+          new Class<?>[]{Connection.class},
           (proxy, method, args) -> {
               if ("prepareStatement".equals(method.getName())
                 && args != null && args.length > 0
@@ -920,7 +920,7 @@ class FencepostLockIntegrationTest {
     private static PreparedStatement hangingStatement(PreparedStatement real, CountDownLatch entered, CountDownLatch release) {
         return (PreparedStatement) Proxy.newProxyInstance(
           PreparedStatement.class.getClassLoader(),
-          new Class[]{PreparedStatement.class},
+          new Class<?>[]{PreparedStatement.class},
           (proxy, method, args) -> {
               if ("executeUpdate".equals(method.getName())) {
                   entered.countDown();
@@ -1290,7 +1290,7 @@ class FencepostLockIntegrationTest {
     private static DataSource sharedConnectionDataSource(Connection underlying) {
         Connection uncloseable = (Connection) Proxy.newProxyInstance(
           Connection.class.getClassLoader(),
-          new Class[]{Connection.class},
+          new Class<?>[]{Connection.class},
           (proxy, method, args) -> {
               if ("close".equals(method.getName())) {
                   return null;
@@ -1299,7 +1299,7 @@ class FencepostLockIntegrationTest {
           });
         return (DataSource) Proxy.newProxyInstance(
           DataSource.class.getClassLoader(),
-          new Class[]{DataSource.class},
+          new Class<?>[]{DataSource.class},
           (proxy, method, args) -> {
               if ("getConnection".equals(method.getName())) {
                   return uncloseable;
@@ -1313,7 +1313,7 @@ class FencepostLockIntegrationTest {
         AtomicInteger failures = new AtomicInteger();
         return (DataSource) Proxy.newProxyInstance(
           DataSource.class.getClassLoader(),
-          new Class[]{DataSource.class},
+          new Class<?>[]{DataSource.class},
           (proxy, method, args) -> {
               if ("getConnection".equals(method.getName()) && (args == null || args.length == 0)) {
                   int n = calls.incrementAndGet();
@@ -1519,7 +1519,7 @@ class FencepostLockIntegrationTest {
         AtomicInteger calls = new AtomicInteger();
         return (DataSource) Proxy.newProxyInstance(
           DataSource.class.getClassLoader(),
-          new Class[]{DataSource.class},
+          new Class<?>[]{DataSource.class},
           (proxy, method, args) -> {
               if ("getConnection".equals(method.getName()) && (args == null || args.length == 0)) {
                   Connection conn = real.getConnection();
@@ -1536,7 +1536,7 @@ class FencepostLockIntegrationTest {
     private static Connection trackingTimeoutConnection(Connection real, List<Integer> closingTimeouts) {
         return (Connection) Proxy.newProxyInstance(
           Connection.class.getClassLoader(),
-          new Class[]{Connection.class},
+          new Class<?>[]{Connection.class},
           (proxy, method, args) -> {
               if ("close".equals(method.getName())) {
                   closingTimeouts.add(real.getNetworkTimeout());

@@ -25,9 +25,10 @@ final class QueueConsumerInstance implements QueueConsumer {
     private final int concurrency;
     private final BiConsumer<Message, Throwable> onError;
 
+    private final ExecutorService executor;
     private final Object lifecycleLock = new Object();
-    private ExecutorService executor;
     private volatile boolean closed;
+    private boolean started;
 
     QueueConsumerInstance(String queueName, Queue queue, ThrowingConsumer<Message> handler,
                           int concurrency, BiConsumer<Message, Throwable> onError) {
@@ -36,6 +37,7 @@ final class QueueConsumerInstance implements QueueConsumer {
         this.handler = handler;
         this.concurrency = concurrency;
         this.onError = onError;
+        this.executor = Executors.newFixedThreadPool(concurrency, new ConsumerThreadFactory(queueName));
     }
 
     @Override
@@ -44,10 +46,10 @@ final class QueueConsumerInstance implements QueueConsumer {
             if (closed) {
                 throw new IllegalStateException("QueueConsumer has been closed: " + queueName);
             }
-            if (executor != null) {
+            if (started) {
                 return;
             }
-            executor = Executors.newFixedThreadPool(concurrency, new ConsumerThreadFactory(queueName));
+            started = true;
             for (int i = 0; i < concurrency; i++) {
                 executor.submit(this::consumeLoop);
             }
@@ -64,15 +66,13 @@ final class QueueConsumerInstance implements QueueConsumer {
             closed = true;
         }
         queue.close();
-        if (executor != null) {
-            executor.shutdownNow();
-            try {
-                if (!executor.awaitTermination(CLOSE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                    logger.warn("consumer threads for queue '{}' did not exit within {} ms", queueName, CLOSE_TIMEOUT_MS);
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+        executor.shutdownNow();
+        try {
+            if (!executor.awaitTermination(CLOSE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                logger.warn("consumer threads for queue '{}' did not exit within {} ms", queueName, CLOSE_TIMEOUT_MS);
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
