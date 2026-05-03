@@ -1,6 +1,7 @@
 package com.pivovarit.fencepost;
 
 import com.pivovarit.fencepost.queue.QueuePublisher;
+import com.pivovarit.fencepost.queue.TransactionalQueuePublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,5 +58,11 @@ final class FencepostQueuePublisher implements QueuePublisher {
         } catch (SQLException e) {
             throw new FencepostException("Failed to publish message to queue: " + queueName, e);
         }
+    }
+
+    @Override
+    public TransactionalQueuePublisher transactional(Connection connection) {
+        Objects.requireNonNull(connection, "connection must not be null");
+        return new FencepostTransactionalQueuePublisher(queueName, connection, enqueueSql, notifyQueueSql);
     }
 }

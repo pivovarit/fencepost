@@ -1,10 +1,9 @@
 package com.pivovarit.fencepost.queue;
 
-import java.sql.Connection;
 import java.time.Duration;
 import java.util.Map;
 
-public interface QueuePublisher {
+public interface TransactionalQueuePublisher {
 
     void publish(byte[] payload, String type, Map<String, String> headers, Duration delay);
 
@@ -19,6 +18,4 @@ public interface QueuePublisher {
     default void publish(byte[] payload, String type, Map<String, String> headers) {
         this.publish(payload, type, headers, Duration.ZERO);
     }
-
-    TransactionalQueuePublisher transactional(Connection connection);
 }
