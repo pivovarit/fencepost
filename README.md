@@ -29,7 +29,7 @@ Fencepost provides three lock strategies, leader election, and a message queue, 
 Lock instances are **not thread-safe**. Each instance should be confined to a single thread. If multiple threads need to compete for the same lock, each thread should create its own instance via `Factory.forName`:
 
 ```java
-Factory<FencedLock> factory = Fencepost.sessionLock(dataSource).build();
+Factory<FencedLock> factory = Fencepost.Locks.session(dataSource).build();
 
 // correct — each thread gets its own instance
 executor.submit(() -> factory.forName("my-lock").runLocked(token -> { /* ... */ }));
@@ -76,7 +76,7 @@ Fencepost expects `my_locks_tokens`.
 ### Advisory Lock
 
 ```java
-Factory<Lock> fencepost = Fencepost.advisoryLock(dataSource).build();
+Factory<Lock> fencepost = Fencepost.Locks.advisory(dataSource).build();
 Lock lock = fencepost.forName("my-resource");
 
 lock.lock();                          // blocking
@@ -90,7 +90,7 @@ lock.runLocked(() -> { /* critical section */ });
 ### Session Lock
 
 ```java
-Factory<FencedLock> fencepost = Fencepost.sessionLock(dataSource).build();
+Factory<FencedLock> fencepost = Fencepost.Locks.session(dataSource).build();
 FencedLock lock = fencepost.forName("my-resource");
 
 // fencing token protects against stale writes
@@ -102,7 +102,7 @@ lock.runLocked(token -> {
 ### Lease Lock
 
 ```java
-Factory<RenewableLock> fencepost = Fencepost.leaseLock(dataSource, Duration.ofSeconds(30))
+Factory<RenewableLock> fencepost = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(30))
     .withAutoRenew(Duration.ofSeconds(10))
     .withQuietPeriod(Duration.ofSeconds(5))
     .onAutoRenewFailure(e -> log.error("auto-renew failed", e))
@@ -123,7 +123,7 @@ try {
 Use leader election when you want one of N instances to *pick up* a piece of work and *keep doing it*, with automatic failover when the leader dies. It's built on top of `leaseLock` — a sticky single-leader primitive, not per-iteration mutual exclusion (use `leaseLock` directly for that).
 
 ```java
-LeaderElection election = Fencepost.leaderElection(dataSource, "import-job", Duration.ofSeconds(30))
+LeaderElection election = Fencepost.Locks.leaderElection(dataSource, "import-job", Duration.ofSeconds(30))
     .withRenewInterval(Duration.ofSeconds(10))
     .withPollInterval(Duration.ofSeconds(5))
     .withInstanceId("worker-pod-7")               // optional, written to locked_by
@@ -180,7 +180,7 @@ The table name defaults to `fencepost_queue` but can be customized via `.tableNa
 ### Queue Example
 
 ```java
-Factory<Queue> fencepost = Fencepost.queue(dataSource)
+Factory<Queue> fencepost = Fencepost.Queues.queue(dataSource)
     .visibilityTimeout(Duration.ofSeconds(30)) // required
     .build();
 
