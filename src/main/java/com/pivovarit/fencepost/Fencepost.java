@@ -1,15 +1,19 @@
 package com.pivovarit.fencepost;
 
 import com.pivovarit.fencepost.election.LeaderElection;
+import com.pivovarit.fencepost.function.ThrowingConsumer;
 import com.pivovarit.fencepost.lock.AdvisoryLock;
 import com.pivovarit.fencepost.lock.FencingToken;
 import com.pivovarit.fencepost.lock.FencedLock;
 import com.pivovarit.fencepost.lock.RenewableLock;
+import com.pivovarit.fencepost.queue.Message;
 import com.pivovarit.fencepost.queue.Queue;
+import com.pivovarit.fencepost.queue.QueueConsumer;
 
 import javax.sql.DataSource;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
@@ -151,6 +155,15 @@ public final class Fencepost {
         return new LeaderElectionBuilder(dataSource, electionName, leaseDuration);
     }
 
+    public static ConsumerBuilder consumer(DataSource dataSource, String queueName) {
+        Objects.requireNonNull(dataSource, "dataSource must not be null");
+        Objects.requireNonNull(queueName, "queueName must not be null");
+        if (queueName.isEmpty()) {
+            throw new IllegalArgumentException("queueName must not be empty");
+        }
+        return new ConsumerBuilder(dataSource, queueName);
+    }
+
     public static QueueBuilder queue(DataSource dataSource) {
         return new QueueBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
     }
@@ -257,6 +270,74 @@ public final class Fencepost {
                 onElected,
                 onRevoked,
                 onCallbackError);
+        }
+    }
+
+    public static final class ConsumerBuilder {
+        private final DataSource dataSource;
+        private final String queueName;
+        private String tableName = "fencepost_queue";
+        private Duration visibilityTimeout;
+        private Duration pollInterval;
+        private ThrowingConsumer<Message> handler;
+        private int concurrency = 1;
+        private BiConsumer<Message, Throwable> onError = (msg, t) -> {};
+
+        private ConsumerBuilder(DataSource dataSource, String queueName) {
+            this.dataSource = dataSource;
+            this.queueName = queueName;
+        }
+
+        public ConsumerBuilder tableName(String tableName) {
+            Objects.requireNonNull(tableName);
+            if (!TABLE_NAME_PATTERN.matcher(tableName).matches()) {
+                throw new IllegalArgumentException("Invalid table name: " + tableName);
+            }
+            this.tableName = tableName;
+            return this;
+        }
+
+        public ConsumerBuilder visibilityTimeout(Duration visibilityTimeout) {
+            Durations.requireAtLeastOneMillisecond(visibilityTimeout, "visibilityTimeout");
+            this.visibilityTimeout = visibilityTimeout;
+            return this;
+        }
+
+        public ConsumerBuilder pollInterval(Duration pollInterval) {
+            Durations.requireAtLeastOneMillisecond(pollInterval, "pollInterval");
+            this.pollInterval = pollInterval;
+            return this;
+        }
+
+        public ConsumerBuilder handler(ThrowingConsumer<Message> handler) {
+            this.handler = Objects.requireNonNull(handler, "handler must not be null");
+            return this;
+        }
+
+        public ConsumerBuilder concurrency(int concurrency) {
+            if (concurrency < 1) {
+                throw new IllegalArgumentException("concurrency must be at least 1");
+            }
+            this.concurrency = concurrency;
+            return this;
+        }
+
+        public ConsumerBuilder onError(BiConsumer<Message, Throwable> handler) {
+            this.onError = Objects.requireNonNull(handler, "handler must not be null");
+            return this;
+        }
+
+        public QueueConsumer build() {
+            if (visibilityTimeout == null) {
+                throw new IllegalStateException("visibilityTimeout must be set");
+            }
+            Objects.requireNonNull(handler, "handler must be set");
+            QueueBuilder qb = queue(dataSource).tableName(tableName).visibilityTimeout(visibilityTimeout);
+            if (pollInterval != null) {
+                qb.pollInterval(pollInterval);
+            }
+            Queue queue = qb.build().forName(queueName);
+            return new QueueConsumerInstance(queueName, queue, handler, concurrency, onError);
         }
     }
 
