@@ -266,7 +266,7 @@ class QueueStressTest {
     }
 
     private Queue newQueue() {
-        return Fencepost.queue(dataSource)
+        return Fencepost.Queues.queue(dataSource)
           .visibilityTimeout(Duration.ofMinutes(5))
           .build()
           .forName("stress-queue");
