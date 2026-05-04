@@ -90,6 +90,11 @@ final class AckableMessage implements Message {
         } catch (SQLException e) {
             state.set(State.ACTIVE);
             throw new AckUnknownException(id, "ack", e);
+        } catch (LostOwnershipException e) {
+            throw e;
+        } catch (Exception e) {
+            state.set(State.ACTIVE);
+            throw e;
         }
     }
 
@@ -110,6 +115,11 @@ final class AckableMessage implements Message {
         } catch (SQLException e) {
             state.set(State.ACTIVE);
             throw new AckUnknownException(id, "nack", e);
+        } catch (LostOwnershipException e) {
+            throw e;
+        } catch (Exception e) {
+            state.set(State.ACTIVE);
+            throw e;
         }
     }
 
