@@ -86,6 +86,12 @@ final class QueueConsumerInstance implements QueueConsumer {
                 }
                 logger.debug("dequeue error on queue '{}': {}", queueName, e.getMessage());
                 reportError(null, e);
+            } catch (RuntimeException e) {
+                if (closed) {
+                    return;
+                }
+                logger.warn("unexpected error in consumer loop for queue '{}'", queueName, e);
+                reportError(null, e);
             }
         }
     }
