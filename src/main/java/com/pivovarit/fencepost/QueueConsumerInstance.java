@@ -99,7 +99,6 @@ final class QueueConsumerInstance implements QueueConsumer {
     private void dispatch(Message msg) {
         try {
             handler.accept(msg);
-            msg.ack();
         } catch (Throwable t) {
             reportError(msg, t);
             try {
@@ -107,6 +106,12 @@ final class QueueConsumerInstance implements QueueConsumer {
             } catch (Exception nackEx) {
                 logger.trace("nack failed for message {} on queue '{}'", msg.id(), queueName, nackEx);
             }
+            return;
+        }
+        try {
+            msg.ack();
+        } catch (Throwable t) {
+            reportError(msg, t);
         }
     }
 
