@@ -136,7 +136,7 @@ public class FencepostExample {
 
         for (int i = 1; i <= ROUNDS; i++) {
             String payload = "task-" + i + "-from-" + NODE;
-            queue.enqueue(payload.getBytes(StandardCharsets.UTF_8));
+            queue.enqueue(payload.getBytes(StandardCharsets.UTF_8), "task", java.util.Map.of());
             log("[queue]    enqueued: " + payload);
         }
 

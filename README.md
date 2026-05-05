@@ -184,10 +184,10 @@ Factory<Queue> fencepost = Fencepost.Queues.queue(dataSource)
 
 Queue queue = fencepost.forName("my-queue");
 
-queue.enqueue("hello".getBytes());
-queue.enqueue("delayed hello".getBytes(), Duration.ofSeconds(10));
+queue.enqueue("hello".getBytes(), "greeting.v1", Map.of());
+queue.enqueue("hello".getBytes(), "greeting.v1", Map.of(), Duration.ofSeconds(10));
 
-// enqueue with type and headers
+// enqueue with headers
 queue.enqueue("{\"to\":\"user@example.com\"}".getBytes(), "send-email.v1", Map.of("priority", "high"));
 queue.enqueue("{\"to\":\"user@example.com\"}".getBytes(), "send-email.v1", Map.of("priority", "high"), Duration.ofSeconds(10));
 
@@ -203,7 +203,7 @@ msg.ack();
 msg.nack();
 ```
 
-Each message can optionally carry a `type` (a plain text label for routing or versioning) and `headers` (a `Map<String, String>` stored as JSONB). Both are nullable - plain `enqueue(payload)` and `enqueue(payload, delay)` still work as before.
+Each message carries a required `type` (a plain text label for routing or versioning) and optional `headers` (a `Map<String, String>` stored as JSONB).
 
 If processing fails without calling `ack()` or `nack()`, the message becomes visible again after the visibility timeout expires, with an incremented `attempts` counter.
 
