@@ -34,6 +34,7 @@ final class LeaderElectionInstance implements LeaderElection {
     private final Object lifecycleLock = new Object();
     private final AtomicBoolean live = new AtomicBoolean(false);
     private final AtomicBoolean revoked = new AtomicBoolean(false);
+    private final AtomicBoolean revokedPending = new AtomicBoolean(false);
 
     private volatile boolean closed;
     private volatile boolean isLeader;
@@ -103,6 +104,11 @@ final class LeaderElectionInstance implements LeaderElection {
                 }
                 if (thread.isAlive()) {
                     logger.warn("election thread for '{}' did not exit within {} ms; detaching (daemon)", electionName, CLOSE_JOIN_TIMEOUT_MS);
+                    isLeader = false;
+                    if (revokedPending.compareAndSet(true, false)) {
+                        invokeCallback(onRevoked);
+                    }
+                    thread.interrupt();
                 }
             }
         }
@@ -128,12 +134,15 @@ final class LeaderElectionInstance implements LeaderElection {
             FencingToken won = token.get();
             logger.debug("won leadership for '{}', token={}", electionName, won.value());
             isLeader = true;
+            revokedPending.set(true);
             try {
                 invokeCallback(() -> onElected.accept(won));
                 waitForRevocation(revoked);
             } finally {
                 isLeader = false;
-                invokeCallback(onRevoked);
+                if (revokedPending.compareAndSet(true, false)) {
+                    invokeCallback(onRevoked);
+                }
                 try {
                     lock.unlock();
                 } catch (Exception e) {
