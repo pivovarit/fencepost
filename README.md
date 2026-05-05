@@ -4,8 +4,6 @@ Distributed concurrency toolkit for Java + PostgreSQL.
 
 Zero dependencies beyond `org.postgresql:postgresql`. Requires Java 11+.
 
-**Under construction.**
-
 ## Features
 
 Fencepost provides three lock strategies, leader election, and a message queue, all backed by PostgreSQL.
@@ -208,6 +206,58 @@ msg.nack();
 Each message can optionally carry a `type` (a plain text label for routing or versioning) and `headers` (a `Map<String, String>` stored as JSONB). Both are nullable - plain `enqueue(payload)` and `enqueue(payload, delay)` still work as before.
 
 If processing fails without calling `ack()` or `nack()`, the message becomes visible again after the visibility timeout expires, with an incremented `attempts` counter.
+
+### Queue Publisher
+
+When you only need to publish messages (no dequeue), use the standalone publisher:
+
+```java
+Factory<QueuePublisher> fencepost = Fencepost.Queues.publisher(dataSource).build();
+QueuePublisher publisher = fencepost.forName("my-queue");
+
+publisher.publish("hello".getBytes(), "greeting.v1");
+publisher.publish("hello".getBytes(), "greeting.v1", Map.of("priority", "high"));
+publisher.publish("hello".getBytes(), "greeting.v1", Duration.ofSeconds(10));
+```
+
+### Transactional Publish
+
+To publish messages within an existing JDBC transaction (e.g., alongside a business write), use the transactional publisher. The message is only visible to consumers after the transaction commits:
+
+```java
+QueuePublisher publisher = fencepost.forName("my-queue");
+
+try (Connection conn = dataSource.getConnection()) {
+    conn.setAutoCommit(false);
+    // your business write
+    try (var stmt = conn.prepareStatement("INSERT INTO orders (id, data) VALUES (?, ?)")) {
+        stmt.setLong(1, orderId);
+        stmt.setString(2, orderJson);
+        stmt.executeUpdate();
+    }
+    // publish in the same transaction
+    publisher.transactional(conn).publish(orderEvent, "order-created.v1");
+    conn.commit();
+}
+```
+
+### Queue Consumer
+
+For continuous message processing, the managed consumer handles dequeue, ack/nack, concurrency, and error handling:
+
+```java
+QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "my-queue")
+    .visibilityTimeout(Duration.ofSeconds(30))
+    .handler(msg -> process(msg))            // auto-ack on success, nack on exception
+    .concurrency(4)                          // 4 concurrent consumer threads
+    .onError((msg, ex) -> log.error("failed to process message", ex))
+    .build();
+
+consumer.start();
+
+// on shutdown:
+consumer.close(); // waits for in-flight handlers to finish
+```
 
 ## Important: PostgreSQL Clock Behavior
 
