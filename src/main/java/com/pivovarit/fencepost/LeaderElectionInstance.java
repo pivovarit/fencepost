@@ -81,7 +81,7 @@ final class LeaderElectionInstance implements LeaderElection {
 
     @Override
     public boolean isLeader() {
-        return isLeader;
+        return isLeader && !closed;
     }
 
     @Override

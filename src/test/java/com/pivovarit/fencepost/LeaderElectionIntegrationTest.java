@@ -318,6 +318,34 @@ class LeaderElectionIntegrationTest {
     }
 
     @Test
+    void isLeaderReturnsFalseAfterCloseWhileElectionThreadStillActive() throws Exception {
+        CountDownLatch electedStarted = new CountDownLatch(1);
+        CountDownLatch proceedAfterElected = new CountDownLatch(1);
+
+        LeaderElection election = Fencepost.Locks.leaderElection(dataSource, "close-isleader", Duration.ofSeconds(5))
+            .withRenewInterval(Duration.ofMillis(500))
+            .withPollInterval(Duration.ofMillis(100))
+            .onElected(() -> {
+                electedStarted.countDown();
+                try { proceedAfterElected.await(10, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            })
+            .build();
+
+        election.start();
+        assertThat(electedStarted.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(election.isLeader()).isTrue();
+
+        Thread closeThread = new Thread(election::close);
+        closeThread.start();
+        Thread.sleep(100);
+
+        assertThat(election.isLeader()).isFalse();
+
+        proceedAfterElected.countDown();
+        closeThread.join(5000);
+    }
+
+    @Test
     void startAfterCloseThrowsIllegalStateException() {
         LeaderElection election = Fencepost.Locks.leaderElection(dataSource, "closed", Duration.ofSeconds(5))
             .withRenewInterval(Duration.ofMillis(500))
