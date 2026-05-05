@@ -54,7 +54,7 @@ final class AckableMessage implements Message {
 
     @Override
     public byte[] payload() {
-        return payload;
+        return payload.clone();
     }
 
     @Override
