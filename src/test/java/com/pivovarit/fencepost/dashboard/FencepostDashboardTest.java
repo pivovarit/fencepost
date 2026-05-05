@@ -334,7 +334,7 @@ class FencepostDashboardTest {
               .build()
               .forName("dash-enqueue-test");
             try {
-                queue.enqueue("hello".getBytes(StandardCharsets.UTF_8));
+                queue.enqueue("hello".getBytes(StandardCharsets.UTF_8), "test", Map.of());
             } finally {
                 queue.close();
             }
@@ -368,7 +368,7 @@ class FencepostDashboardTest {
               .build()
               .forName("dash-delayed-test");
             try {
-                queue.enqueue("later".getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(30));
+                queue.enqueue("later".getBytes(StandardCharsets.UTF_8), "test", Map.of(), Duration.ofSeconds(30));
             } finally {
                 queue.close();
             }

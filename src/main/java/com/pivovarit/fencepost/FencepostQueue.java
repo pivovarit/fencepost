@@ -12,6 +12,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -53,22 +54,13 @@ final class FencepostQueue implements Queue {
     }
 
     @Override
-    public void enqueue(byte[] payload) {
-        enqueue(payload, null, null, Duration.ZERO);
-    }
-
-    @Override
-    public void enqueue(byte[] payload, Duration delay) {
-        enqueue(payload, null, null, delay);
-    }
-
-    @Override
     public void enqueue(byte[] payload, String type, Map<String, String> headers) {
         enqueue(payload, type, headers, Duration.ZERO);
     }
 
     @Override
     public void enqueue(byte[] payload, String type, Map<String, String> headers, Duration delay) {
+        Objects.requireNonNull(type, "type must not be null");
         HeadersCodec.requirePrintable(type, "Message type");
         long delayMillis = Durations.toNonNegativeMillis(delay, "delay");
         try (Connection conn = dataSource.getConnection()) {
