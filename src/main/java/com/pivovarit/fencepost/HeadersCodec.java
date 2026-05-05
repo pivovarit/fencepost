@@ -104,6 +104,12 @@ final class HeadersCodec {
 
     private static void validateHeaders(Map<String, String> headers) {
         for (Map.Entry<String, String> entry : headers.entrySet()) {
+            if (entry.getKey() == null) {
+                throw new IllegalArgumentException("Header key must not be null");
+            }
+            if (entry.getValue() == null) {
+                throw new IllegalArgumentException("Header value must not be null for key: " + entry.getKey());
+            }
             requirePrintable(entry.getKey(), "Header key");
             requirePrintable(entry.getValue(), "Header value");
         }
