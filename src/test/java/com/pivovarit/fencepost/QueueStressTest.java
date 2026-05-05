@@ -16,6 +16,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -79,7 +80,7 @@ class QueueStressTest {
     void noDoubleDeliveryUnderConcurrentConsumers() throws Exception {
         Queue queue = newQueue();
         for (int i = 0; i < 500; i++) {
-            queue.enqueue(("msg-" + i).getBytes(UTF_8));
+            queue.enqueue(("msg-" + i).getBytes(UTF_8), "test", Map.of());
         }
 
         List<Long> consumedIds = new CopyOnWriteArrayList<>();
@@ -114,7 +115,7 @@ class QueueStressTest {
     void noMessageLossWithNackRedelivery() throws Exception {
         Queue queue = newQueue();
         for (int i = 0; i < 100; i++) {
-            queue.enqueue(("msg-" + i).getBytes(UTF_8));
+            queue.enqueue(("msg-" + i).getBytes(UTF_8), "test", Map.of());
         }
 
         AtomicInteger nackCount = new AtomicInteger();
@@ -181,7 +182,7 @@ class QueueStressTest {
                 try {
                     Queue queue = newQueue();
                     for (int i = 0; i < 100; i++) {
-                        queue.enqueue(("p" + producerId + "-msg-" + i).getBytes(UTF_8));
+                        queue.enqueue(("p" + producerId + "-msg-" + i).getBytes(UTF_8), "test", Map.of());
                     }
                 } finally {
                     producersDone.countDown();
@@ -247,7 +248,7 @@ class QueueStressTest {
                 try {
                     Queue queue = newQueue();
                     for (int i = 0; i < 50; i++) {
-                        queue.enqueue(("burst-" + i).getBytes(UTF_8));
+                        queue.enqueue(("burst-" + i).getBytes(UTF_8), "test", Map.of());
                         queue.tryDequeue().ifPresent(Message::ack);
                     }
                 } catch (Exception e) {

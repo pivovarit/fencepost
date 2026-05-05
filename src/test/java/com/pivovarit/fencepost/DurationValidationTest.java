@@ -11,6 +11,7 @@ import java.io.PrintWriter;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.Map;
 import java.util.logging.Logger;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -86,7 +87,7 @@ class DurationValidationTest {
           .isInstanceOf(IllegalArgumentException.class);
 
         Queue queue = Fencepost.Queues.queue(FAILING_DATA_SOURCE).visibilityTimeout(Duration.ofSeconds(1)).build().forName("queue");
-        assertThatThrownBy(() -> queue.enqueue(new byte[0], SUB_MILLISECOND))
+        assertThatThrownBy(() -> queue.enqueue(new byte[0], "test", Map.of(), SUB_MILLISECOND))
           .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> queue.dequeue(SUB_MILLISECOND))
           .isInstanceOf(IllegalArgumentException.class);

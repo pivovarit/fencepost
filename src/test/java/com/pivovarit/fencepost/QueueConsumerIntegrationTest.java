@@ -16,6 +16,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -316,7 +317,7 @@ class QueueConsumerIntegrationTest {
             .build()
             .forName("test-queue");
         for (String msg : messages) {
-            queue.enqueue(msg.getBytes(UTF_8));
+            queue.enqueue(msg.getBytes(UTF_8), "test", Map.of());
         }
     }
 
