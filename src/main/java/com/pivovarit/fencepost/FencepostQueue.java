@@ -85,7 +85,7 @@ final class FencepostQueue implements Queue {
                 Jdbc.execute(conn, NOTIFY_DASHBOARD_SQL);
                 conn.commit();
                 logger.debug("enqueued message to queue '{}'", queueName);
-            } catch (SQLException e) {
+            } catch (Exception e) {
                 conn.rollback();
                 throw e;
             }
