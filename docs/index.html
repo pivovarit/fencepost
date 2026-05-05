@@ -879,6 +879,36 @@
           <span class="feature-badge badge-violet">visibility timeout</span>
         </div>
       </div>
+
+      <div class="feature-card reveal reveal-delay-1">
+        <div class="feature-icon">pub</div>
+        <h3 class="feature-title">publisher</h3>
+        <p class="feature-desc">Standalone publisher for when you only need to enqueue. Supports typed messages with headers and delayed delivery.</p>
+        <div class="feature-badges">
+          <span class="feature-badge badge-green">type + headers</span>
+          <span class="feature-badge badge-violet">delayed delivery</span>
+        </div>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-2">
+        <div class="feature-icon">tx</div>
+        <h3 class="feature-title">transactional publish</h3>
+        <p class="feature-desc">Publish messages within an existing JDBC transaction. Messages become visible only after the transaction commits.</p>
+        <div class="feature-badges">
+          <span class="feature-badge badge-green">atomic with your writes</span>
+        </div>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-3">
+        <div class="feature-icon">sub</div>
+        <h3 class="feature-title">managed consumer</h3>
+        <p class="feature-desc">Continuous message processing with auto-ack/nack, configurable concurrency, and error handling. Just provide a handler.</p>
+        <div class="feature-badges">
+          <span class="feature-badge badge-green">auto ack / nack</span>
+          <span class="feature-badge badge-violet">concurrency</span>
+          <span class="feature-badge badge-yellow">error handling</span>
+        </div>
+      </div>
     </div>
   </div>
 </section>
