@@ -4,6 +4,7 @@ import com.pivovarit.fencepost.queue.AckUnknownException;
 import com.pivovarit.fencepost.queue.LostOwnershipException;
 import com.pivovarit.fencepost.queue.Message;
 import com.pivovarit.fencepost.queue.Queue;
+import com.pivovarit.fencepost.queue.QueueFactory;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -359,7 +360,7 @@ class QueueIntegrationTest {
 
     @Test
     void shouldWorkWithBuilderAPI() {
-        Factory<Queue> factory = Fencepost.Queues.queue(dataSource)
+        QueueFactory<Queue> factory = Fencepost.Queues.queue(dataSource)
           .visibilityTimeout(Duration.ofMinutes(5))
           .build();
 
