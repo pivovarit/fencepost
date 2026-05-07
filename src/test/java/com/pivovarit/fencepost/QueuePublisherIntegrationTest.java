@@ -2,6 +2,7 @@ package com.pivovarit.fencepost;
 
 import com.pivovarit.fencepost.queue.Message;
 import com.pivovarit.fencepost.queue.Queue;
+import com.pivovarit.fencepost.queue.QueueFactory;
 import com.pivovarit.fencepost.queue.QueuePublisher;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -124,7 +125,7 @@ class QueuePublisherIntegrationTest {
 
     @Test
     void shouldIsolateNamedQueues() {
-        Factory<QueuePublisher> factory = Fencepost.Queues.publisher(dataSource).build();
+        QueueFactory<QueuePublisher> factory = Fencepost.Queues.publisher(dataSource).build();
         QueuePublisher emails = factory.forName("emails");
         QueuePublisher webhooks = factory.forName("webhooks");
 

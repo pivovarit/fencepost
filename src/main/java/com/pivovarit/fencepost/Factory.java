@@ -3,16 +3,16 @@ package com.pivovarit.fencepost;
 import java.util.Objects;
 import java.util.function.Function;
 
-public final class Factory<T> {
+public class Factory<T> {
 
-    private final Function<String, T> lockFactory;
+    private final Function<String, T> factory;
 
-    Factory(Function<String, T> lockFactory) {
-        this.lockFactory = lockFactory;
+    protected Factory(Function<String, T> factory) {
+        this.factory = factory;
     }
 
-    public T forName(String lockName) {
-        Objects.requireNonNull(lockName, "lockName must not be null");
-        return lockFactory.apply(lockName);
+    public T forName(String name) {
+        Objects.requireNonNull(name, "name must not be null");
+        return factory.apply(name);
     }
 }

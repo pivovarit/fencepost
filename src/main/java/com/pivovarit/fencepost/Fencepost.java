@@ -5,10 +5,12 @@ import com.pivovarit.fencepost.function.ThrowingConsumer;
 import com.pivovarit.fencepost.lock.AdvisoryLock;
 import com.pivovarit.fencepost.lock.FencingToken;
 import com.pivovarit.fencepost.lock.FencedLock;
+import com.pivovarit.fencepost.lock.LockFactory;
 import com.pivovarit.fencepost.lock.RenewableLock;
 import com.pivovarit.fencepost.queue.Message;
 import com.pivovarit.fencepost.queue.Queue;
 import com.pivovarit.fencepost.queue.QueueConsumer;
+import com.pivovarit.fencepost.queue.QueueFactory;
 import com.pivovarit.fencepost.queue.QueuePublisher;
 
 import javax.sql.DataSource;
@@ -69,8 +71,8 @@ public final class Fencepost {
                 this.dataSource = dataSource;
             }
 
-            public Factory<AdvisoryLock> build() {
-                return new Factory<>(lockName -> new AdvisoryLockInstance(lockName, dataSource));
+            public LockFactory<AdvisoryLock> build() {
+                return new LockFactory<>(lockName -> new AdvisoryLockInstance(lockName, dataSource));
             }
         }
 
@@ -88,9 +90,9 @@ public final class Fencepost {
                 return this;
             }
 
-            public Factory<FencedLock> build() {
+            public LockFactory<FencedLock> build() {
                 String t = this.tableName;
-                return new Factory<>(lockName -> new SessionLockInstance(lockName, dataSource, t));
+                return new LockFactory<>(lockName -> new SessionLockInstance(lockName, dataSource, t));
             }
         }
 
@@ -150,8 +152,8 @@ public final class Fencepost {
                 return this;
             }
 
-            public Factory<RenewableLock> build() {
-                return new Factory<>(lockName -> new LeaseLockInstance(lockName, dataSource,
+            public LockFactory<RenewableLock> build() {
+                return new LockFactory<>(lockName -> new LeaseLockInstance(lockName, dataSource,
                   this.tableName,
                   this.leaseDuration,
                   this.refreshInterval,
@@ -301,9 +303,9 @@ public final class Fencepost {
                 return this;
             }
 
-            public Factory<QueuePublisher> build() {
+            public QueueFactory<QueuePublisher> build() {
                 String t = this.tableName;
-                return new Factory<>(queueName -> new FencepostQueuePublisher(queueName, dataSource, t));
+                return new QueueFactory<>(queueName -> new FencepostQueuePublisher(queueName, dataSource, t));
             }
         }
 
@@ -399,14 +401,14 @@ public final class Fencepost {
                 return this;
             }
 
-            public Factory<Queue> build() {
+            public QueueFactory<Queue> build() {
                 if (visibilityTimeout == null) {
                     throw new IllegalStateException("visibilityTimeout must be set");
                 }
                 String t = this.tableName;
                 Duration vt = this.visibilityTimeout;
                 long pi = this.pollIntervalMs;
-                return new Factory<>(queueName -> new FencepostQueue(queueName, dataSource, t, vt, pi));
+                return new QueueFactory<>(queueName -> new FencepostQueue(queueName, dataSource, t, vt, pi));
             }
         }
     }
