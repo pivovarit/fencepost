@@ -24,10 +24,10 @@ Fencepost provides three lock strategies, leader election, and a message queue, 
 
 ## Thread Safety
 
-Lock instances are **not thread-safe**. Each instance should be confined to a single thread. If multiple threads need to compete for the same lock, each thread should create its own instance via `Factory.forName`:
+Lock instances are **not thread-safe**. Each instance should be confined to a single thread. If multiple threads need to compete for the same lock, each thread should create its own instance via `LockFactory.forName`:
 
 ```java
-Factory<FencedLock> factory = Fencepost.Locks.session(dataSource).build();
+LockFactory<FencedLock> factory = Fencepost.Locks.session(dataSource).build();
 
 // correct — each thread gets its own instance
 executor.submit(() -> factory.forName("my-lock").runLocked(token -> { /* ... */ }));
@@ -39,7 +39,7 @@ executor.submit(() -> lock.runLocked(token -> { /* ... */ }));
 executor.submit(() -> lock.runLocked(token -> { /* ... */ }));
 ```
 
-This applies to all lock types (`advisory`, `session`, `lease`). The `Factory` itself is thread-safe and can be shared freely.
+This applies to all lock types (`advisory`, `session`, `lease`). The `LockFactory` itself is thread-safe and can be shared freely.
 
 ## Table Setup
 
@@ -74,7 +74,7 @@ Fencepost expects `my_locks_tokens`.
 ### Advisory Lock
 
 ```java
-Factory<Lock> fencepost = Fencepost.Locks.advisory(dataSource).build();
+LockFactory<Lock> fencepost = Fencepost.Locks.advisory(dataSource).build();
 Lock lock = fencepost.forName("my-resource");
 
 lock.lock();                          // blocking
@@ -88,7 +88,7 @@ lock.runLocked(() -> { /* critical section */ });
 ### Session Lock
 
 ```java
-Factory<FencedLock> fencepost = Fencepost.Locks.session(dataSource).build();
+LockFactory<FencedLock> fencepost = Fencepost.Locks.session(dataSource).build();
 FencedLock lock = fencepost.forName("my-resource");
 
 // fencing token protects against stale writes
@@ -100,7 +100,7 @@ lock.runLocked(token -> {
 ### Lease Lock
 
 ```java
-Factory<RenewableLock> fencepost = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(30))
+LockFactory<RenewableLock> fencepost = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(30))
     .withAutoRenew(Duration.ofSeconds(10))
     .withQuietPeriod(Duration.ofSeconds(5))
     .onAutoRenewFailure(e -> log.error("auto-renew failed", e))
@@ -178,7 +178,7 @@ The table name defaults to `fencepost_queue` but can be customized via `.tableNa
 ### Queue Example
 
 ```java
-Factory<Queue> fencepost = Fencepost.Queues.queue(dataSource)
+QueueFactory<Queue> fencepost = Fencepost.Queues.queue(dataSource)
     .visibilityTimeout(Duration.ofSeconds(30)) // required
     .build();
 
@@ -212,7 +212,7 @@ If processing fails without calling `ack()` or `nack()`, the message becomes vis
 When you only need to publish messages (no dequeue), use the standalone publisher:
 
 ```java
-Factory<QueuePublisher> fencepost = Fencepost.Queues.publisher(dataSource).build();
+QueueFactory<QueuePublisher> fencepost = Fencepost.Queues.publisher(dataSource).build();
 QueuePublisher publisher = fencepost.forName("my-queue");
 
 publisher.publish("hello".getBytes(), "greeting.v1");
