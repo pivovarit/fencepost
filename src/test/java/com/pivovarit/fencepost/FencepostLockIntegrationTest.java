@@ -217,7 +217,7 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
-    void concurrentLocksShouldProduceOrderedTokens() throws Exception {
+    void concurrentLocksShouldProduceUniqueTokens() throws Exception {
         LockFactory<FencedLock> provider = Fencepost.Locks.session(dataSource).build();
 
         List<Long> tokens = new CopyOnWriteArrayList<>();
@@ -338,13 +338,8 @@ class FencepostLockIntegrationTest {
 
         RenewableLock holder = provider.forName("ttl-test");
         FencingToken firstToken = holder.lock();
-        holder.unlock();
 
-        try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "UPDATE fencepost_locks SET expires_at = now() - interval '1 second' WHERE lock_name = 'ttl-test'"
-            );
-        }
+        expireLease("ttl-test");
 
         RenewableLock second = provider.forName("ttl-test");
         FencingToken secondToken = second.lock();

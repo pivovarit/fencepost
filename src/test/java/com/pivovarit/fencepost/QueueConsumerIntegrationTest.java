@@ -185,6 +185,9 @@ class QueueConsumerIntegrationTest {
 
         assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();
         assertThat(received).hasSize(messageCount).doesNotHaveDuplicates();
+        assertThat(threadNames.stream().distinct().count())
+          .as("multiple threads should be used with concurrency > 1")
+          .isGreaterThan(1);
 
         consumer.close();
     }
