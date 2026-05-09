@@ -131,11 +131,11 @@ final class LeaderElectionInstance implements LeaderElection {
                 return lock;
             }
 
-            FencingToken won = token.get();
-            logger.debug("won leadership for '{}', token={}", electionName, won.value());
-            isLeader = true;
-            revokedPending.set(true);
             try {
+                FencingToken won = token.get();
+                logger.debug("won leadership for '{}', token={}", electionName, won.value());
+                isLeader = true;
+                revokedPending.set(true);
                 invokeCallback(() -> onElected.accept(won));
                 waitForRevocation(revoked);
             } finally {
