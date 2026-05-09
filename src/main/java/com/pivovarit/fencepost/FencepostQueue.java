@@ -33,6 +33,8 @@ final class FencepostQueue implements Queue {
     private final String dequeueSql;
     private final AckableMessage.Sql ackSql;
 
+    private boolean polling;
+
     FencepostQueue(String queueName, DataSource dataSource, String tableName,
                    Duration visibilityTimeout, long pollIntervalMs) {
         this.queueName = queueName;
@@ -161,26 +163,37 @@ final class FencepostQueue implements Queue {
     }
 
     private void waitForNotification(Connection conn, long waitMs) {
-        try {
-            var pgConn = conn.unwrap(PGConnection.class);
-            synchronized (listener.lock()) {
-                pgConn.getNotifications((int) waitMs);
-            }
-        } catch (Exception e) {
-            listener.close();
-            if (listener.isStopped()) {
-                return;
-            }
-            synchronized (listener.lock()) {
-                if (listener.isStopped()) {
-                    return;
-                }
+        synchronized (listener.lock()) {
+            if (polling) {
                 try {
                     listener.lock().wait(waitMs);
-                } catch (InterruptedException ie) {
+                } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    throw new FencepostException("Interrupted while waiting for messages on queue: " + queueName);
                 }
+                return;
+            }
+            polling = true;
+        }
+        try {
+            var pgConn = conn.unwrap(PGConnection.class);
+            pgConn.getNotifications((int) waitMs);
+        } catch (Exception e) {
+            listener.close();
+            if (!listener.isStopped()) {
+                synchronized (listener.lock()) {
+                    if (!listener.isStopped()) {
+                        try {
+                            listener.lock().wait(waitMs);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                }
+            }
+        } finally {
+            synchronized (listener.lock()) {
+                polling = false;
+                listener.lock().notifyAll();
             }
         }
     }
