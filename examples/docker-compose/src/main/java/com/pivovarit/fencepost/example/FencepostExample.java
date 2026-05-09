@@ -257,7 +257,8 @@ public class FencepostExample {
                   + "token           BIGINT NOT NULL DEFAULT 0,"
                   + "last_locked_by  TEXT,"
                   + "last_locked_at  TIMESTAMP WITH TIME ZONE"
-                  + ")");
+                  + ");"
+                  + "CREATE SEQUENCE IF NOT EXISTS fencepost_locks_token_seq");
             }
         });
     }
