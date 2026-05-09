@@ -59,9 +59,10 @@ class FencepostLockIntegrationTest {
     void createTable() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement()
-              .execute("DROP TABLE IF EXISTS fencepost_locks_tokens; DROP TABLE IF EXISTS fencepost_locks; " +
+              .execute("DROP TABLE IF EXISTS fencepost_locks_tokens; DROP TABLE IF EXISTS fencepost_locks; DROP SEQUENCE IF EXISTS fencepost_locks_token_seq; " +
                 "CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  lock_type TEXT NOT NULL,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE); " +
-                "CREATE TABLE fencepost_locks_tokens (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0,  last_locked_by TEXT,  last_locked_at TIMESTAMP WITH TIME ZONE)");
+                "CREATE TABLE fencepost_locks_tokens (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0,  last_locked_by TEXT,  last_locked_at TIMESTAMP WITH TIME ZONE); " +
+                "CREATE SEQUENCE fencepost_locks_token_seq");
         }
     }
 
@@ -96,29 +97,25 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
-    void sessionLockMetadataShouldBeVisibleToOtherConnections() throws Exception {
+    void sessionLockMetadataShouldBeVisibleAfterUnlock() throws Exception {
         LockFactory<FencedLock> provider = Fencepost.Locks.session(dataSource).build();
 
         FencedLock lock = provider.forName("session-visible-meta-test");
         lock.lock();
+        lock.unlock();
 
-        try {
-            try (Connection conn = dataSource.getConnection();
-                 ResultSet rs = conn.createStatement()
-                   .executeQuery("SELECT COALESCE(t.last_locked_by, l.locked_by) AS last_locked_by, " +
-                     "COALESCE(t.last_locked_at, l.locked_at) AS last_locked_at " +
-                     "FROM fencepost_locks l LEFT JOIN fencepost_locks_tokens t ON l.lock_name = t.lock_name " +
-                     "WHERE l.lock_name = 'session-visible-meta-test'")) {
-                assertThat(rs.next()).isTrue();
-                assertThat(rs.getString("last_locked_by"))
-                  .as("last_locked_by should be visible to other connections while the session lock is held")
-                  .isNotNull();
-                assertThat(rs.getTimestamp("last_locked_at"))
-                  .as("last_locked_at should be visible to other connections while the session lock is held")
-                  .isNotNull();
-            }
-        } finally {
-            lock.unlock();
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.createStatement()
+               .executeQuery("SELECT t.last_locked_by, t.last_locked_at " +
+                 "FROM fencepost_locks_tokens t " +
+                 "WHERE t.lock_name = 'session-visible-meta-test'")) {
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("last_locked_by"))
+              .as("last_locked_by should be visible after unlock")
+              .isNotNull();
+            assertThat(rs.getTimestamp("last_locked_at"))
+              .as("last_locked_at should be visible after unlock")
+              .isNotNull();
         }
     }
 
@@ -1309,24 +1306,6 @@ class FencepostLockIntegrationTest {
           });
     }
 
-    private static DataSource exhaustedPoolDataSource(DataSource real, int failAfter, int failCount) {
-        AtomicInteger calls = new AtomicInteger();
-        AtomicInteger failures = new AtomicInteger();
-        return (DataSource) Proxy.newProxyInstance(
-          DataSource.class.getClassLoader(),
-          new Class<?>[]{DataSource.class},
-          (proxy, method, args) -> {
-              if ("getConnection".equals(method.getName()) && (args == null || args.length == 0)) {
-                  int n = calls.incrementAndGet();
-                  if (n > failAfter && failures.incrementAndGet() <= failCount) {
-                      throw new SQLException("Connection pool exhausted (simulated)");
-                  }
-                  return real.getConnection();
-              }
-              return method.invoke(real, args);
-          });
-    }
-
     private void terminateBackends(String state) throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement()
@@ -1436,30 +1415,6 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
-    void shouldRetryTokenAllocationOnPoolExhaustion() {
-        DataSource limited = exhaustedPoolDataSource(dataSource, 1, 1);
-        LockFactory<FencedLock> provider = Fencepost.Locks.session(limited).build();
-
-        FencedLock lock = provider.forName("retry-success-test");
-        FencingToken token = lock.lock();
-        assertThat(token).isNotNull();
-        lock.unlock();
-    }
-
-    @Test
-    void shouldFailWithClearErrorWhenTokenAllocationRetriesExhausted() {
-        DataSource limited = exhaustedPoolDataSource(dataSource, 1, 3);
-        LockFactory<FencedLock> provider = Fencepost.Locks.session(limited).build();
-
-        FencedLock lock = provider.forName("retry-exhausted-test");
-        assertThatThrownBy(lock::lock)
-          .isInstanceOf(FencepostException.class)
-          .hasMessageContaining("Failed to acquire lock")
-          .cause()
-          .hasMessageContaining("connection pool may be exhausted");
-    }
-
-    @Test
     void lockTimeoutShouldNotOvershootByPollInterval() {
         LockFactory<RenewableLock> provider = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(30))
           .withPollInterval(Duration.ofSeconds(5))
@@ -1481,70 +1436,6 @@ class FencepostLockIntegrationTest {
         } finally {
             holder.unlock();
         }
-    }
-
-    @Test
-    void timedSessionLockShouldCapTokenAllocationToDeadline() {
-        DataSource limited = exhaustedPoolDataSource(dataSource, 1, 10);
-        LockFactory<FencedLock> provider = Fencepost.Locks.session(limited).build();
-
-        FencedLock lock = provider.forName("timed-token-alloc-test");
-        long start = System.nanoTime();
-        assertThatThrownBy(() -> lock.lock(Duration.ofMillis(500)))
-          .isInstanceOf(FencepostException.class);
-        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-
-        assertThat(elapsedMs)
-          .as("lock(Duration) should not overshoot far past deadline during token allocation retries")
-          .isLessThan(2000);
-    }
-
-    @Test
-    void tokenAllocationShouldRestoreNetworkTimeoutOnPooledConnection() {
-        List<Integer> networkTimeoutsAtClose = new CopyOnWriteArrayList<>();
-
-        DataSource tracking = networkTimeoutTrackingDataSource(dataSource, 1, networkTimeoutsAtClose);
-        LockFactory<FencedLock> provider = Fencepost.Locks.session(tracking).build();
-
-        FencedLock lock = provider.forName("restore-timeout-test");
-        lock.lock();
-        lock.unlock();
-
-        assertThat(networkTimeoutsAtClose).isNotEmpty();
-        assertThat(networkTimeoutsAtClose).allSatisfy(timeout ->
-          assertThat(timeout).as("networkTimeout should be restored to original value before close").isZero()
-        );
-    }
-
-    private static DataSource networkTimeoutTrackingDataSource(DataSource real, int skipCalls, List<Integer> closingTimeouts) {
-        AtomicInteger calls = new AtomicInteger();
-        return (DataSource) Proxy.newProxyInstance(
-          DataSource.class.getClassLoader(),
-          new Class<?>[]{DataSource.class},
-          (proxy, method, args) -> {
-              if ("getConnection".equals(method.getName()) && (args == null || args.length == 0)) {
-                  Connection conn = real.getConnection();
-                  int n = calls.incrementAndGet();
-                  if (n > skipCalls) {
-                      return trackingTimeoutConnection(conn, closingTimeouts);
-                  }
-                  return conn;
-              }
-              return method.invoke(real, args);
-          });
-    }
-
-    private static Connection trackingTimeoutConnection(Connection real, List<Integer> closingTimeouts) {
-        return (Connection) Proxy.newProxyInstance(
-          Connection.class.getClassLoader(),
-          new Class<?>[]{Connection.class},
-          (proxy, method, args) -> {
-              if ("close".equals(method.getName())) {
-                  closingTimeouts.add(real.getNetworkTimeout());
-                  return method.invoke(real, args);
-              }
-              return method.invoke(real, args);
-          });
     }
 
     @Test

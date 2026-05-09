@@ -20,13 +20,10 @@ import java.util.Optional;
  * <p>Not thread-safe. Each instance should be used by a single thread at a time.
  * For concurrent access, create separate instances via {@code Factory.forName}.
  *
- * <p>Fencing tokens are allocated from a separate durable token table after the row lock is
- * acquired, so token increments survive holder crashes even though the row-lock transaction is
- * rolled back.
- *
- * <p><b>Pool sizing:</b> each lock attempt briefly needs a second pooled connection for token
- * allocation while the row lock connection is held. The connection pool must have headroom
- * beyond the number of concurrent lock waiters.
+ * <p>Fencing tokens are allocated via a PostgreSQL sequence ({@code nextval}) on the same
+ * connection that holds the row lock. Because sequence increments are non-transactional,
+ * token values survive holder crashes even though the row-lock transaction is rolled back.
+ * This requires only a single pooled connection per lock attempt.
  */
 final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
@@ -74,7 +71,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
                     .map(ResultSet::next);
 
             String lockedBy = resolveLockedBy();
-            currentToken = recordSessionToken(connection, allocateSessionToken(lockedBy, Long.MAX_VALUE));
+            currentToken = recordSessionToken(connection, allocateSessionToken(connection, lockedBy));
             logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
             return currentToken;
         } catch (Exception e) {
@@ -87,7 +84,6 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     @Override
     FencingToken doLock(Duration timeout) {
-        long deadlineNanos = System.nanoTime() + timeout.toNanos();
         try {
             connection = dataSource.getConnection();
             ensureRowExists(connection);
@@ -102,7 +98,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
             Jdbc.resetStatementTimeout(connection);
 
             String lockedBy = resolveLockedBy();
-            currentToken = recordSessionToken(connection, allocateSessionToken(lockedBy, deadlineNanos));
+            currentToken = recordSessionToken(connection, allocateSessionToken(connection, lockedBy));
             logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
             return currentToken;
         } catch (Exception e) {
@@ -135,7 +131,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
             }
 
             String lockedBy = resolveLockedBy();
-            currentToken = recordSessionToken(connection, allocateSessionToken(lockedBy, Long.MAX_VALUE));
+            currentToken = recordSessionToken(connection, allocateSessionToken(connection, lockedBy));
             logger.debug("acquired session lock '{}' via tryLock, token={}", lockName, currentToken.value());
             return Optional.of(currentToken);
         } catch (Exception e) {

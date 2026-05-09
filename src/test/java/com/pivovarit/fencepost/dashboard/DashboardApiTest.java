@@ -39,7 +39,7 @@ class DashboardApiTest {
     void dropTables() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
-              "DROP TABLE IF EXISTS fencepost_queue; DROP TABLE IF EXISTS fencepost_locks_tokens; DROP TABLE IF EXISTS fencepost_locks;"
+              "DROP TABLE IF EXISTS fencepost_queue; DROP TABLE IF EXISTS fencepost_locks_tokens; DROP TABLE IF EXISTS fencepost_locks; DROP SEQUENCE IF EXISTS fencepost_locks_token_seq;"
             );
         }
     }
@@ -60,7 +60,8 @@ class DashboardApiTest {
               "  token BIGINT NOT NULL DEFAULT 0," +
               "  last_locked_by TEXT," +
               "  last_locked_at TIMESTAMPTZ" +
-              ")"
+              ");" +
+              "CREATE SEQUENCE fencepost_locks_token_seq"
             );
         }
     }
