@@ -12,6 +12,20 @@
     <name>fencepost</name>
 
     <description>Distributed locks with fencing tokens for Java + PostgreSQL</description>
+    <url>https://github.com/pivovarit/fencepost</url>
+
+    <developers>
+        <developer>
+            <name>Grzegorz Piwowarek</name>
+            <email>gpiwowarek@gmail.com</email>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git://github.com/pivovarit/fencepost.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/pivovarit/fencepost.git</developerConnection>
+        <url>https://github.com/pivovarit/fencepost</url>
+    </scm>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
