@@ -39,6 +39,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     private volatile Thread autoRenewThread;
     private volatile long autoRenewWindowMillis;
     private volatile PreparedStatement autoRenewStatement;
+    private volatile boolean autoRenewStopped;
 
     LeaseLockInstance(String lockName, DataSource dataSource, String tableName,
                          Duration leaseDuration, Duration refreshInterval, Duration quietPeriod,
@@ -256,6 +257,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     private void startAutoRenew() {
         long token = currentToken.value();
+        autoRenewStopped = false;
         autoRenewWindowMillis = leaseDurationMs;
         logger.debug("starting auto-renew for lease lock '{}', token={}, interval={}", lockName, token, refreshInterval);
         autoRenewThread = new Thread(() -> {
@@ -269,6 +271,9 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                     Thread.currentThread().interrupt();
                     return;
                 } catch (SQLException e) {
+                    if (autoRenewStopped) {
+                        return;
+                    }
                     logger.warn("auto-renew failed for lease lock '{}', token={}", lockName, token, e);
                     FencepostException ex = new FencepostException("Auto-renew failed for lock: " + lockName, e);
                     if (onAutoRenewFailure != null) {
@@ -329,6 +334,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         if (thread == null) {
             return;
         }
+        autoRenewStopped = true;
         thread.interrupt();
         PreparedStatement stmt = autoRenewStatement;
         if (stmt != null) {

@@ -1434,6 +1434,62 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void unlockShouldNotTriggerOnAutoRenewFailure() throws Exception {
+        AtomicBoolean callbackFired = new AtomicBoolean(false);
+
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(10))
+          .withAutoRenew(Duration.ofMillis(100))
+          .onAutoRenewFailure(ex -> callbackFired.set(true))
+          .build();
+
+        RenewableLock lock = provider.forName("no-spurious-callback-test");
+        lock.lock();
+
+        Thread.sleep(300);
+
+        lock.unlock();
+
+        Thread.sleep(500);
+
+        assertThat(callbackFired.get())
+          .as("onAutoRenewFailure must not fire after a normal unlock")
+          .isFalse();
+    }
+
+    @Test
+    void unlockShouldNotTriggerOnAutoRenewFailureWhenCancellingInFlightStatement() throws Exception {
+        AtomicBoolean callbackFired = new AtomicBoolean(false);
+        CountDownLatch renewEnteredExecute = new CountDownLatch(1);
+        CountDownLatch releaseHang = new CountDownLatch(1);
+
+        DataSource hangingDs = hangingDataSource(dataSource, renewEnteredExecute, releaseHang);
+
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(hangingDs, Duration.ofSeconds(10))
+          .withAutoRenew(Duration.ofMillis(100))
+          .onAutoRenewFailure(ex -> callbackFired.set(true))
+          .build();
+
+        RenewableLock lock = provider.forName("no-spurious-callback-cancel-test");
+        lock.lock();
+
+        try {
+            assertThat(renewEnteredExecute.await(5, TimeUnit.SECONDS))
+              .as("auto-renew thread should have entered executeUpdate")
+              .isTrue();
+
+            lock.unlock();
+
+            Thread.sleep(500);
+
+            assertThat(callbackFired.get())
+              .as("onAutoRenewFailure must not fire when stmt.cancel() causes SQLException during normal unlock")
+              .isFalse();
+        } finally {
+            releaseHang.countDown();
+        }
+    }
+
+    @Test
     void shouldAllowSameTypeReuseForLease() {
         LockFactory<RenewableLock> factory1 = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(10)).build();
         LockFactory<RenewableLock> factory2 = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(5)).build();
