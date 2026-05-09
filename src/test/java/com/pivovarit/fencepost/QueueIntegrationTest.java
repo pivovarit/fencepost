@@ -324,6 +324,42 @@ class QueueIntegrationTest {
     }
 
     @Test
+    void concurrentDequeueTimeoutShouldNotSerialize() throws Exception {
+        int consumerCount = 5;
+        Queue queue = Fencepost.Queues.queue(dataSource)
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .pollInterval(Duration.ofSeconds(30))
+          .build()
+          .forName("concurrent-timeout");
+
+        CountDownLatch allDone = new CountDownLatch(consumerCount);
+
+        long start = System.nanoTime();
+        for (int i = 0; i < consumerCount; i++) {
+            Thread t = new Thread(() -> {
+                try {
+                    queue.dequeue(Duration.ofSeconds(1));
+                } catch (FencepostException e) {
+                    // expected timeout
+                } finally {
+                    allDone.countDown();
+                }
+            });
+            t.setDaemon(true);
+            t.start();
+        }
+
+        assertThat(allDone.await(10, TimeUnit.SECONDS)).isTrue();
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+        assertThat(elapsedMs)
+          .as("5 consumers with 1s timeout and 30s poll should complete in ~1s, not serialize to ~5s+")
+          .isLessThan(3000);
+
+        queue.close();
+    }
+
+    @Test
     void concurrentConsumersShouldNotReceiveSameMessage() throws Exception {
         Queue queue = newQueue();
         int messageCount = 50;
