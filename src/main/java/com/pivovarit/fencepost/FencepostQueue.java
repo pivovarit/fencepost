@@ -33,7 +33,7 @@ final class FencepostQueue implements Queue {
     private final String dequeueSql;
     private final AckableMessage.Sql ackSql;
 
-    private boolean polling;
+    private volatile boolean polling;
 
     FencepostQueue(String queueName, DataSource dataSource, String tableName,
                    Duration visibilityTimeout, long pollIntervalMs) {
