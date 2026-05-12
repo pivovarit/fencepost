@@ -59,7 +59,8 @@ class FencepostLockIntegrationTest {
     void createTable() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement()
-              .execute("DROP TABLE IF EXISTS fencepost_locks_tokens; DROP TABLE IF EXISTS fencepost_locks; DROP SEQUENCE IF EXISTS fencepost_locks_token_seq; " +
+              .execute("DO $$ DECLARE r RECORD; BEGIN FOR r IN SELECT sequencename FROM pg_sequences WHERE sequencename LIKE 'fencepost_st_%' LOOP EXECUTE 'DROP SEQUENCE IF EXISTS ' || r.sequencename; END LOOP; END$$; " +
+                "DROP TABLE IF EXISTS fencepost_locks_tokens; DROP TABLE IF EXISTS fencepost_locks; DROP SEQUENCE IF EXISTS fencepost_locks_token_seq; " +
                 "CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  lock_type TEXT NOT NULL,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE); " +
                 "CREATE TABLE fencepost_locks_tokens (  lock_name TEXT PRIMARY KEY,  token BIGINT NOT NULL DEFAULT 0,  last_locked_by TEXT,  last_locked_at TIMESTAMP WITH TIME ZONE); " +
                 "CREATE SEQUENCE fencepost_locks_token_seq");
