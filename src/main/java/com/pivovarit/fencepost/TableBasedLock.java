@@ -1,8 +1,6 @@
 package com.pivovarit.fencepost;
 
 import com.pivovarit.fencepost.lock.FencingToken;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.net.InetAddress;
@@ -77,8 +75,6 @@ abstract class TableBasedLock {
         }
         try (Connection conn = dataSource.getConnection()) {
             ensureRowExists(conn);
-        } catch (FencepostException e) {
-            throw e;
         } catch (SQLException e) {
             throw new FencepostException("Failed to ensure lock row exists: " + lockName, e);
         }
@@ -160,22 +156,6 @@ abstract class TableBasedLock {
                     .map(rs -> {
                         if (!rs.next()) {
                             throw new FencepostException("Lock row not found: " + lockName);
-                        }
-                        return rs.getBoolean(1);
-                    });
-        } catch (SQLException e) {
-            throw new FencepostException("Failed to check token for lock: " + lockName, e);
-        }
-    }
-
-    boolean checkSupersededByTokenTable(FencingToken token) {
-        try {
-            return Jdbc.query(dataSource, sql.checkSupersededByTokenTable)
-                    .bind(token.value())
-                    .bind(lockName)
-                    .map(rs -> {
-                        if (!rs.next()) {
-                            throw new FencepostException("Lock token row not found: " + lockName);
                         }
                         return rs.getBoolean(1);
                     });
