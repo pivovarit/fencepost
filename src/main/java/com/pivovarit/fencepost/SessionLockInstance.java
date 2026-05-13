@@ -20,10 +20,10 @@ import java.util.Optional;
  * <p>Not thread-safe. Each instance should be used by a single thread at a time.
  * For concurrent access, create separate instances via {@code Factory.forName}.
  *
- * <p>Fencing tokens are allocated via a PostgreSQL sequence ({@code nextval}) on the same
- * connection that holds the row lock. Because sequence increments are non-transactional,
- * token values survive holder crashes even though the row-lock transaction is rolled back.
- * This requires only a single pooled connection per lock attempt.
+ * <p>Fencing tokens are allocated via a per-lock PostgreSQL sequence ({@code nextval}).
+ * Because sequence increments are non-transactional, token values are visible to
+ * {@link #isSuperseded} immediately — even while the lock-holding transaction is open —
+ * and survive holder crashes. This requires only a single pooled connection per lock attempt.
  */
 final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
@@ -144,7 +144,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     @Override
     public boolean isSuperseded(FencingToken token) {
-        return checkSupersededByTokenTable(token);
+        return checkSupersededBySessionSequence(token);
     }
 
     @Override
