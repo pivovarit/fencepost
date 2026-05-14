@@ -47,7 +47,6 @@ abstract class TableBasedLock {
         final String recordTokenMetadata;
         final String checkSuperseded;
         final String checkSupersededByTokenTable;
-        final String unlockSession;
 
         Sql(String tableName) {
             String tokenTable = tokenTableName(tableName);
@@ -59,7 +58,6 @@ abstract class TableBasedLock {
             this.recordTokenMetadata = String.format("INSERT INTO %s (lock_name, token, last_locked_by, last_locked_at) VALUES (?, ?, ?, now()) ON CONFLICT (lock_name) DO UPDATE SET token = EXCLUDED.token, last_locked_by = EXCLUDED.last_locked_by, last_locked_at = EXCLUDED.last_locked_at", tokenTable);
             this.checkSuperseded = String.format("SELECT token > ? FROM %s WHERE lock_name = ?", tableName);
             this.checkSupersededByTokenTable = String.format("SELECT token > ? FROM %s WHERE lock_name = ?", tokenTable);
-            this.unlockSession = String.format("UPDATE %s SET locked_by = NULL, locked_at = NULL WHERE lock_name = ?", tableName);
         }
     }
 
