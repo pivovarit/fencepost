@@ -1491,6 +1491,183 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void sessionLockShouldRejectConcurrentLockFromDifferentThread() throws Exception {
+        LockFactory<FencedLock> provider = Fencepost.Locks.session(dataSource).build();
+
+        FencedLock lock = provider.forName("thread-guard-lock");
+        lock.lock();
+
+        try {
+            AtomicReference<Exception> error = new AtomicReference<>();
+            Thread other = new Thread(() -> {
+                try {
+                    lock.lock();
+                } catch (Exception e) {
+                    error.set(e);
+                }
+            });
+            other.start();
+            other.join(5000);
+
+            assertThat(error.get())
+              .isInstanceOf(IllegalStateException.class)
+              .hasMessageContaining("not thread-safe")
+              .hasMessageContaining(Thread.currentThread().getName());
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Test
+    void sessionLockShouldRejectConcurrentTryLockFromDifferentThread() throws Exception {
+        LockFactory<FencedLock> provider = Fencepost.Locks.session(dataSource).build();
+
+        FencedLock lock = provider.forName("thread-guard-trylock");
+        lock.lock();
+
+        try {
+            AtomicReference<Exception> error = new AtomicReference<>();
+            Thread other = new Thread(() -> {
+                try {
+                    lock.tryLock();
+                } catch (Exception e) {
+                    error.set(e);
+                }
+            });
+            other.start();
+            other.join(5000);
+
+            assertThat(error.get())
+              .isInstanceOf(IllegalStateException.class)
+              .hasMessageContaining("not thread-safe");
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Test
+    void sessionLockShouldRejectConcurrentTimedLockFromDifferentThread() throws Exception {
+        LockFactory<FencedLock> provider = Fencepost.Locks.session(dataSource).build();
+
+        FencedLock lock = provider.forName("thread-guard-timed");
+        lock.lock();
+
+        try {
+            AtomicReference<Exception> error = new AtomicReference<>();
+            Thread other = new Thread(() -> {
+                try {
+                    lock.lock(Duration.ofSeconds(5));
+                } catch (Exception e) {
+                    error.set(e);
+                }
+            });
+            other.start();
+            other.join(5000);
+
+            assertThat(error.get())
+              .isInstanceOf(IllegalStateException.class)
+              .hasMessageContaining("not thread-safe");
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Test
+    void sessionLockShouldBeReusableAfterUnlockFromDifferentThread() throws Exception {
+        LockFactory<FencedLock> provider = Fencepost.Locks.session(dataSource).build();
+
+        FencedLock lock = provider.forName("thread-guard-reuse");
+        lock.lock();
+        lock.unlock();
+
+        AtomicReference<FencingToken> token = new AtomicReference<>();
+        Thread other = new Thread(() -> {
+            token.set(lock.lock());
+            lock.unlock();
+        });
+        other.start();
+        other.join(5000);
+
+        assertThat(token.get()).isNotNull();
+        assertThat(token.get().value()).isGreaterThan(0);
+    }
+
+    @Test
+    void sessionLockRaceShouldRejectExactlyOneThread() throws Exception {
+        LockFactory<FencedLock> provider = Fencepost.Locks.session(dataSource).build();
+
+        FencedLock lock = provider.forName("thread-guard-race");
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch go = new CountDownLatch(1);
+        AtomicInteger successes = new AtomicInteger();
+        AtomicInteger rejections = new AtomicInteger();
+
+        Runnable racer = () -> {
+            ready.countDown();
+            try {
+                go.await();
+                lock.lock();
+                successes.incrementAndGet();
+            } catch (IllegalStateException e) {
+                if (e.getMessage().contains("not thread-safe")) {
+                    rejections.incrementAndGet();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        };
+
+        Thread t1 = new Thread(racer);
+        Thread t2 = new Thread(racer);
+        t1.start();
+        t2.start();
+        ready.await();
+        go.countDown();
+        t1.join(5000);
+        t2.join(5000);
+
+        assertThat(successes.get()).isEqualTo(1);
+        assertThat(rejections.get()).isEqualTo(1);
+
+        lock.unlock();
+    }
+
+    @Test
+    void sessionLockShouldRejectSameThreadReentrantLock() {
+        LockFactory<FencedLock> provider = Fencepost.Locks.session(dataSource).build();
+
+        FencedLock lock = provider.forName("thread-guard-reentrant");
+        lock.lock();
+
+        try {
+            assertThatThrownBy(lock::lock)
+              .isInstanceOf(IllegalStateException.class)
+              .hasMessageContaining("thread-guard-reentrant");
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Test
+    void sessionLockShouldBeReusableAfterFailedTryLockFromDifferentThread() throws Exception {
+        LockFactory<FencedLock> provider = Fencepost.Locks.session(dataSource).build();
+
+        FencedLock holder = provider.forName("thread-guard-trylock-reuse");
+        holder.lock();
+
+        FencedLock lock = provider.forName("thread-guard-trylock-reuse");
+        Optional<FencingToken> result = lock.tryLock();
+        assertThat(result).isEmpty();
+
+        holder.unlock();
+
+        Optional<FencingToken> secondResult = lock.tryLock();
+        assertThat(secondResult).isPresent();
+        lock.unlock();
+    }
+
+    @Test
     void shouldAllowSameTypeReuseForLease() {
         LockFactory<RenewableLock> factory1 = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(10)).build();
         LockFactory<RenewableLock> factory2 = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(5)).build();
