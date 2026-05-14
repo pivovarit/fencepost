@@ -13,6 +13,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Session-scoped lock backed by PostgreSQL's {@code SELECT ... FOR UPDATE}.
@@ -30,6 +31,8 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     private static final Logger logger = LoggerFactory.getLogger(SessionLockInstance.class);
 
     private final Sql sql;
+  
+    private final AtomicReference<Thread> owner = new AtomicReference<>();
 
     private volatile Connection connection;
 
@@ -44,29 +47,48 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
         final String unlock;
 
         Sql(String tableName) {
-            this.selectForUpdate = "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE";
-            this.selectForUpdateSkipLocked = "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE SKIP LOCKED";
+            this.selectForUpdate = String.format("SELECT 1 FROM %s WHERE lock_name = ? FOR UPDATE", tableName);
+            this.selectForUpdateSkipLocked = String.format("SELECT 1 FROM %s WHERE lock_name = ? FOR UPDATE SKIP LOCKED", tableName);
             this.unlock = String.format("UPDATE %s SET locked_by = NULL, locked_at = NULL WHERE lock_name = ?", tableName);
         }
     }
 
     @Override
     public FencingToken lock() {
-        ensureNotHeld();
-        return doLock();
+        acquireOwnership();
+        try {
+            return doLock();
+        } catch (Exception e) {
+            releaseOwnership();
+            throw e;
+        }
     }
 
     @Override
     public FencingToken lock(Duration timeout) {
         Durations.requireAtLeastOneMillisecond(timeout, "timeout");
-        ensureNotHeld();
-        return doLock(timeout);
+        acquireOwnership();
+        try {
+            return doLock(timeout);
+        } catch (Exception e) {
+            releaseOwnership();
+            throw e;
+        }
     }
 
     @Override
     public Optional<FencingToken> tryLock() {
-        ensureNotHeld();
-        return doTryLock();
+        acquireOwnership();
+        try {
+            Optional<FencingToken> result = doTryLock();
+            if (result.isEmpty()) {
+                releaseOwnership();
+            }
+            return result;
+        } catch (Exception e) {
+            releaseOwnership();
+            throw e;
+        }
     }
 
     @Override
@@ -180,6 +202,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
             closeConnection();
             connection = null;
             currentToken = null;
+            releaseOwnership();
         }
     }
 
@@ -212,6 +235,24 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
         } catch (SQLException e) {
             logger.trace("failed to close session lock '{}' connection", lockName, e);
         }
+    }
+
+    private void acquireOwnership() {
+        Thread current = Thread.currentThread();
+        Thread existing = owner.compareAndExchange(null, current);
+        if (existing != null) {
+            if (existing == current) {
+                throw new IllegalStateException("Lock already held by this thread: " + lockName);
+            }
+            throw new IllegalStateException(
+                "SessionLockInstance is not thread-safe — already in use by thread '"
+                    + existing.getName() + "', called from thread '" + current.getName()
+                    + "'. Create separate instances via Factory.forName for concurrent access.");
+        }
+    }
+
+    private void releaseOwnership() {
+        owner.set(null);
     }
 
     private static String resolveLockedBy() {
