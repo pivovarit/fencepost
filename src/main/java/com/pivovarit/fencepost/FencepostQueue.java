@@ -28,9 +28,7 @@ final class FencepostQueue implements Queue {
     private final long visibilityTimeoutMs;
     private final long pollIntervalMs;
     private final ListenerConnection listener;
-    private final String notifyQueueSql;
-    private final String enqueueSql;
-    private final String dequeueSql;
+    private final Sql sql;
     private final AckableMessage.Sql ackSql;
 
     private volatile boolean polling;
@@ -43,16 +41,26 @@ final class FencepostQueue implements Queue {
         this.pollIntervalMs = pollIntervalMs;
         var channelName = "fencepost_q_" + Long.toUnsignedString(HashUtils.fnv1a64("fencepost:" + queueName));
         this.listener = new ListenerConnection(dataSource, channelName);
-        this.notifyQueueSql = "NOTIFY " + channelName;
-        this.enqueueSql = String.format(
-            "INSERT INTO %s (queue_name, payload, type, headers, visible_at) VALUES (?, ?, ?, ?::jsonb, now() + %s)",
-            tableName, Jdbc.intervalMillis());
-        this.dequeueSql = String.format(
-            "UPDATE %s SET visible_at = now() + %s, picked_by = ?, attempts = attempts + 1 "
-              + "WHERE id = (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now() "
-              + "ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, payload, type, headers, attempts",
-            tableName, Jdbc.intervalMillis(), tableName);
+        this.sql = new Sql(tableName, channelName);
         this.ackSql = new AckableMessage.Sql(tableName);
+    }
+
+    private static final class Sql {
+        final String enqueue;
+        final String notifyQueue;
+        final String dequeue;
+
+        Sql(String tableName, String channelName) {
+            this.enqueue = String.format(
+                "INSERT INTO %s (queue_name, payload, type, headers, visible_at) VALUES (?, ?, ?, ?::jsonb, now() + %s)",
+                tableName, Jdbc.intervalMillis());
+            this.notifyQueue = "NOTIFY " + channelName;
+            this.dequeue = String.format(
+                "UPDATE %s SET visible_at = now() + %s, picked_by = ?, attempts = attempts + 1 "
+                  + "WHERE id = (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now() "
+                  + "ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, payload, type, headers, attempts",
+                tableName, Jdbc.intervalMillis(), tableName);
+        }
     }
 
     @Override
@@ -68,14 +76,14 @@ final class FencepostQueue implements Queue {
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(false);
             try {
-                Jdbc.update(conn, enqueueSql)
+                Jdbc.update(conn, sql.enqueue)
                   .bind(queueName)
                   .bind(payload)
                   .bind(type)
                   .bind(HeadersCodec.toJson(headers))
                   .bind(delayMillis)
                   .execute();
-                Jdbc.execute(conn, notifyQueueSql);
+                Jdbc.execute(conn, sql.notifyQueue);
                 Jdbc.execute(conn, NOTIFY_DASHBOARD_SQL);
                 conn.commit();
                 logger.debug("enqueued message to queue '{}'", queueName);
@@ -93,7 +101,7 @@ final class FencepostQueue implements Queue {
         String pickToken = TableBasedLock.HOSTNAME + "/" + Thread.currentThread().getName() + "/" + Long.toHexString(ThreadLocalRandom.current().nextLong()) + Long.toHexString(ThreadLocalRandom.current().nextLong());
 
         try {
-            return Jdbc.query(dataSource, dequeueSql)
+            return Jdbc.query(dataSource, sql.dequeue)
               .bind(visibilityTimeoutMs)
               .bind(pickToken)
               .bind(queueName)

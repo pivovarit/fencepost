@@ -29,15 +29,25 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     private static final Logger logger = LoggerFactory.getLogger(SessionLockInstance.class);
 
-    private final String selectForUpdate;
-    private final String selectForUpdateSkipLocked;
+    private final Sql sql;
 
     private volatile Connection connection;
 
     SessionLockInstance(String lockName, DataSource dataSource, String tableName) {
         super(lockName, dataSource, tableName, LockType.SESSION);
-        this.selectForUpdate = "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE";
-        this.selectForUpdateSkipLocked = "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE SKIP LOCKED";
+        this.sql = new Sql(tableName);
+    }
+
+    private static final class Sql {
+        final String selectForUpdate;
+        final String selectForUpdateSkipLocked;
+        final String unlock;
+
+        Sql(String tableName) {
+            this.selectForUpdate = "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE";
+            this.selectForUpdateSkipLocked = "SELECT 1 FROM " + tableName + " WHERE lock_name = ? FOR UPDATE SKIP LOCKED";
+            this.unlock = String.format("UPDATE %s SET locked_by = NULL, locked_at = NULL WHERE lock_name = ?", tableName);
+        }
     }
 
     @Override
@@ -66,7 +76,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
             ensureRowExists(connection);
             connection.setAutoCommit(false);
 
-            Jdbc.query(connection, selectForUpdate)
+            Jdbc.query(connection, sql.selectForUpdate)
                     .bind(lockName)
                     .map(ResultSet::next);
 
@@ -91,7 +101,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
             Jdbc.setStatementTimeout(connection, timeout);
 
-            Jdbc.query(connection, selectForUpdate)
+            Jdbc.query(connection, sql.selectForUpdate)
                     .bind(lockName)
                     .map(ResultSet::next);
 
@@ -120,7 +130,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
             ensureRowExists(connection);
             connection.setAutoCommit(false);
 
-            boolean locked = Jdbc.query(connection, selectForUpdateSkipLocked)
+            boolean locked = Jdbc.query(connection, sql.selectForUpdateSkipLocked)
                     .bind(lockName)
                     .map(ResultSet::next);
 
@@ -154,7 +164,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
         }
         long token = currentToken.value();
         try {
-            Jdbc.update(connection, sql.unlockSession)
+            Jdbc.update(connection, sql.unlock)
                 .bind(lockName)
                 .execute();
             connection.commit();

@@ -34,7 +34,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     private final long pollIntervalMs;
     private final Consumer<FencepostException> onAutoRenewFailure;
     private final String instanceId;
-    private final LeaseSql leaseSql;
+    private final Sql sql;
 
     private volatile Thread autoRenewThread;
     private volatile long autoRenewWindowMillis;
@@ -55,16 +55,16 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         this.pollIntervalMs = pollInterval != null ? Durations.toPositiveMillis(pollInterval, "pollInterval") : DEFAULT_POLL_INTERVAL_MS;
         this.onAutoRenewFailure = onAutoRenewFailure;
         this.instanceId = instanceId;
-        this.leaseSql = new LeaseSql(tableName);
+        this.sql = new Sql(tableName);
     }
 
-    static final class LeaseSql {
+    static final class Sql {
         final String acquire;
         final String renew;
         final String unlockWithQuietPeriod;
         final String unlock;
 
-        LeaseSql(String tableName) {
+        Sql(String tableName) {
             this.acquire = String.format("UPDATE %s SET token = token + 1, locked_by = ?, locked_at = now(), expires_at = now() + %s WHERE lock_name IN (SELECT lock_name FROM %s WHERE lock_name = ? AND (locked_by IS NULL OR expires_at IS NULL OR expires_at <= now()) FOR UPDATE SKIP LOCKED) RETURNING token", tableName, Jdbc.intervalMillis(), tableName);
             this.renew = String.format("UPDATE %s SET expires_at = GREATEST(expires_at, now() + %s) %s", tableName, Jdbc.intervalMillis(), activeLeasePredicate());
             this.unlockWithQuietPeriod = String.format("UPDATE %s SET token = token + 1, locked_at = NULL, expires_at = now() + %s %s", tableName, Jdbc.intervalMillis(), activeLeasePredicate());
@@ -164,7 +164,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             : String.format("%s/%s", HOSTNAME, Thread.currentThread().getName());
 
         try {
-            return Jdbc.query(dataSource, leaseSql.acquire)
+            return Jdbc.query(dataSource, sql.acquire)
                     .bind(lockedBy)
                     .bind(leaseDurationMs)
                     .bind(lockName)
@@ -187,7 +187,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             throw new LockNotHeldException(lockName);
         }
         try {
-            int updated = Jdbc.update(dataSource, leaseSql.renew)
+            int updated = Jdbc.update(dataSource, sql.renew)
                     .bind(durationMillis)
                     .bind(lockName)
                     .bind(token.value())
@@ -217,13 +217,13 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         try {
             int updated;
             if (quietPeriod != null) {
-                updated = Jdbc.update(dataSource, leaseSql.unlockWithQuietPeriod)
+                updated = Jdbc.update(dataSource, sql.unlockWithQuietPeriod)
                         .bind(quietPeriodMs)
                         .bind(lockName)
                         .bind(token.value())
                         .execute();
             } else {
-                updated = Jdbc.update(dataSource, leaseSql.unlock)
+                updated = Jdbc.update(dataSource, sql.unlock)
                         .bind(lockName)
                         .bind(token.value())
                         .execute();
@@ -292,7 +292,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         SQLException lastException = null;
         for (int attempt = 0; attempt < AUTO_RENEW_MAX_RETRIES; attempt++) {
             try {
-                int updated = Jdbc.update(dataSource, leaseSql.renew)
+                int updated = Jdbc.update(dataSource, sql.renew)
                         .queryTimeout(refreshInterval)
                         .onStatement(ps -> autoRenewStatement = ps)
                         .bind(windowMillis)
