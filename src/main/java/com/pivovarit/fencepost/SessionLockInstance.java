@@ -31,6 +31,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     private static final Logger logger = LoggerFactory.getLogger(SessionLockInstance.class);
 
     private final Sql sql;
+  
     private final AtomicReference<Thread> owner = new AtomicReference<>();
 
     private volatile Connection connection;
