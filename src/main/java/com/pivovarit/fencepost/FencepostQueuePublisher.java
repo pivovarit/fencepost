@@ -19,17 +19,25 @@ final class FencepostQueuePublisher implements QueuePublisher {
 
     private final String queueName;
     private final DataSource dataSource;
-    private final String enqueueSql;
-    private final String notifyQueueSql;
+    private final Sql sql;
 
     FencepostQueuePublisher(String queueName, DataSource dataSource, String tableName) {
         this.queueName = queueName;
         this.dataSource = dataSource;
-        this.enqueueSql = String.format(
-            "INSERT INTO %s (queue_name, payload, type, headers, visible_at) VALUES (?, ?, ?, ?::jsonb, now() + %s)",
-            tableName, Jdbc.intervalMillis());
         var channelName = "fencepost_q_" + Long.toUnsignedString(HashUtils.fnv1a64("fencepost:" + queueName));
-        this.notifyQueueSql = "NOTIFY " + channelName;
+        this.sql = new Sql(tableName, channelName);
+    }
+
+    static final class Sql {
+        final String enqueue;
+        final String notifyQueue;
+
+        Sql(String tableName, String channelName) {
+            this.enqueue = String.format(
+                "INSERT INTO %s (queue_name, payload, type, headers, visible_at) VALUES (?, ?, ?, ?::jsonb, now() + %s)",
+                tableName, Jdbc.intervalMillis());
+            this.notifyQueue = "NOTIFY " + channelName;
+        }
     }
 
     @Override
@@ -40,14 +48,14 @@ final class FencepostQueuePublisher implements QueuePublisher {
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(false);
             try {
-                Jdbc.update(conn, enqueueSql)
+                Jdbc.update(conn, sql.enqueue)
                     .bind(queueName)
                     .bind(payload)
                     .bind(type)
                     .bind(HeadersCodec.toJson(headers))
                     .bind(delayMillis)
                     .execute();
-                Jdbc.execute(conn, notifyQueueSql);
+                Jdbc.execute(conn, sql.notifyQueue);
                 Jdbc.execute(conn, NOTIFY_DASHBOARD_SQL);
                 conn.commit();
                 logger.debug("published message to queue '{}'", queueName);
@@ -63,6 +71,6 @@ final class FencepostQueuePublisher implements QueuePublisher {
     @Override
     public TransactionalQueuePublisher transactional(Connection connection) {
         Objects.requireNonNull(connection, "connection must not be null");
-        return new FencepostTransactionalQueuePublisher(queueName, connection, enqueueSql, notifyQueueSql);
+        return new FencepostTransactionalQueuePublisher(queueName, connection, sql);
     }
 }

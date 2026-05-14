@@ -17,14 +17,12 @@ final class FencepostTransactionalQueuePublisher implements TransactionalQueuePu
 
     private final String queueName;
     private final Connection connection;
-    private final String enqueueSql;
-    private final String notifyQueueSql;
+    private final FencepostQueuePublisher.Sql sql;
 
-    FencepostTransactionalQueuePublisher(String queueName, Connection connection, String enqueueSql, String notifyQueueSql) {
+    FencepostTransactionalQueuePublisher(String queueName, Connection connection, FencepostQueuePublisher.Sql sql) {
         this.queueName = queueName;
         this.connection = connection;
-        this.enqueueSql = enqueueSql;
-        this.notifyQueueSql = notifyQueueSql;
+        this.sql = sql;
     }
 
     @Override
@@ -33,14 +31,14 @@ final class FencepostTransactionalQueuePublisher implements TransactionalQueuePu
         HeadersCodec.requirePrintable(type, "Message type");
         long delayMillis = Durations.toNonNegativeMillis(delay, "delay");
         try {
-            Jdbc.update(connection, enqueueSql)
+            Jdbc.update(connection, sql.enqueue)
                 .bind(queueName)
                 .bind(payload)
                 .bind(type)
                 .bind(HeadersCodec.toJson(headers))
                 .bind(delayMillis)
                 .execute();
-            Jdbc.execute(connection, notifyQueueSql);
+            Jdbc.execute(connection, sql.notifyQueue);
             Jdbc.execute(connection, NOTIFY_DASHBOARD_SQL);
             logger.debug("published message to queue '{}' (transactional)", queueName);
         } catch (SQLException e) {
