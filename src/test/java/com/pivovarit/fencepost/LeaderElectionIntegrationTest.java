@@ -45,10 +45,7 @@ class LeaderElectionIntegrationTest {
 
     @BeforeEach
     void createTable() throws SQLException {
-        try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement()
-              .execute("DROP TABLE IF EXISTS fencepost_locks; CREATE TABLE fencepost_locks (  lock_name TEXT PRIMARY KEY,  lock_type TEXT NOT NULL,  token BIGINT NOT NULL DEFAULT 0,  locked_by TEXT,  locked_at TIMESTAMP WITH TIME ZONE,  expires_at TIMESTAMP WITH TIME ZONE)");
-        }
+        TestSchema.resetLocks(dataSource);
     }
 
     @Test
