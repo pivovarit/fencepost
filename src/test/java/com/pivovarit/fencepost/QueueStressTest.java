@@ -12,7 +12,6 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.List;
@@ -57,23 +56,7 @@ class QueueStressTest {
 
     @BeforeEach
     void createTable() throws SQLException {
-        try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "DROP TABLE IF EXISTS fencepost_queue; "
-              + "CREATE TABLE fencepost_queue ("
-              + "  id BIGSERIAL PRIMARY KEY,"
-              + "  queue_name TEXT NOT NULL,"
-              + "  payload BYTEA NOT NULL,"
-              + "  type TEXT,"
-              + "  headers JSONB,"
-              + "  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),"
-              + "  visible_at TIMESTAMPTZ NOT NULL DEFAULT now(),"
-              + "  attempts INT NOT NULL DEFAULT 0,"
-              + "  picked_by TEXT"
-              + ");"
-              + "CREATE INDEX idx_fencepost_queue_dequeue ON fencepost_queue (queue_name, visible_at)"
-            );
-        }
+        TestSchema.resetQueue(dataSource);
     }
 
     @Test

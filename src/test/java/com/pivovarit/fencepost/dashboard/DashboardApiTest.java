@@ -1,6 +1,7 @@
 package com.pivovarit.fencepost.dashboard;
 
 import com.pivovarit.fencepost.DashboardApi;
+import com.pivovarit.fencepost.TestSchema;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,51 +38,15 @@ class DashboardApiTest {
 
     @BeforeEach
     void dropTables() throws SQLException {
-        try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "DROP TABLE IF EXISTS fencepost_queue; DROP TABLE IF EXISTS fencepost_locks_tokens; DROP TABLE IF EXISTS fencepost_locks; DROP SEQUENCE IF EXISTS fencepost_locks_token_seq;"
-            );
-        }
+        TestSchema.dropAll(dataSource);
     }
 
     void createLocksTable() throws SQLException {
-        try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "CREATE TABLE fencepost_locks (" +
-              "  lock_name TEXT PRIMARY KEY," +
-              "  lock_type TEXT NOT NULL," +
-              "  token BIGINT NOT NULL DEFAULT 0," +
-              "  locked_by TEXT," +
-              "  locked_at TIMESTAMPTZ," +
-              "  expires_at TIMESTAMPTZ" +
-              ");" +
-              "CREATE TABLE fencepost_locks_tokens (" +
-              "  lock_name TEXT PRIMARY KEY," +
-              "  token BIGINT NOT NULL DEFAULT 0," +
-              "  last_locked_by TEXT," +
-              "  last_locked_at TIMESTAMPTZ" +
-              ");" +
-              "CREATE SEQUENCE fencepost_locks_token_seq"
-            );
-        }
+        TestSchema.resetLocks(dataSource);
     }
 
     void createQueueTable() throws SQLException {
-        try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "CREATE TABLE fencepost_queue (" +
-              "  id BIGSERIAL PRIMARY KEY," +
-              "  queue_name TEXT NOT NULL," +
-              "  payload BYTEA NOT NULL," +
-              "  type TEXT," +
-              "  headers JSONB," +
-              "  created_at TIMESTAMPTZ NOT NULL DEFAULT now()," +
-              "  visible_at TIMESTAMPTZ NOT NULL DEFAULT now()," +
-              "  attempts INT NOT NULL DEFAULT 0," +
-              "  picked_by TEXT" +
-              ")"
-            );
-        }
+        TestSchema.resetQueue(dataSource);
     }
 
     DashboardApi api() {

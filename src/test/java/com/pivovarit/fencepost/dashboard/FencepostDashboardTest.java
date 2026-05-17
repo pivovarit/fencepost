@@ -1,6 +1,7 @@
 package com.pivovarit.fencepost.dashboard;
 
 import com.pivovarit.fencepost.FencepostDashboard;
+import com.pivovarit.fencepost.TestSchema;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,37 +59,8 @@ class FencepostDashboardTest {
 
     @BeforeEach
     void createTables() throws SQLException {
-        try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "DROP TABLE IF EXISTS fencepost_queue; DROP TABLE IF EXISTS fencepost_locks_tokens; DROP TABLE IF EXISTS fencepost_locks; DROP SEQUENCE IF EXISTS fencepost_locks_token_seq;" +
-              "CREATE TABLE fencepost_locks (" +
-              "  lock_name TEXT PRIMARY KEY," +
-              "  lock_type TEXT NOT NULL," +
-              "  token BIGINT NOT NULL DEFAULT 0," +
-              "  locked_by TEXT," +
-              "  locked_at TIMESTAMPTZ," +
-              "  expires_at TIMESTAMPTZ" +
-              ");" +
-              "CREATE TABLE fencepost_locks_tokens (" +
-              "  lock_name TEXT PRIMARY KEY," +
-              "  token BIGINT NOT NULL DEFAULT 0," +
-              "  last_locked_by TEXT," +
-              "  last_locked_at TIMESTAMPTZ" +
-              ");" +
-              "CREATE SEQUENCE fencepost_locks_token_seq;" +
-              "CREATE TABLE fencepost_queue (" +
-              "  id BIGSERIAL PRIMARY KEY," +
-              "  queue_name TEXT NOT NULL," +
-              "  payload BYTEA NOT NULL," +
-              "  type TEXT," +
-              "  headers JSONB," +
-              "  created_at TIMESTAMPTZ NOT NULL DEFAULT now()," +
-              "  visible_at TIMESTAMPTZ NOT NULL DEFAULT now()," +
-              "  attempts INT NOT NULL DEFAULT 0," +
-              "  picked_by TEXT" +
-              ")"
-            );
-        }
+        TestSchema.resetLocks(dataSource);
+        TestSchema.resetQueue(dataSource);
     }
 
     @AfterEach
