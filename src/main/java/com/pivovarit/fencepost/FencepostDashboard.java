@@ -111,7 +111,7 @@ public final class FencepostDashboard {
             } else if ("/api/queues".equals(path)) {
                 String json = api.queues();
                 sendJsonResponse(exchange, 200, json);
-            } else if (path.startsWith("/api/queues/") && path.contains("/messages/")) {
+            } else if (path.startsWith("/api/queues/") && path.substring("/api/queues/".length()).contains("/messages/")) {
                 String sub = path.substring("/api/queues/".length());
                 int msgIdx = sub.indexOf("/messages/");
                 String queueName = URLDecoder.decode(sub.substring(0, msgIdx), StandardCharsets.UTF_8);
