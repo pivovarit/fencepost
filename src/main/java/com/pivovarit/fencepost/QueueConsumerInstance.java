@@ -18,6 +18,7 @@ final class QueueConsumerInstance implements QueueConsumer {
 
     private static final Logger logger = LoggerFactory.getLogger(QueueConsumerInstance.class);
     private static final long CLOSE_TIMEOUT_MS = 10_000;
+    private static final long ERROR_BACKOFF_MS = 1_000;
 
     private final String queueName;
     private final Queue queue;
@@ -86,13 +87,23 @@ final class QueueConsumerInstance implements QueueConsumer {
                 }
                 logger.debug("dequeue error on queue '{}': {}", queueName, e.getMessage());
                 reportError(null, e);
+                backoff();
             } catch (RuntimeException e) {
                 if (closed) {
                     return;
                 }
                 logger.warn("unexpected error in consumer loop for queue '{}'", queueName, e);
                 reportError(null, e);
+                backoff();
             }
+        }
+    }
+
+    private void backoff() {
+        try {
+            Thread.sleep(ERROR_BACKOFF_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
