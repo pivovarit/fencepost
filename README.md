@@ -18,7 +18,7 @@ Fencepost provides three lock strategies, leader election, and a message queue, 
 
 - **Advisory** - leverages PostgreSQL's built-in advisory locks. No table or schema setup required. Holds a database connection for the duration of the lock. Released automatically on disconnect. Simple and lightweight, but provides no fencing tokens, so it can't protect against stale holders writing to external systems.
 
-- **Session** - uses a dedicated table with `SELECT ... FOR UPDATE` to hold the lock within an open transaction. Issues monotonically increasing fencing tokens via a per-lock PostgreSQL sequence (`nextval`) on each acquisition. Because `nextval` is non-transactional, tokens are visible to other instances immediately — even while the lock-holding transaction is still open. This means `isSuperseded()` returns accurate results at all times. Holds a connection for the duration of the lock - if the process crashes, the connection is closed and the lock is released.
+- **Session** - uses a dedicated table with `SELECT ... FOR UPDATE` to hold the lock within an open transaction. Issues monotonically increasing fencing tokens via a per-lock PostgreSQL sequence (`nextval`) on each acquisition. Because `nextval` is non-transactional, tokens are visible to other instances immediately - even while the lock-holding transaction is still open. This means `isSuperseded()` returns accurate results at all times. Holds a connection for the duration of the lock - if the process crashes, the connection is closed and the lock is released.
 
 - **Lease** - does not hold a connection or transaction. Acquires the lock by writing a timestamp to a table and releases the connection immediately. The lock is held purely via a TTL (`expires_at`) - if a holder crashes, the lock automatically becomes available after the lease duration. An optional auto-renew thread extends the lease periodically to prevent expiry during long-running work. Supports a quiet period to enforce a minimum gap between consecutive acquisitions. Best suited for long-running tasks where occupying a connection pool slot is not acceptable.
 
@@ -36,11 +36,11 @@ Lock instances are **not thread-safe**. Each instance should be confined to a si
 ```java
 LockFactory<FencedLock> factory = Fencepost.Locks.session(dataSource).build();
 
-// correct — each thread gets its own instance
+// correct - each thread gets its own instance
 executor.submit(() -> factory.forName("my-lock").runLocked(token -> { /* ... */ }));
 executor.submit(() -> factory.forName("my-lock").runLocked(token -> { /* ... */ }));
 
-// wrong — sharing one instance across threads
+// wrong - sharing one instance across threads
 FencedLock lock = factory.forName("my-lock");
 executor.submit(() -> lock.runLocked(token -> { /* ... */ }));
 executor.submit(() -> lock.runLocked(token -> { /* ... */ }));
@@ -52,7 +52,7 @@ This applies to all lock types (`advisory`, `session`, `lease`). The `LockFactor
 
 Session and lease locks require a table and a durable token table. Advisory locks don't need
 any setup. For custom lock tables, Fencepost expects the token table to use the same name
-with a `_tokens` suffix, and the sequence with a `_token_seq` suffix, in the same schema.
+with a `_tokens` suffix, in the same schema.
 
 Session locks also create per-lock PostgreSQL sequences automatically (named `fencepost_st_<lock_name>`)
 to allocate fencing tokens with immediate visibility.
@@ -73,13 +73,10 @@ CREATE TABLE fencepost_locks_tokens (
     last_locked_by  TEXT,
     last_locked_at  TIMESTAMP WITH TIME ZONE
 );
-
-CREATE SEQUENCE IF NOT EXISTS fencepost_locks_token_seq;
 ```
 
 The table name defaults to `fencepost_locks` but can be customized via `.tableName("my_locks")` on the builder.
-The token table defaults to `fencepost_locks_tokens` and the sequence to `fencepost_locks_token_seq`;
-for `.tableName("my_locks")`, Fencepost expects `my_locks_tokens` and `my_locks_token_seq`.
+The token table defaults to `fencepost_locks_tokens`; for `.tableName("my_locks")`, Fencepost expects `my_locks_tokens`.
 
 ## Examples
 
@@ -130,7 +127,7 @@ try {
 
 ### Leader Election
 
-Use leader election when you want one of N instances to *pick up* a piece of work and *keep doing it*, with automatic failover when the leader dies. It's built on top of `leaseLock` — a sticky single-leader primitive, not per-iteration mutual exclusion (use `leaseLock` directly for that).
+Use leader election when you want one of N instances to *pick up* a piece of work and *keep doing it*, with automatic failover when the leader dies. It's built on top of `leaseLock` - a sticky single-leader primitive, not per-iteration mutual exclusion (use `leaseLock` directly for that).
 
 ```java
 LeaderElection election = Fencepost.Locks.leaderElection(dataSource, "import-job", Duration.ofSeconds(30))
@@ -153,7 +150,7 @@ if (election.isLeader()) {
 election.close();   // fires onRevoked synchronously, then releases the lease
 ```
 
-`onElected` and `onRevoked` are state-change callbacks — they should return quickly. Real work runs on your own thread, gated by `isLeader()`. If the leader's lease can't be renewed (DB hiccup, GC pause longer than the lease), `onRevoked` fires and the loop returns to standby; another instance takes over within roughly one lease duration.
+`onElected` and `onRevoked` are state-change callbacks - they should return quickly. Real work runs on your own thread, gated by `isLeader()`. If the leader's lease can't be renewed (DB hiccup, GC pause longer than the lease), `onRevoked` fires and the loop returns to standby; another instance takes over within roughly one lease duration.
 
 ## Docker Compose Example
 
