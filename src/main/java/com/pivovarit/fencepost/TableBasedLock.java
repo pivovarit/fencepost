@@ -187,7 +187,7 @@ abstract class TableBasedLock {
         return tableName.substring(0, dot + 1) + seqName;
     }
 
-    private static String tokenTableName(String tableName) {
+    static String tokenTableName(String tableName) {
         int dot = tableName.lastIndexOf('.');
         if (dot == -1) {
             return tableName + "_tokens";
