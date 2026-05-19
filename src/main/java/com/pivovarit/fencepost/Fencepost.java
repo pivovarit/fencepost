@@ -79,6 +79,7 @@ public final class Fencepost {
         public static final class SessionBuilder {
             private final DataSource dataSource;
             private String tableName = "fencepost_locks";
+            private SchemaMode schemaMode = SchemaMode.NONE;
 
             private SessionBuilder(DataSource dataSource) {
                 this.dataSource = dataSource;
@@ -90,7 +91,13 @@ public final class Fencepost {
                 return this;
             }
 
+            public SessionBuilder schemaMode(SchemaMode schemaMode) {
+                this.schemaMode = Objects.requireNonNull(schemaMode, "schemaMode must not be null");
+                return this;
+            }
+
             public LockFactory<FencedLock> build() {
+                schemaMode.applyToLocks(dataSource, tableName);
                 String t = this.tableName;
                 return new LockFactory<>(lockName -> new SessionLockInstance(lockName, dataSource, t));
             }
@@ -105,6 +112,7 @@ public final class Fencepost {
             private Duration pollInterval;
             private Consumer<FencepostException> onAutoRenewFailure;
             private String instanceId;
+            private SchemaMode schemaMode = SchemaMode.NONE;
 
             private LeaseBuilder(DataSource dataSource, Duration leaseDuration) {
                 this.dataSource = dataSource;
@@ -152,7 +160,13 @@ public final class Fencepost {
                 return this;
             }
 
+            public LeaseBuilder schemaMode(SchemaMode schemaMode) {
+                this.schemaMode = Objects.requireNonNull(schemaMode, "schemaMode must not be null");
+                return this;
+            }
+
             public LockFactory<RenewableLock> build() {
+                schemaMode.applyToLocks(dataSource, this.tableName);
                 return new LockFactory<>(lockName -> new LeaseLockInstance(lockName, dataSource,
                   this.tableName,
                   this.leaseDuration,
@@ -176,6 +190,7 @@ public final class Fencepost {
             private Consumer<FencingToken> onElected = token -> {};
             private Runnable onRevoked = () -> {};
             private Consumer<Throwable> onCallbackError = t -> {};
+            private SchemaMode schemaMode = SchemaMode.NONE;
 
             private LeaderElectionBuilder(DataSource dataSource, String electionName, Duration leaseDuration) {
                 this.dataSource = dataSource;
@@ -240,7 +255,13 @@ public final class Fencepost {
                 return this;
             }
 
+            public LeaderElectionBuilder schemaMode(SchemaMode schemaMode) {
+                this.schemaMode = Objects.requireNonNull(schemaMode, "schemaMode must not be null");
+                return this;
+            }
+
             public LeaderElection build() {
+                schemaMode.applyToLocks(dataSource, tableName);
                 Duration effectiveRenew = renewInterval != null ? renewInterval : leaseDuration.dividedBy(3);
                 Duration effectivePoll = pollInterval != null ? pollInterval : leaseDuration.dividedBy(2);
                 if (effectiveRenew.isZero()) {
@@ -292,6 +313,7 @@ public final class Fencepost {
         public static final class PublisherBuilder {
             private final DataSource dataSource;
             private String tableName = "fencepost_queue";
+            private SchemaMode schemaMode = SchemaMode.NONE;
 
             private PublisherBuilder(DataSource dataSource) {
                 this.dataSource = dataSource;
@@ -303,7 +325,13 @@ public final class Fencepost {
                 return this;
             }
 
+            public PublisherBuilder schemaMode(SchemaMode schemaMode) {
+                this.schemaMode = Objects.requireNonNull(schemaMode, "schemaMode must not be null");
+                return this;
+            }
+
             public QueueFactory<QueuePublisher> build() {
+                schemaMode.applyToQueue(dataSource, tableName);
                 String t = this.tableName;
                 return new QueueFactory<>(queueName -> new FencepostQueuePublisher(queueName, dataSource, t));
             }
@@ -318,6 +346,7 @@ public final class Fencepost {
             private ThrowingConsumer<Message> handler;
             private int concurrency = 1;
             private BiConsumer<Message, Throwable> onError = (msg, t) -> {};
+            private SchemaMode schemaMode = SchemaMode.NONE;
 
             private ConsumerBuilder(DataSource dataSource, String queueName) {
                 this.dataSource = dataSource;
@@ -360,7 +389,13 @@ public final class Fencepost {
                 return this;
             }
 
+            public ConsumerBuilder schemaMode(SchemaMode schemaMode) {
+                this.schemaMode = Objects.requireNonNull(schemaMode, "schemaMode must not be null");
+                return this;
+            }
+
             public QueueConsumer build() {
+                schemaMode.applyToQueue(dataSource, tableName);
                 if (visibilityTimeout == null) {
                     throw new IllegalStateException("visibilityTimeout must be set");
                 }
@@ -379,6 +414,7 @@ public final class Fencepost {
             private String tableName = "fencepost_queue";
             private Duration visibilityTimeout;
             private long pollIntervalMs = 100;
+            private SchemaMode schemaMode = SchemaMode.NONE;
 
             private QueueBuilder(DataSource dataSource) {
                 this.dataSource = dataSource;
@@ -401,7 +437,13 @@ public final class Fencepost {
                 return this;
             }
 
+            public QueueBuilder schemaMode(SchemaMode schemaMode) {
+                this.schemaMode = Objects.requireNonNull(schemaMode, "schemaMode must not be null");
+                return this;
+            }
+
             public QueueFactory<Queue> build() {
+                schemaMode.applyToQueue(dataSource, tableName);
                 if (visibilityTimeout == null) {
                     throw new IllegalStateException("visibilityTimeout must be set");
                 }
