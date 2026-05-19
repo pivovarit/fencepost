@@ -1,10 +1,12 @@
 package com.pivovarit.fencepost;
 
+import com.pivovarit.fencepost.election.LeaderElection;
 import com.pivovarit.fencepost.lock.FencedLock;
 import com.pivovarit.fencepost.lock.FencingToken;
 import com.pivovarit.fencepost.lock.LockFactory;
 import com.pivovarit.fencepost.lock.RenewableLock;
 import com.pivovarit.fencepost.queue.Queue;
+import com.pivovarit.fencepost.queue.QueueConsumer;
 import com.pivovarit.fencepost.queue.QueueFactory;
 import com.pivovarit.fencepost.queue.QueuePublisher;
 import org.junit.jupiter.api.BeforeAll;
@@ -124,6 +126,26 @@ class SchemaModeBuildIntegrationTest {
             .build())
             .isInstanceOf(FencepostException.class)
             .hasMessageContaining("does not exist");
+    }
+
+    @Test
+    void shouldCreateSchemaViaLeaderElectionBuilder() {
+        LeaderElection election = Fencepost.Locks.leaderElection(dataSource, "test-election", Duration.ofSeconds(30))
+            .schemaMode(SchemaMode.CREATE)
+            .build();
+
+        election.close();
+    }
+
+    @Test
+    void shouldCreateSchemaViaConsumerBuilder() {
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
+            .schemaMode(SchemaMode.CREATE)
+            .visibilityTimeout(Duration.ofSeconds(30))
+            .handler(msg -> {})
+            .build();
+
+        consumer.close();
     }
 
     @Test
