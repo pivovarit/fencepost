@@ -2,6 +2,7 @@ package com.pivovarit.fencepost;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -113,28 +114,33 @@ final class SchemaManager {
 
     private static void validateTable(DataSource dataSource, String schema, String table, List<String[]> expectedColumns) {
         try (Connection conn = dataSource.getConnection()) {
-            try (Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(
-                     "SELECT 1 FROM information_schema.tables WHERE table_schema = '" + schema + "' AND table_name = '" + table + "'")) {
-                if (!rs.next()) {
-                    throw new FencepostException("Required table '" + table + "' does not exist");
+            try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ?")) {
+                ps.setString(1, schema);
+                ps.setString(2, table);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) {
+                        throw new FencepostException("Required table '" + table + "' does not exist");
+                    }
                 }
             }
 
             for (String[] col : expectedColumns) {
                 String colName = col[0];
                 String colType = col[1];
-                try (Statement stmt = conn.createStatement();
-                     ResultSet rs = stmt.executeQuery(
-                         "SELECT data_type FROM information_schema.columns WHERE table_schema = '" + schema
-                             + "' AND table_name = '" + table
-                             + "' AND column_name = '" + colName + "'")) {
-                    if (!rs.next()) {
-                        throw new FencepostException("Table '" + table + "' is missing column '" + colName + "' (expected type: " + colType + ")");
-                    }
-                    String actualType = rs.getString(1);
-                    if (!colType.equals(actualType)) {
-                        throw new FencepostException("Table '" + table + "' column '" + colName + "' has type '" + actualType + "', expected '" + colType + "'");
+                try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT data_type FROM information_schema.columns WHERE table_schema = ? AND table_name = ? AND column_name = ?")) {
+                    ps.setString(1, schema);
+                    ps.setString(2, table);
+                    ps.setString(3, colName);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next()) {
+                            throw new FencepostException("Table '" + table + "' is missing column '" + colName + "' (expected type: " + colType + ")");
+                        }
+                        String actualType = rs.getString(1);
+                        if (!colType.equals(actualType)) {
+                            throw new FencepostException("Table '" + table + "' column '" + colName + "' has type '" + actualType + "', expected '" + colType + "'");
+                        }
                     }
                 }
             }
@@ -145,11 +151,14 @@ final class SchemaManager {
 
     private static void validateSequence(DataSource dataSource, String schema, String sequence) {
         try (Connection conn = dataSource.getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(
-                 "SELECT 1 FROM pg_sequences WHERE schemaname = '" + schema + "' AND sequencename = '" + sequence + "'")) {
-            if (!rs.next()) {
-                throw new FencepostException("Required sequence '" + sequence + "' does not exist");
+             PreparedStatement ps = conn.prepareStatement(
+                 "SELECT 1 FROM pg_sequences WHERE schemaname = ? AND sequencename = ?")) {
+            ps.setString(1, schema);
+            ps.setString(2, sequence);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    throw new FencepostException("Required sequence '" + sequence + "' does not exist");
+                }
             }
         } catch (SQLException e) {
             throw new FencepostException("Failed to validate schema", e);
