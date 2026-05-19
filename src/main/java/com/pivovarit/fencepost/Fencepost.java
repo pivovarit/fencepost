@@ -97,11 +97,7 @@ public final class Fencepost {
             }
 
             public LockFactory<FencedLock> build() {
-                if (schemaMode == SchemaMode.CREATE) {
-                    SchemaManager.createLockSchema(dataSource, tableName);
-                } else if (schemaMode == SchemaMode.VALIDATE) {
-                    SchemaManager.validateLockSchema(dataSource, tableName);
-                }
+                schemaMode.applyToLocks(dataSource, tableName);
                 String t = this.tableName;
                 return new LockFactory<>(lockName -> new SessionLockInstance(lockName, dataSource, t));
             }
@@ -170,11 +166,7 @@ public final class Fencepost {
             }
 
             public LockFactory<RenewableLock> build() {
-                if (schemaMode == SchemaMode.CREATE) {
-                    SchemaManager.createLockSchema(dataSource, this.tableName);
-                } else if (schemaMode == SchemaMode.VALIDATE) {
-                    SchemaManager.validateLockSchema(dataSource, this.tableName);
-                }
+                schemaMode.applyToLocks(dataSource, this.tableName);
                 return new LockFactory<>(lockName -> new LeaseLockInstance(lockName, dataSource,
                   this.tableName,
                   this.leaseDuration,
@@ -269,11 +261,7 @@ public final class Fencepost {
             }
 
             public LeaderElection build() {
-                if (schemaMode == SchemaMode.CREATE) {
-                    SchemaManager.createLockSchema(dataSource, tableName);
-                } else if (schemaMode == SchemaMode.VALIDATE) {
-                    SchemaManager.validateLockSchema(dataSource, tableName);
-                }
+                schemaMode.applyToLocks(dataSource, tableName);
                 Duration effectiveRenew = renewInterval != null ? renewInterval : leaseDuration.dividedBy(3);
                 Duration effectivePoll = pollInterval != null ? pollInterval : leaseDuration.dividedBy(2);
                 if (effectiveRenew.isZero()) {
@@ -343,11 +331,7 @@ public final class Fencepost {
             }
 
             public QueueFactory<QueuePublisher> build() {
-                if (schemaMode == SchemaMode.CREATE) {
-                    SchemaManager.createQueueSchema(dataSource, tableName);
-                } else if (schemaMode == SchemaMode.VALIDATE) {
-                    SchemaManager.validateQueueSchema(dataSource, tableName);
-                }
+                schemaMode.applyToQueue(dataSource, tableName);
                 String t = this.tableName;
                 return new QueueFactory<>(queueName -> new FencepostQueuePublisher(queueName, dataSource, t));
             }
@@ -411,11 +395,7 @@ public final class Fencepost {
             }
 
             public QueueConsumer build() {
-                if (schemaMode == SchemaMode.CREATE) {
-                    SchemaManager.createQueueSchema(dataSource, tableName);
-                } else if (schemaMode == SchemaMode.VALIDATE) {
-                    SchemaManager.validateQueueSchema(dataSource, tableName);
-                }
+                schemaMode.applyToQueue(dataSource, tableName);
                 if (visibilityTimeout == null) {
                     throw new IllegalStateException("visibilityTimeout must be set");
                 }
@@ -463,11 +443,7 @@ public final class Fencepost {
             }
 
             public QueueFactory<Queue> build() {
-                if (schemaMode == SchemaMode.CREATE) {
-                    SchemaManager.createQueueSchema(dataSource, tableName);
-                } else if (schemaMode == SchemaMode.VALIDATE) {
-                    SchemaManager.validateQueueSchema(dataSource, tableName);
-                }
+                schemaMode.applyToQueue(dataSource, tableName);
                 if (visibilityTimeout == null) {
                     throw new IllegalStateException("visibilityTimeout must be set");
                 }
