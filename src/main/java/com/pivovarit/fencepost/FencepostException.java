@@ -1,6 +1,12 @@
 package com.pivovarit.fencepost;
 
-public class FencepostException extends RuntimeException {
+import com.pivovarit.fencepost.lock.LockAcquisitionTimeoutException;
+import com.pivovarit.fencepost.lock.LockNotHeldException;
+import com.pivovarit.fencepost.queue.AckUnknownException;
+import com.pivovarit.fencepost.queue.LostOwnershipException;
+
+public sealed class FencepostException extends RuntimeException
+    permits LockNotHeldException, LockAcquisitionTimeoutException, LostOwnershipException, AckUnknownException {
 
     private static final long serialVersionUID = 1L;
 
