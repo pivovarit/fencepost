@@ -33,9 +33,9 @@ final class FencepostQueuePublisher implements QueuePublisher {
         final String notifyQueue;
 
         Sql(String tableName, String channelName) {
-            this.enqueue = String.format(
-                "INSERT INTO %s (queue_name, payload, type, headers, visible_at) VALUES (?, ?, ?, ?::jsonb, now() + %s)",
-                tableName, Jdbc.intervalMillis());
+            this.enqueue = """
+                INSERT INTO %s (queue_name, payload, type, headers, visible_at)
+                VALUES (?, ?, ?, ?::jsonb, now() + %s)""".formatted(tableName, Jdbc.intervalMillis());
             this.notifyQueue = "NOTIFY " + channelName;
         }
     }

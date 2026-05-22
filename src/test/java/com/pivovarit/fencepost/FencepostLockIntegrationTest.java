@@ -100,9 +100,10 @@ class FencepostLockIntegrationTest {
 
         try (Connection conn = dataSource.getConnection();
              ResultSet rs = conn.createStatement()
-               .executeQuery("SELECT t.last_locked_by, t.last_locked_at " +
-                 "FROM fencepost_locks_tokens t " +
-                 "WHERE t.lock_name = 'session-visible-meta-test'")) {
+               .executeQuery("""
+                   SELECT t.last_locked_by, t.last_locked_at
+                   FROM fencepost_locks_tokens t
+                   WHERE t.lock_name = 'session-visible-meta-test'""")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getString("last_locked_by"))
               .as("last_locked_by should be visible after unlock")

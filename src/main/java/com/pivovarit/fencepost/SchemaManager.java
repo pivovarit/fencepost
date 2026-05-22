@@ -17,38 +17,40 @@ final class SchemaManager {
     static void createLockSchema(DataSource dataSource, String tableName) {
         String tokenTable = TableBasedLock.tokenTableName(tableName);
         String tokenSeq = TableBasedLock.tokenSequenceName(tableName);
-        String sql = "CREATE TABLE IF NOT EXISTS " + tableName + " ("
-            + "lock_name TEXT PRIMARY KEY,"
-            + "lock_type TEXT NOT NULL,"
-            + "token BIGINT NOT NULL DEFAULT 0,"
-            + "locked_by TEXT,"
-            + "locked_at TIMESTAMP WITH TIME ZONE,"
-            + "expires_at TIMESTAMP WITH TIME ZONE"
-            + ");"
-            + "CREATE TABLE IF NOT EXISTS " + tokenTable + " ("
-            + "lock_name TEXT PRIMARY KEY,"
-            + "token BIGINT NOT NULL DEFAULT 0,"
-            + "last_locked_by TEXT,"
-            + "last_locked_at TIMESTAMP WITH TIME ZONE"
-            + ");"
-            + "CREATE SEQUENCE IF NOT EXISTS " + tokenSeq;
+        String sql = """
+            CREATE TABLE IF NOT EXISTS %s (
+              lock_name TEXT PRIMARY KEY,
+              lock_type TEXT NOT NULL,
+              token BIGINT NOT NULL DEFAULT 0,
+              locked_by TEXT,
+              locked_at TIMESTAMP WITH TIME ZONE,
+              expires_at TIMESTAMP WITH TIME ZONE
+            );
+            CREATE TABLE IF NOT EXISTS %s (
+              lock_name TEXT PRIMARY KEY,
+              token BIGINT NOT NULL DEFAULT 0,
+              last_locked_by TEXT,
+              last_locked_at TIMESTAMP WITH TIME ZONE
+            );
+            CREATE SEQUENCE IF NOT EXISTS %s""".formatted(tableName, tokenTable, tokenSeq);
         executeSql(dataSource, sql);
     }
 
     static void createQueueSchema(DataSource dataSource, String tableName) {
         String indexName = "idx_" + bareTableName(tableName) + "_dequeue";
-        String sql = "CREATE TABLE IF NOT EXISTS " + tableName + " ("
-            + "id BIGSERIAL PRIMARY KEY,"
-            + "queue_name TEXT NOT NULL,"
-            + "payload BYTEA NOT NULL,"
-            + "type TEXT,"
-            + "headers JSONB,"
-            + "created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),"
-            + "visible_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),"
-            + "attempts INT NOT NULL DEFAULT 0,"
-            + "picked_by TEXT"
-            + ");"
-            + "CREATE INDEX IF NOT EXISTS " + indexName + " ON " + tableName + " (queue_name, visible_at)";
+        String sql = """
+            CREATE TABLE IF NOT EXISTS %s (
+              id BIGSERIAL PRIMARY KEY,
+              queue_name TEXT NOT NULL,
+              payload BYTEA NOT NULL,
+              type TEXT,
+              headers JSONB,
+              created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+              visible_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+              attempts INT NOT NULL DEFAULT 0,
+              picked_by TEXT
+            );
+            CREATE INDEX IF NOT EXISTS %s ON %s (queue_name, visible_at)""".formatted(tableName, indexName, tableName);
         executeSql(dataSource, sql);
     }
 

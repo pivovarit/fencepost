@@ -225,43 +225,54 @@ public final class DashboardApi {
             this.locksTable = locksTable;
             this.queueTable = queueTable;
 
-            String statusExpr = "  CASE WHEN locked_by IS NOT NULL AND locked_at IS NOT NULL AND (expires_at IS NULL OR expires_at > now()) " +
-              "       THEN 'held' " +
-              "       WHEN locked_by IS NOT NULL AND locked_at IS NULL AND expires_at IS NOT NULL AND expires_at > now() " +
-              "       THEN 'quiet' " +
-              "       ELSE 'free' END AS status ";
+            String statusExpr = """
+                CASE WHEN locked_by IS NOT NULL AND locked_at IS NOT NULL AND (expires_at IS NULL OR expires_at > now())
+                     THEN 'held'
+                     WHEN locked_by IS NOT NULL AND locked_at IS NULL AND expires_at IS NOT NULL AND expires_at > now()
+                     THEN 'quiet'
+                     ELSE 'free' END AS status""";
 
-            this.allLocks = "SELECT lock_name, token, locked_by, locked_at, expires_at, " +
-              statusExpr + "FROM " + locksTable + " ORDER BY lock_name";
+            this.allLocks = """
+                SELECT lock_name, token, locked_by, locked_at, expires_at,
+                  %s
+                FROM %s ORDER BY lock_name""".formatted(statusExpr, locksTable);
 
-            this.lockByName = "SELECT lock_name, token, locked_by, locked_at, expires_at, " +
-              statusExpr + "FROM " + locksTable + " WHERE lock_name = ?";
+            this.lockByName = """
+                SELECT lock_name, token, locked_by, locked_at, expires_at,
+                  %s
+                FROM %s WHERE lock_name = ?""".formatted(statusExpr, locksTable);
 
-            this.allQueues = "SELECT queue_name, " +
-              "  COUNT(*) AS total, " +
-              "  COUNT(*) FILTER (WHERE visible_at <= now() AND picked_by IS NULL) AS visible, " +
-              "  COUNT(*) FILTER (WHERE picked_by IS NOT NULL) AS in_flight, " +
-              "  EXTRACT(EPOCH FROM now() - MIN(visible_at) FILTER (WHERE visible_at <= now())) AS oldest_age_seconds " +
-              "FROM " + queueTable + " GROUP BY queue_name ORDER BY queue_name";
+            this.allQueues = """
+                SELECT queue_name,
+                  COUNT(*) AS total,
+                  COUNT(*) FILTER (WHERE visible_at <= now() AND picked_by IS NULL) AS visible,
+                  COUNT(*) FILTER (WHERE picked_by IS NOT NULL) AS in_flight,
+                  EXTRACT(EPOCH FROM now() - MIN(visible_at) FILTER (WHERE visible_at <= now())) AS oldest_age_seconds
+                FROM %s GROUP BY queue_name ORDER BY queue_name""".formatted(queueTable);
 
-            this.queueByName = "SELECT queue_name, " +
-              "  COUNT(*) AS total, " +
-              "  COUNT(*) FILTER (WHERE visible_at <= now() AND picked_by IS NULL) AS visible, " +
-              "  COUNT(*) FILTER (WHERE picked_by IS NOT NULL) AS in_flight, " +
-              "  EXTRACT(EPOCH FROM now() - MIN(visible_at) FILTER (WHERE visible_at <= now())) AS oldest_age_seconds " +
-              "FROM " + queueTable + " WHERE queue_name = ? GROUP BY queue_name";
+            this.queueByName = """
+                SELECT queue_name,
+                  COUNT(*) AS total,
+                  COUNT(*) FILTER (WHERE visible_at <= now() AND picked_by IS NULL) AS visible,
+                  COUNT(*) FILTER (WHERE picked_by IS NOT NULL) AS in_flight,
+                  EXTRACT(EPOCH FROM now() - MIN(visible_at) FILTER (WHERE visible_at <= now())) AS oldest_age_seconds
+                FROM %s WHERE queue_name = ? GROUP BY queue_name""".formatted(queueTable);
 
-            this.messagesByQueue = "SELECT id, encode(substring(payload from 1 for 200), 'base64') AS payload_preview, type, picked_by, attempts, visible_at, created_at, " +
-              "  CASE WHEN picked_by IS NOT NULL THEN 'in_flight' " +
-              "       WHEN visible_at > now() THEN 'delayed' " +
-              "       ELSE 'visible' END AS status " +
-              "FROM " + queueTable + " WHERE queue_name = ? ORDER BY id";
+            this.messagesByQueue = """
+                SELECT id, encode(substring(payload from 1 for 200), 'base64') AS payload_preview,
+                  type, picked_by, attempts, visible_at, created_at,
+                  CASE WHEN picked_by IS NOT NULL THEN 'in_flight'
+                       WHEN visible_at > now() THEN 'delayed'
+                       ELSE 'visible' END AS status
+                FROM %s WHERE queue_name = ? ORDER BY id""".formatted(queueTable);
 
-            this.messageById = "SELECT id, encode(payload, 'base64') AS payload_b64, type, headers, picked_by, attempts, visible_at, created_at, " +
-              "  CASE WHEN picked_by IS NOT NULL THEN 'in_flight' " +
-              "       WHEN visible_at > now() THEN 'delayed' " +
-              "       ELSE 'visible' END AS status " +
-              "FROM " + queueTable + " WHERE queue_name = ? AND id = ?";
+            this.messageById = """
+                SELECT id, encode(payload, 'base64') AS payload_b64, type, headers,
+                  picked_by, attempts, visible_at, created_at,
+                  CASE WHEN picked_by IS NOT NULL THEN 'in_flight'
+                       WHEN visible_at > now() THEN 'delayed'
+                       ELSE 'visible' END AS status
+                FROM %s WHERE queue_name = ? AND id = ?""".formatted(queueTable);
         }
     }
 }

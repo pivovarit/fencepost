@@ -65,10 +65,22 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         final String unlock;
 
         Sql(String tableName) {
-            this.acquire = String.format("UPDATE %s SET token = token + 1, locked_by = ?, locked_at = now(), expires_at = now() + %s WHERE lock_name IN (SELECT lock_name FROM %s WHERE lock_name = ? AND (locked_by IS NULL OR expires_at IS NULL OR expires_at <= now()) FOR UPDATE SKIP LOCKED) RETURNING token", tableName, Jdbc.intervalMillis(), tableName);
-            this.renew = String.format("UPDATE %s SET expires_at = GREATEST(expires_at, now() + %s) %s", tableName, Jdbc.intervalMillis(), activeLeasePredicate());
-            this.unlockWithQuietPeriod = String.format("UPDATE %s SET token = token + 1, locked_at = NULL, expires_at = now() + %s %s", tableName, Jdbc.intervalMillis(), activeLeasePredicate());
-            this.unlock = String.format("UPDATE %s SET token = token + 1, locked_by = NULL, locked_at = NULL, expires_at = NULL %s", tableName, activeLeasePredicate());
+            this.acquire = """
+                UPDATE %s SET token = token + 1, locked_by = ?, locked_at = now(), expires_at = now() + %s
+                WHERE lock_name IN (
+                  SELECT lock_name FROM %s
+                  WHERE lock_name = ? AND (locked_by IS NULL OR expires_at IS NULL OR expires_at <= now())
+                  FOR UPDATE SKIP LOCKED)
+                RETURNING token""".formatted(tableName, Jdbc.intervalMillis(), tableName);
+            this.renew = """
+                UPDATE %s SET expires_at = GREATEST(expires_at, now() + %s)
+                %s""".formatted(tableName, Jdbc.intervalMillis(), activeLeasePredicate());
+            this.unlockWithQuietPeriod = """
+                UPDATE %s SET token = token + 1, locked_at = NULL, expires_at = now() + %s
+                %s""".formatted(tableName, Jdbc.intervalMillis(), activeLeasePredicate());
+            this.unlock = """
+                UPDATE %s SET token = token + 1, locked_by = NULL, locked_at = NULL, expires_at = NULL
+                %s""".formatted(tableName, activeLeasePredicate());
         }
     }
 

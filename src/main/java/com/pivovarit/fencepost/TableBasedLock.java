@@ -53,9 +53,20 @@ abstract class TableBasedLock {
             String tokenSequence = tokenSequenceName(tableName);
             this.selectLockType = String.format("SELECT lock_type FROM %s WHERE lock_name = ?", tableName);
             this.insertLockRow = String.format("INSERT INTO %s (lock_name, lock_type) VALUES (?, ?) ON CONFLICT DO NOTHING", tableName);
-            this.allocateToken = String.format("INSERT INTO %s AS t (lock_name, token, last_locked_by, last_locked_at) VALUES (?, nextval('%s'), ?, now()) ON CONFLICT (lock_name) DO UPDATE SET token = EXCLUDED.token, last_locked_by = EXCLUDED.last_locked_by, last_locked_at = EXCLUDED.last_locked_at RETURNING token", tokenTable, tokenSequence);
-            this.recordToken = String.format("UPDATE %s SET token = ?, locked_by = ?, locked_at = now(), expires_at = NULL WHERE lock_name = ? RETURNING token", tableName);
-            this.recordTokenMetadata = String.format("INSERT INTO %s (lock_name, token, last_locked_by, last_locked_at) VALUES (?, ?, ?, now()) ON CONFLICT (lock_name) DO UPDATE SET token = EXCLUDED.token, last_locked_by = EXCLUDED.last_locked_by, last_locked_at = EXCLUDED.last_locked_at", tokenTable);
+            this.allocateToken = """
+                INSERT INTO %s AS t (lock_name, token, last_locked_by, last_locked_at)
+                VALUES (?, nextval('%s'), ?, now())
+                ON CONFLICT (lock_name) DO UPDATE
+                SET token = EXCLUDED.token, last_locked_by = EXCLUDED.last_locked_by, last_locked_at = EXCLUDED.last_locked_at
+                RETURNING token""".formatted(tokenTable, tokenSequence);
+            this.recordToken = """
+                UPDATE %s SET token = ?, locked_by = ?, locked_at = now(), expires_at = NULL
+                WHERE lock_name = ? RETURNING token""".formatted(tableName);
+            this.recordTokenMetadata = """
+                INSERT INTO %s (lock_name, token, last_locked_by, last_locked_at)
+                VALUES (?, ?, ?, now())
+                ON CONFLICT (lock_name) DO UPDATE
+                SET token = EXCLUDED.token, last_locked_by = EXCLUDED.last_locked_by, last_locked_at = EXCLUDED.last_locked_at""".formatted(tokenTable);
             this.checkSuperseded = String.format("SELECT token > ? FROM %s WHERE lock_name = ?", tableName);
             this.checkSupersededByTokenTable = String.format("SELECT token > ? FROM %s WHERE lock_name = ?", tokenTable);
         }
