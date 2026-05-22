@@ -16,7 +16,7 @@ import com.pivovarit.fencepost.FencepostException;
  * at the row level: if the original operation actually landed, the retry will surface as
  * {@link LostOwnershipException}.
  */
-public class AckUnknownException extends FencepostException {
+public final class AckUnknownException extends FencepostException {
 
     private static final long serialVersionUID = 1L;
 

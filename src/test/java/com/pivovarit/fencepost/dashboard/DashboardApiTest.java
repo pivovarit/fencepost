@@ -182,12 +182,11 @@ class DashboardApiTest {
         createQueueTable();
         try (Connection conn = dataSource.getConnection()) {
             // 2 visible messages, 1 in-flight
-            conn.createStatement().execute(
-              "INSERT INTO fencepost_queue (queue_name, payload, visible_at, picked_by) VALUES " +
-              "('my-queue', 'msg1'::bytea, now() - interval '1 second', NULL)," +
-              "('my-queue', 'msg2'::bytea, now() - interval '2 seconds', NULL)," +
-              "('my-queue', 'msg3'::bytea, now() - interval '3 seconds', 'worker-1')"
-            );
+            conn.createStatement().execute("""
+                INSERT INTO fencepost_queue (queue_name, payload, visible_at, picked_by) VALUES
+                ('my-queue', 'msg1'::bytea, now() - interval '1 second', NULL),
+                ('my-queue', 'msg2'::bytea, now() - interval '2 seconds', NULL),
+                ('my-queue', 'msg3'::bytea, now() - interval '3 seconds', 'worker-1')""");
         }
 
         String json = api().queues();

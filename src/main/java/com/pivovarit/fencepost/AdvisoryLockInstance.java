@@ -57,7 +57,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             closeConnection();
             connection = null;
             logger.debug("failed to acquire advisory lock '{}'", lockName, e);
-            throw (e instanceof FencepostException) ? (FencepostException) e : new FencepostException("Failed to acquire advisory lock: " + lockName, e);
+            throw (e instanceof FencepostException fe) ? fe : new FencepostException("Failed to acquire advisory lock: " + lockName, e);
         }
     }
 
@@ -95,7 +95,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             closeConnection();
             connection = null;
             logger.debug("failed to acquire advisory lock '{}'", lockName, e);
-            throw (e instanceof FencepostException) ? (FencepostException) e : new FencepostException("Failed to acquire advisory lock: " + lockName, e);
+            throw (e instanceof FencepostException fe) ? fe : new FencepostException("Failed to acquire advisory lock: " + lockName, e);
         }
     }
 
@@ -120,7 +120,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             closeConnection();
             connection = null;
             logger.debug("failed to tryLock advisory lock '{}'", lockName, e);
-            throw (e instanceof FencepostException) ? (FencepostException) e : new FencepostException("Failed to try-lock advisory: " + lockName, e);
+            throw (e instanceof FencepostException fe) ? fe : new FencepostException("Failed to try-lock advisory: " + lockName, e);
         }
     }
 

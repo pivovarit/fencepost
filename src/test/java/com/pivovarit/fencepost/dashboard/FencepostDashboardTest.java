@@ -226,20 +226,19 @@ class FencepostDashboardTest {
             conn.createStatement().execute("DROP TABLE IF EXISTS fencepost_locks");
             conn.createStatement().execute("DROP TABLE IF EXISTS fencepost_queue");
             conn.createStatement().execute("DROP TABLE IF EXISTS custom_locks_tokens; DROP TABLE IF EXISTS custom_locks");
-            conn.createStatement().execute(
-              "CREATE TABLE custom_locks ("
-                + "lock_name TEXT PRIMARY KEY,"
-                + "lock_type TEXT NOT NULL,"
-                + "token BIGINT NOT NULL DEFAULT 0,"
-                + "locked_by TEXT,"
-                + "locked_at TIMESTAMPTZ,"
-                + "expires_at TIMESTAMPTZ);"
-                + "CREATE TABLE custom_locks_tokens ("
-                + "lock_name TEXT PRIMARY KEY,"
-                + "token BIGINT NOT NULL DEFAULT 0,"
-                + "last_locked_by TEXT,"
-                + "last_locked_at TIMESTAMPTZ)"
-            );
+            conn.createStatement().execute("""
+                CREATE TABLE custom_locks (
+                  lock_name TEXT PRIMARY KEY,
+                  lock_type TEXT NOT NULL,
+                  token BIGINT NOT NULL DEFAULT 0,
+                  locked_by TEXT,
+                  locked_at TIMESTAMPTZ,
+                  expires_at TIMESTAMPTZ);
+                CREATE TABLE custom_locks_tokens (
+                  lock_name TEXT PRIMARY KEY,
+                  token BIGINT NOT NULL DEFAULT 0,
+                  last_locked_by TEXT,
+                  last_locked_at TIMESTAMPTZ)""");
             conn.createStatement().execute(
               "INSERT INTO custom_locks (lock_name, lock_type, token) VALUES ('x', 'LEASE', 42)"
             );
@@ -395,12 +394,11 @@ class FencepostDashboardTest {
     @Disabled("manual test - run from IDE to experiment with the dashboard in a browser")
     void sandbox() throws Exception {
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "INSERT INTO fencepost_locks (lock_name, lock_type, token, locked_by, locked_at, expires_at) VALUES " +
-              "('order-processing', 'LEASE', 7, 'worker-1/main', now(), now() + interval '5 minutes')," +
-              "('inventory-sync', 'LEASE', 3, NULL, NULL, NULL)," +
-              "('report-generation', 'LEASE', 12, 'worker-2/pool-1', now() - interval '10 minutes', now() - interval '5 minutes')"
-            );
+            conn.createStatement().execute("""
+                INSERT INTO fencepost_locks (lock_name, lock_type, token, locked_by, locked_at, expires_at) VALUES
+                ('order-processing', 'LEASE', 7, 'worker-1/main', now(), now() + interval '5 minutes'),
+                ('inventory-sync', 'LEASE', 3, NULL, NULL, NULL),
+                ('report-generation', 'LEASE', 12, 'worker-2/pool-1', now() - interval '10 minutes', now() - interval '5 minutes')""");
         }
 
         var factory = Fencepost.Queues.queue(dataSource)

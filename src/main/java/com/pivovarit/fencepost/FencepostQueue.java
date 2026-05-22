@@ -51,15 +51,15 @@ final class FencepostQueue implements Queue {
         final String dequeue;
 
         Sql(String tableName, String channelName) {
-            this.enqueue = String.format(
-                "INSERT INTO %s (queue_name, payload, type, headers, visible_at) VALUES (?, ?, ?, ?::jsonb, now() + %s)",
-                tableName, Jdbc.intervalMillis());
+            this.enqueue = """
+                INSERT INTO %s (queue_name, payload, type, headers, visible_at)
+                VALUES (?, ?, ?, ?::jsonb, now() + %s)""".formatted(tableName, Jdbc.intervalMillis());
             this.notifyQueue = "NOTIFY " + channelName;
-            this.dequeue = String.format(
-                "UPDATE %s SET visible_at = now() + %s, picked_by = ?, attempts = attempts + 1 "
-                  + "WHERE id = (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now() "
-                  + "ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, payload, type, headers, attempts",
-                tableName, Jdbc.intervalMillis(), tableName);
+            this.dequeue = """
+                UPDATE %s SET visible_at = now() + %s, picked_by = ?, attempts = attempts + 1
+                WHERE id = (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now()
+                ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
+                RETURNING id, payload, type, headers, attempts""".formatted(tableName, Jdbc.intervalMillis(), tableName);
         }
     }
 

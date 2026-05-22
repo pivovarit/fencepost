@@ -2,7 +2,7 @@ package com.pivovarit.fencepost.queue;
 
 import com.pivovarit.fencepost.FencepostException;
 
-public class LostOwnershipException extends FencepostException {
+public final class LostOwnershipException extends FencepostException {
 
     private static final long serialVersionUID = 1L;
 
