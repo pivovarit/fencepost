@@ -2,7 +2,7 @@
 
 Distributed concurrency toolkit for Java + PostgreSQL.
 
-Zero dependencies beyond `org.postgresql:postgresql`. Requires Java 11+.
+Zero dependencies beyond `org.postgresql:postgresql`. Requires Java 17+.
 
 ## Features
 
