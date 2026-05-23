@@ -72,8 +72,8 @@ public final class DashboardApi {
                            ",\"total\":0,\"visible\":0,\"in_flight\":0,\"oldest_age_seconds\":null";
                 }
                 StringBuilder sb = new StringBuilder();
-                appendQueueSummaryRow(sb, rs);
-                return sb.substring(0, sb.length() - 1);
+                appendQueueSummaryFields(sb, rs);
+                return sb.toString();
             });
 
             String messagesJson = Jdbc.query(conn, queries.messagesByQueue).bind(name).map(rs -> {
@@ -150,6 +150,11 @@ public final class DashboardApi {
     }
 
     private static void appendQueueSummaryRow(StringBuilder sb, java.sql.ResultSet rs) throws SQLException {
+        appendQueueSummaryFields(sb, rs);
+        sb.append("}");
+    }
+
+    private static void appendQueueSummaryFields(StringBuilder sb, java.sql.ResultSet rs) throws SQLException {
         sb.append("{");
         sb.append("\"name\":").append(jsonString(rs.getString("queue_name"))).append(",");
         sb.append("\"total\":").append(rs.getLong("total")).append(",");
@@ -157,7 +162,6 @@ public final class DashboardApi {
         sb.append("\"in_flight\":").append(rs.getLong("in_flight")).append(",");
         Object age = rs.getObject("oldest_age_seconds");
         sb.append("\"oldest_age_seconds\":").append(age == null ? "null" : age.toString());
-        sb.append("}");
     }
 
     private static void appendMessageRow(StringBuilder sb, java.sql.ResultSet rs) throws SQLException {
