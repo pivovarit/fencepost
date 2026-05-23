@@ -190,7 +190,7 @@ abstract class TableBasedLock {
     }
 
     static String computeSessionTokenSeqName(String tableName, String lockName) {
-        String seqName = "fencepost_st_" + lockName.replace('-', '_');
+        String seqName = "\"fencepost_st_" + lockName + "\"";
         int dot = tableName.lastIndexOf('.');
         if (dot == -1) {
             return seqName;
