@@ -312,4 +312,51 @@ class LockEdgeCaseIntegrationTest {
 
         faultDs.stopFailing();
     }
+
+    @Test
+    void lockInstanceShouldBeReusableAfterAutoRenewFailure() throws Exception {
+        AtomicBoolean callbackFired = new AtomicBoolean(false);
+
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(2))
+          .withAutoRenew(Duration.ofMillis(100))
+          .onAutoRenewFailure(ex -> callbackFired.set(true))
+          .build();
+
+        RenewableLock lock = provider.forName("reuse-after-renew-fail");
+        lock.lock();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute(
+              "UPDATE fencepost_locks SET token = token + 1 WHERE lock_name = 'reuse-after-renew-fail'");
+        }
+
+        await().atMost(Duration.ofSeconds(10)).untilTrue(callbackFired);
+
+        Thread.sleep(2_500);
+
+        FencingToken second = lock.lock();
+        assertThat(second).isNotNull();
+        lock.unlock();
+    }
+
+    @Test
+    void lockInstanceShouldBeReusableAfterAutoRenewFailureWithoutCallback() throws Exception {
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(2))
+          .withAutoRenew(Duration.ofMillis(100))
+          .build();
+
+        RenewableLock lock = provider.forName("no-callback-clear-token");
+        lock.lock();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute(
+              "UPDATE fencepost_locks SET token = token + 1 WHERE lock_name = 'no-callback-clear-token'");
+        }
+
+        Thread.sleep(3_000);
+
+        FencingToken token = lock.lock();
+        assertThat(token).isNotNull();
+        lock.unlock();
+    }
 }

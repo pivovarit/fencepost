@@ -684,9 +684,8 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
-    void unlockShouldStillBePossibleAfterAutoRenewFailure() throws Exception {
+    void unlockShouldThrowAfterAutoRenewFailure() throws Exception {
         AtomicBoolean callbackFired = new AtomicBoolean(false);
-        AtomicReference<Long> acquiredToken = new AtomicReference<>();
 
         LockFactory<RenewableLock> provider = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(5))
           .withAutoRenew(Duration.ofSeconds(1))
@@ -694,8 +693,7 @@ class FencepostLockIntegrationTest {
           .build();
 
         RenewableLock lock = provider.forName("heartbeat-unlock-test");
-        FencingToken token = lock.lock();
-        acquiredToken.set(token.value());
+        lock.lock();
 
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement()
@@ -704,21 +702,8 @@ class FencepostLockIntegrationTest {
 
         await().atMost(Duration.ofSeconds(10)).untilTrue(callbackFired);
 
-        try (Connection conn = dataSource.getConnection()) {
-            try (PreparedStatement ps = conn.prepareStatement("UPDATE fencepost_locks SET token = ? WHERE lock_name = 'heartbeat-unlock-test'")) {
-                ps.setLong(1, acquiredToken.get());
-                ps.executeUpdate();
-            }
-        }
-
-        lock.unlock();
-
-        try (Connection conn = dataSource.getConnection();
-             ResultSet rs = conn.createStatement()
-               .executeQuery("SELECT locked_by FROM fencepost_locks WHERE lock_name = 'heartbeat-unlock-test'")) {
-            assertThat(rs.next()).isTrue();
-            assertThat(rs.getString("locked_by")).isNull();
-        }
+        assertThatThrownBy(lock::unlock)
+          .isInstanceOf(LockNotHeldException.class);
     }
 
     @Test
