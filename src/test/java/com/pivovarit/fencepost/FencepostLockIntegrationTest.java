@@ -1675,4 +1675,126 @@ class FencepostLockIntegrationTest {
         assertThat(token).isNotNull();
         lock2.unlock();
     }
+
+    @Test
+    void leaseLockShouldRejectConcurrentLockFromDifferentThread() throws Exception {
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(30)).build();
+
+        RenewableLock lock = provider.forName("lease-thread-guard-lock");
+        lock.lock();
+
+        try {
+            AtomicReference<Exception> error = new AtomicReference<>();
+            Thread other = new Thread(() -> {
+                try {
+                    lock.lock();
+                } catch (Exception e) {
+                    error.set(e);
+                }
+            });
+            other.start();
+            other.join(5000);
+
+            assertThat(error.get())
+              .isInstanceOf(IllegalStateException.class)
+              .hasMessageContaining("not thread-safe");
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Test
+    void leaseLockShouldRejectConcurrentTryLockFromDifferentThread() throws Exception {
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(30)).build();
+
+        RenewableLock lock = provider.forName("lease-thread-guard-trylock");
+        lock.lock();
+
+        try {
+            AtomicReference<Exception> error = new AtomicReference<>();
+            Thread other = new Thread(() -> {
+                try {
+                    lock.tryLock();
+                } catch (Exception e) {
+                    error.set(e);
+                }
+            });
+            other.start();
+            other.join(5000);
+
+            assertThat(error.get())
+              .isInstanceOf(IllegalStateException.class)
+              .hasMessageContaining("not thread-safe");
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Test
+    void leaseLockShouldRejectConcurrentTimedLockFromDifferentThread() throws Exception {
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(30)).build();
+
+        RenewableLock lock = provider.forName("lease-thread-guard-timed");
+        lock.lock();
+
+        try {
+            AtomicReference<Exception> error = new AtomicReference<>();
+            Thread other = new Thread(() -> {
+                try {
+                    lock.lock(Duration.ofSeconds(5));
+                } catch (Exception e) {
+                    error.set(e);
+                }
+            });
+            other.start();
+            other.join(5000);
+
+            assertThat(error.get())
+              .isInstanceOf(IllegalStateException.class)
+              .hasMessageContaining("not thread-safe");
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Test
+    void leaseLockRaceShouldRejectExactlyOneThread() throws Exception {
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(30)).build();
+
+        RenewableLock lock = provider.forName("lease-thread-guard-race");
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch go = new CountDownLatch(1);
+        AtomicInteger successes = new AtomicInteger();
+        AtomicInteger rejections = new AtomicInteger();
+
+        Runnable racer = () -> {
+            ready.countDown();
+            try {
+                go.await();
+                lock.lock();
+                successes.incrementAndGet();
+            } catch (IllegalStateException e) {
+                if (e.getMessage().contains("not thread-safe")) {
+                    rejections.incrementAndGet();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        };
+
+        Thread t1 = new Thread(racer);
+        Thread t2 = new Thread(racer);
+        t1.start();
+        t2.start();
+        ready.await();
+        go.countDown();
+        t1.join(5000);
+        t2.join(5000);
+
+        assertThat(successes.get()).isEqualTo(1);
+        assertThat(rejections.get()).isEqualTo(1);
+
+        lock.unlock();
+    }
 }

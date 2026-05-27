@@ -13,6 +13,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -35,6 +36,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     private final Consumer<FencepostException> onAutoRenewFailure;
     private final String instanceId;
     private final Sql sql;
+    private final AtomicReference<Thread> owner = new AtomicReference<>();
 
     private volatile Thread autoRenewThread;
     private volatile long autoRenewWindowMillis;
@@ -86,21 +88,40 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     @Override
     public FencingToken lock() {
-        ensureNotHeld();
-        return doLock();
+        acquireOwnership();
+        try {
+            return doLock();
+        } catch (Exception e) {
+            releaseOwnership();
+            throw e;
+        }
     }
 
     @Override
     public FencingToken lock(Duration timeout) {
         Durations.requireAtLeastOneMillisecond(timeout, "timeout");
-        ensureNotHeld();
-        return doLock(timeout);
+        acquireOwnership();
+        try {
+            return doLock(timeout);
+        } catch (Exception e) {
+            releaseOwnership();
+            throw e;
+        }
     }
 
     @Override
     public Optional<FencingToken> tryLock() {
-        ensureNotHeld();
-        return doTryLock();
+        acquireOwnership();
+        try {
+            Optional<FencingToken> result = doTryLock();
+            if (result.isEmpty()) {
+                releaseOwnership();
+            }
+            return result;
+        } catch (Exception e) {
+            releaseOwnership();
+            throw e;
+        }
     }
 
     @Override
@@ -248,6 +269,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             throw new FencepostException("Failed to release lock: " + lockName, e);
         } finally {
             currentToken = null;
+            releaseOwnership();
         }
     }
 
@@ -332,6 +354,24 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
     private static String activeLeasePredicate() {
         return "WHERE lock_name = ? AND token = ? AND expires_at > now()";
+    }
+
+    private void acquireOwnership() {
+        Thread current = Thread.currentThread();
+        Thread existing = owner.compareAndExchange(null, current);
+        if (existing != null) {
+            if (existing == current) {
+                throw new IllegalStateException("Lock already held by this thread: " + lockName);
+            }
+            throw new IllegalStateException(
+                "LeaseLockInstance is not thread-safe — already in use by thread '"
+                    + existing.getName() + "', called from thread '" + current.getName()
+                    + "'. Create separate instances via Factory.forName for concurrent access.");
+        }
+    }
+
+    private void releaseOwnership() {
+        owner.set(null);
     }
 
     private void invalidateCurrentToken(long token) {
