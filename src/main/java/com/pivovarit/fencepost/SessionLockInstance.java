@@ -36,6 +36,8 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     private volatile Connection connection;
 
+    private boolean borrowedAutoCommit = true;
+
     SessionLockInstance(String lockName, DataSource dataSource, String tableName) {
         super(lockName, dataSource, tableName, LockType.SESSION);
         this.sql = new Sql(tableName);
@@ -95,6 +97,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     FencingToken doLock() {
         try {
             connection = dataSource.getConnection();
+            borrowedAutoCommit = connection.getAutoCommit();
             ensureRowExists(connection);
             connection.setAutoCommit(false);
 
@@ -118,6 +121,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     FencingToken doLock(Duration timeout) {
         try {
             connection = dataSource.getConnection();
+            borrowedAutoCommit = connection.getAutoCommit();
             ensureRowExists(connection);
             connection.setAutoCommit(false);
 
@@ -149,6 +153,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
     Optional<FencingToken> doTryLock() {
         try {
             connection = dataSource.getConnection();
+            borrowedAutoCommit = connection.getAutoCommit();
             ensureRowExists(connection);
             connection.setAutoCommit(false);
 
@@ -231,7 +236,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     private void closeConnection() {
         try {
-            connection.setAutoCommit(true);
+            connection.setAutoCommit(borrowedAutoCommit);
         } catch (SQLException e) {
             logger.trace("failed to restore autoCommit for session lock '{}' connection", lockName, e);
         }

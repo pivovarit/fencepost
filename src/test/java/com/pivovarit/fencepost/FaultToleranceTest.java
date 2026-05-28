@@ -196,6 +196,22 @@ class FaultToleranceTest {
     }
 
     @Test
+    void sessionLockShouldRestoreNonDefaultAutoCommitOfPooledConnection() {
+        List<Boolean> autoCommitAtClose = new CopyOnWriteArrayList<>();
+        // simulate a pool configured to hand out connections with autoCommit=false
+        DataSource pool = poolHandingOutAutoCommit(dataSource, false, autoCommitAtClose);
+
+        FencedLock lock = Fencepost.Locks.session(pool).build().forName("autocommit-restore-nondefault");
+        lock.lock();
+        lock.unlock();
+
+        assertThat(autoCommitAtClose)
+          .as("connection should be returned to the pool in the same autoCommit state it was borrowed in")
+          .isNotEmpty()
+          .containsOnly(false);
+    }
+
+    @Test
     void enqueueShouldLeaveNoTraceOnCommitFailure() {
         DataSource faultyDs = failOnCommit(dataSource);
         Queue queue = Fencepost.Queues.queue(faultyDs)
@@ -421,6 +437,24 @@ class FaultToleranceTest {
           (proxy, method, args) -> {
               if ("close".equals(method.getName())) {
                   recorded.add(real.getAutoCommit());
+              }
+              try {
+                  return method.invoke(real, args);
+              } catch (InvocationTargetException e) {
+                  throw e.getCause();
+              }
+          });
+    }
+
+    private static DataSource poolHandingOutAutoCommit(DataSource real, boolean initialAutoCommit, List<Boolean> recordedAtClose) {
+        return (DataSource) Proxy.newProxyInstance(
+          DataSource.class.getClassLoader(),
+          new Class<?>[]{DataSource.class},
+          (proxy, method, args) -> {
+              if ("getConnection".equals(method.getName()) && (args == null || args.length == 0)) {
+                  Connection conn = real.getConnection();
+                  conn.setAutoCommit(initialAutoCommit);
+                  return connectionRecordingAutoCommitOnClose(conn, recordedAtClose);
               }
               try {
                   return method.invoke(real, args);
