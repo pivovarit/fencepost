@@ -64,4 +64,32 @@ class HeadersCodecTest {
         Map<String, String> result = HeadersCodec.fromJson(json);
         assertThat(result).isEqualTo(headers);
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\uD800", "\uDFFF", "bad\uD800x", "\uDC00leading-low"})
+    void shouldRejectLoneSurrogatesInHeaderKeys(String loneSurrogate) {
+        Map<String, String> headers = Map.of(loneSurrogate, "value");
+        assertThatThrownBy(() -> HeadersCodec.toJson(headers))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("Header key")
+          .hasMessageContaining("surrogate");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\uD800", "\uDFFF", "bad\uD800x", "\uDC00leading-low"})
+    void shouldRejectLoneSurrogatesInHeaderValues(String loneSurrogate) {
+        Map<String, String> headers = Map.of("key", loneSurrogate);
+        assertThatThrownBy(() -> HeadersCodec.toJson(headers))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("Header value")
+          .hasMessageContaining("surrogate");
+    }
+
+    @Test
+    void shouldAcceptWellFormedSurrogatePairs() {
+        Map<String, String> headers = Map.of("astral", "😀");
+        String json = HeadersCodec.toJson(headers);
+        Map<String, String> result = HeadersCodec.fromJson(json);
+        assertThat(result).isEqualTo(headers);
+    }
 }
