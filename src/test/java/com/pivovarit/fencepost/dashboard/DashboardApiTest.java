@@ -59,8 +59,7 @@ class DashboardApiTest {
     void shouldDetectNoTablesExist() throws Exception {
         String json = api().status();
 
-        assertThat(json).contains("\"locks_enabled\":false");
-        assertThat(json).contains("\"queues_enabled\":false");
+        assertThat(json).isEqualTo("{\"locks_enabled\":false,\"queues_enabled\":false}");
     }
 
     @Test
@@ -69,8 +68,7 @@ class DashboardApiTest {
 
         String json = api().status();
 
-        assertThat(json).contains("\"locks_enabled\":true");
-        assertThat(json).contains("\"queues_enabled\":false");
+        assertThat(json).isEqualTo("{\"locks_enabled\":true,\"queues_enabled\":false}");
     }
 
     @Test
@@ -79,8 +77,7 @@ class DashboardApiTest {
 
         String json = api().status();
 
-        assertThat(json).contains("\"locks_enabled\":false");
-        assertThat(json).contains("\"queues_enabled\":true");
+        assertThat(json).isEqualTo("{\"locks_enabled\":false,\"queues_enabled\":true}");
     }
 
     // --- locks() tests ---
@@ -107,7 +104,7 @@ class DashboardApiTest {
         String json = api().locks();
 
         assertThat(json).contains("\"name\":\"my-lock\"");
-        assertThat(json).contains("\"token\":42");
+        assertThat(json).contains("\"token\":42,");
         assertThat(json).contains("\"locked_by\":\"worker-1\"");
         assertThat(json).contains("\"status\":\"held\"");
     }
@@ -192,9 +189,9 @@ class DashboardApiTest {
         String json = api().queues();
 
         assertThat(json).contains("\"name\":\"my-queue\"");
-        assertThat(json).contains("\"total\":3");
-        assertThat(json).contains("\"visible\":2");
-        assertThat(json).contains("\"in_flight\":1");
+        assertThat(json).contains("\"total\":3,");
+        assertThat(json).contains("\"visible\":2,");
+        assertThat(json).contains("\"in_flight\":1,");
     }
 
     @Test
@@ -210,9 +207,9 @@ class DashboardApiTest {
         String json = api().queue("detail-queue");
 
         assertThat(json).contains("\"name\":\"detail-queue\"");
-        assertThat(json).contains("\"in_flight\":1");
+        assertThat(json).contains("\"in_flight\":1,");
         assertThat(json).contains("\"payload_preview\":\"aGVsbG8gd29ybGQ=\"");
         assertThat(json).contains("\"picked_by\":\"worker-99\"");
-        assertThat(json).contains("\"attempts\":2");
+        assertThat(json).contains("\"attempts\":2,");
     }
 }
