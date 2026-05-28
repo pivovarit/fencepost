@@ -231,6 +231,11 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     private void closeConnection() {
         try {
+            connection.setAutoCommit(true);
+        } catch (SQLException e) {
+            logger.trace("failed to restore autoCommit for session lock '{}' connection", lockName, e);
+        }
+        try {
             connection.close();
         } catch (SQLException e) {
             logger.trace("failed to close session lock '{}' connection", lockName, e);
