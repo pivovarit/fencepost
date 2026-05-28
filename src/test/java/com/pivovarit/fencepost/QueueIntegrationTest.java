@@ -686,6 +686,34 @@ class QueueIntegrationTest {
         msg.nack();
     }
 
+    @Test
+    void enqueueShouldThrowAfterClose() {
+        Queue queue = newQueue();
+        queue.close();
+
+        assertThatThrownBy(() -> queue.enqueue("after-close".getBytes(UTF_8), "test", Map.of()))
+          .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void tryDequeueShouldThrowAfterClose() {
+        Queue queue = newQueue();
+        queue.enqueue("before-close".getBytes(UTF_8), "test", Map.of());
+        queue.close();
+
+        assertThatThrownBy(queue::tryDequeue)
+          .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void dequeueShouldThrowAfterClose() {
+        Queue queue = newQueue();
+        queue.close();
+
+        assertThatThrownBy(queue::dequeue)
+          .isInstanceOf(IllegalStateException.class);
+    }
+
     private Queue newQueue() {
         return newQueue("test-queue");
     }

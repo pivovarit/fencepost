@@ -31,6 +31,7 @@ final class FencepostQueue implements Queue {
     private final Sql sql;
     private final AckableMessage.Sql ackSql;
 
+    private volatile boolean closed;
     private volatile boolean polling;
 
     FencepostQueue(String queueName, DataSource dataSource, String tableName,
@@ -70,6 +71,7 @@ final class FencepostQueue implements Queue {
 
     @Override
     public void enqueue(byte[] payload, String type, Map<String, String> headers, Duration delay) {
+        requireOpen();
         Objects.requireNonNull(type, "type must not be null");
         HeadersCodec.requirePrintable(type, "Message type");
         long delayMillis = Durations.toNonNegativeMillis(delay, "delay");
@@ -98,6 +100,7 @@ final class FencepostQueue implements Queue {
 
     @Override
     public Optional<Message> tryDequeue() {
+        requireOpen();
         String pickToken = TableBasedLock.HOSTNAME + "/" + Thread.currentThread().getName() + "/" + Long.toHexString(ThreadLocalRandom.current().nextLong()) + Long.toHexString(ThreadLocalRandom.current().nextLong());
 
         try {
@@ -132,6 +135,7 @@ final class FencepostQueue implements Queue {
     }
 
     private Message dequeueBlocking(Duration timeout) {
+        requireOpen();
         long deadlineNanos = timeout != null
           ? System.nanoTime() + timeout.toNanos()
           : Long.MAX_VALUE;
@@ -164,9 +168,16 @@ final class FencepostQueue implements Queue {
 
     @Override
     public void close() {
+        closed = true;
         listener.stop();
         synchronized (listener.lock()) {
             listener.lock().notifyAll();
+        }
+    }
+
+    private void requireOpen() {
+        if (closed) {
+            throw new IllegalStateException("Queue '" + queueName + "' is closed");
         }
     }
 
