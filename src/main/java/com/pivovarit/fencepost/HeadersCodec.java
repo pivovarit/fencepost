@@ -125,7 +125,20 @@ final class HeadersCodec {
                 throw new IllegalArgumentException(
                   String.format("%s contains control character at index %d (0x%02X)", label, i, (int) c));
             }
+            if (Character.isHighSurrogate(c)) {
+                if (i + 1 >= value.length() || !Character.isLowSurrogate(value.charAt(i + 1))) {
+                    throw loneSurrogate(label, i, c);
+                }
+                i++;
+            } else if (Character.isLowSurrogate(c)) {
+                throw loneSurrogate(label, i, c);
+            }
         }
+    }
+
+    private static IllegalArgumentException loneSurrogate(String label, int index, char c) {
+        return new IllegalArgumentException(
+          String.format("%s contains lone surrogate at index %d (0x%04X)", label, index, (int) c));
     }
 
     private static String jsonString(String value) {
