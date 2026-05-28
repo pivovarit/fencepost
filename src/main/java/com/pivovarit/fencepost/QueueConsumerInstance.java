@@ -67,12 +67,14 @@ final class QueueConsumerInstance implements QueueConsumer {
             closed = true;
         }
         queue.close();
-        executor.shutdownNow();
+        executor.shutdown();
         try {
             if (!executor.awaitTermination(CLOSE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                logger.warn("consumer threads for queue '{}' did not exit within {} ms", queueName, CLOSE_TIMEOUT_MS);
+                logger.warn("consumer threads for queue '{}' did not exit within {} ms; forcing shutdown", queueName, CLOSE_TIMEOUT_MS);
+                executor.shutdownNow();
             }
         } catch (InterruptedException e) {
+            executor.shutdownNow();
             Thread.currentThread().interrupt();
         }
     }
