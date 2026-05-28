@@ -25,8 +25,10 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -159,6 +161,54 @@ class FaultToleranceTest {
           .as("lock should be acquirable after failed token allocation released the connection")
           .isPresent();
         contender.unlock();
+    }
+
+    @Test
+    void sessionUnlockShouldRestoreAutoCommitBeforeReturningConnection() {
+        List<Boolean> autoCommitAtClose = new CopyOnWriteArrayList<>();
+        DataSource recordingDs = recordingAutoCommitOnClose(dataSource, autoCommitAtClose);
+
+        FencedLock lock = Fencepost.Locks.session(recordingDs).build().forName("autocommit-restore-unlock");
+        lock.lock();
+        lock.unlock();
+
+        assertThat(autoCommitAtClose)
+          .as("connection returned to the pool after unlock should have autoCommit restored to true")
+          .isNotEmpty()
+          .containsOnly(true);
+    }
+
+    @Test
+    void sessionLockShouldRestoreAutoCommitWhenAcquisitionFails() {
+        List<Boolean> autoCommitAtClose = new CopyOnWriteArrayList<>();
+        DataSource recordingDs = recordingAutoCommitOnClose(
+          failOnSqlContaining(dataSource, "nextval"), autoCommitAtClose);
+
+        FencedLock lock = Fencepost.Locks.session(recordingDs).build().forName("autocommit-restore-fail");
+
+        assertThatThrownBy(lock::lock)
+          .isInstanceOf(FencepostException.class);
+
+        assertThat(autoCommitAtClose)
+          .as("connection returned to the pool after a failed acquisition should have autoCommit restored to true")
+          .isNotEmpty()
+          .containsOnly(true);
+    }
+
+    @Test
+    void sessionLockShouldRestoreNonDefaultAutoCommitOfPooledConnection() {
+        List<Boolean> autoCommitAtClose = new CopyOnWriteArrayList<>();
+        // simulate a pool configured to hand out connections with autoCommit=false
+        DataSource pool = poolHandingOutAutoCommit(dataSource, false, autoCommitAtClose);
+
+        FencedLock lock = Fencepost.Locks.session(pool).build().forName("autocommit-restore-nondefault");
+        lock.lock();
+        lock.unlock();
+
+        assertThat(autoCommitAtClose)
+          .as("connection should be returned to the pool in the same autoCommit state it was borrowed in")
+          .isNotEmpty()
+          .containsOnly(false);
     }
 
     @Test
@@ -355,6 +405,56 @@ class FaultToleranceTest {
           (proxy, method, args) -> {
               if ("executeQuery".equals(method.getName()) || "executeUpdate".equals(method.getName())) {
                   throw new SQLException("simulated failure during SQL execution", "08006");
+              }
+              try {
+                  return method.invoke(real, args);
+              } catch (InvocationTargetException e) {
+                  throw e.getCause();
+              }
+          });
+    }
+
+    private static DataSource recordingAutoCommitOnClose(DataSource real, List<Boolean> recorded) {
+        return (DataSource) Proxy.newProxyInstance(
+          DataSource.class.getClassLoader(),
+          new Class<?>[]{DataSource.class},
+          (proxy, method, args) -> {
+              if ("getConnection".equals(method.getName()) && (args == null || args.length == 0)) {
+                  return connectionRecordingAutoCommitOnClose(real.getConnection(), recorded);
+              }
+              try {
+                  return method.invoke(real, args);
+              } catch (InvocationTargetException e) {
+                  throw e.getCause();
+              }
+          });
+    }
+
+    private static Connection connectionRecordingAutoCommitOnClose(Connection real, List<Boolean> recorded) {
+        return (Connection) Proxy.newProxyInstance(
+          Connection.class.getClassLoader(),
+          new Class<?>[]{Connection.class},
+          (proxy, method, args) -> {
+              if ("close".equals(method.getName())) {
+                  recorded.add(real.getAutoCommit());
+              }
+              try {
+                  return method.invoke(real, args);
+              } catch (InvocationTargetException e) {
+                  throw e.getCause();
+              }
+          });
+    }
+
+    private static DataSource poolHandingOutAutoCommit(DataSource real, boolean initialAutoCommit, List<Boolean> recordedAtClose) {
+        return (DataSource) Proxy.newProxyInstance(
+          DataSource.class.getClassLoader(),
+          new Class<?>[]{DataSource.class},
+          (proxy, method, args) -> {
+              if ("getConnection".equals(method.getName()) && (args == null || args.length == 0)) {
+                  Connection conn = real.getConnection();
+                  conn.setAutoCommit(initialAutoCommit);
+                  return connectionRecordingAutoCommitOnClose(conn, recordedAtClose);
               }
               try {
                   return method.invoke(real, args);
