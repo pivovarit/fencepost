@@ -77,8 +77,7 @@ class FencepostDashboardTest {
 
         String response = httpGet("http://localhost:" + dashboard.getPort() + "/api/status");
 
-        assertThat(response).contains("\"locks_enabled\":true");
-        assertThat(response).contains("\"queues_enabled\":true");
+        assertThat(response).isEqualTo("{\"locks_enabled\":true,\"queues_enabled\":true}");
     }
 
     @Test
@@ -96,7 +95,7 @@ class FencepostDashboardTest {
         String response = httpGet("http://localhost:" + dashboard.getPort() + "/api/locks");
 
         assertThat(response).contains("\"name\":\"test-lock\"");
-        assertThat(response).contains("\"token\":5");
+        assertThat(response).contains("\"token\":5,");
         assertThat(response).contains("\"locked_by\":\"worker-1\"");
     }
 
@@ -132,7 +131,7 @@ class FencepostDashboardTest {
         String response = httpGet("http://localhost:" + dashboard.getPort() + "/api/queues");
 
         assertThat(response).contains("\"name\":\"my-queue\"");
-        assertThat(response).contains("\"total\":1");
+        assertThat(response).contains("\"total\":1,");
     }
 
     @Test
@@ -150,9 +149,9 @@ class FencepostDashboardTest {
         String response = httpGet("http://localhost:" + dashboard.getPort() + "/api/queues/tasks");
 
         assertThat(response).contains("\"name\":\"tasks\"");
-        assertThat(response).contains("\"in_flight\":1");
+        assertThat(response).contains("\"in_flight\":1,");
         assertThat(response).contains("\"picked_by\":\"worker-42\"");
-        assertThat(response).contains("\"attempts\":3");
+        assertThat(response).contains("\"attempts\":3,");
     }
 
     @Test
@@ -169,10 +168,10 @@ class FencepostDashboardTest {
 
         String response = httpGet("http://localhost:" + dashboard.getPort() + "/api/queues/tasks/messages/1");
 
-        assertThat(response).contains("\"id\":1");
+        assertThat(response).contains("\"id\":1,");
         assertThat(response).contains("\"payload\":\"ZnVsbCBwYXlsb2FkIGNvbnRlbnQgaGVyZQ==\"");
         assertThat(response).contains("\"picked_by\":\"worker-42\"");
-        assertThat(response).contains("\"attempts\":3");
+        assertThat(response).contains("\"attempts\":3,");
         assertThat(response).contains("\"status\":\"in_flight\"");
     }
 
@@ -248,12 +247,11 @@ class FencepostDashboardTest {
         dashboard.start(0);
 
         String statusResponse = httpGet("http://localhost:" + dashboard.getPort() + "/api/status");
-        assertThat(statusResponse).contains("\"locks_enabled\":true");
-        assertThat(statusResponse).contains("\"queues_enabled\":false");
+        assertThat(statusResponse).isEqualTo("{\"locks_enabled\":true,\"queues_enabled\":false}");
 
         String locksResponse = httpGet("http://localhost:" + dashboard.getPort() + "/api/locks");
         assertThat(locksResponse).contains("\"name\":\"x\"");
-        assertThat(locksResponse).contains("\"token\":42");
+        assertThat(locksResponse).contains("\"token\":42,");
     }
 
     @Test

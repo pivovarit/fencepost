@@ -18,6 +18,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Map;
@@ -129,16 +131,19 @@ class SchemaModeBuildIntegrationTest {
     }
 
     @Test
-    void shouldCreateSchemaViaLeaderElectionBuilder() {
+    void shouldCreateSchemaViaLeaderElectionBuilder() throws SQLException {
         LeaderElection election = Fencepost.Locks.leaderElection(dataSource, "test-election", Duration.ofSeconds(30))
             .schemaMode(SchemaMode.CREATE)
             .build();
 
         election.close();
+
+        assertThat(tableExists("fencepost_locks")).isTrue();
+        assertThat(tableExists("fencepost_locks_tokens")).isTrue();
     }
 
     @Test
-    void shouldCreateSchemaViaConsumerBuilder() {
+    void shouldCreateSchemaViaConsumerBuilder() throws SQLException {
         QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
             .schemaMode(SchemaMode.CREATE)
             .visibilityTimeout(Duration.ofSeconds(30))
@@ -146,6 +151,16 @@ class SchemaModeBuildIntegrationTest {
             .build();
 
         consumer.close();
+
+        assertThat(tableExists("fencepost_queue")).isTrue();
+    }
+
+    private boolean tableExists(String table) throws SQLException {
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.createStatement().executeQuery(
+                 "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '" + table + "'")) {
+            return rs.next();
+        }
     }
 
     @Test

@@ -72,12 +72,6 @@ abstract class TableBasedLock {
         }
     }
 
-    void ensureNotHeld() {
-        if (currentToken != null) {
-            throw new IllegalStateException("Lock already held: " + lockName);
-        }
-    }
-
     void ensureRowExists() {
         if (rowExists) {
             return;
@@ -124,8 +118,8 @@ abstract class TableBasedLock {
         try {
             Jdbc.execute(conn, String.format("CREATE SEQUENCE IF NOT EXISTS %s", sessionTokenSeqName));
         } catch (SQLException e) {
-            if (!SqlStates.UNIQUE_VIOLATION.equals(e.getSQLState())
-              && !SqlStates.DUPLICATE_OBJECT.equals(e.getSQLState())) {
+            String state = e.getSQLState();
+            if (!SqlStates.UNIQUE_VIOLATION.equals(state) && !SqlStates.DUPLICATE_TABLE.equals(state) && !SqlStates.DUPLICATE_OBJECT.equals(state)) {
                 throw e;
             }
         }

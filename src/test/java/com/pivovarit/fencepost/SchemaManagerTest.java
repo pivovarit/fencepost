@@ -12,6 +12,12 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -86,6 +92,50 @@ class SchemaManagerTest {
 
         assertThat(tableExists("custom_queue")).isTrue();
         assertThat(indexExists("idx_custom_queue_dequeue")).isTrue();
+    }
+
+    @Test
+    void shouldCreateLockSchemaConcurrentlyWithoutFailing() throws Exception {
+        assertNoFailuresWhenCreatingConcurrently(() -> SchemaManager.createLockSchema(dataSource, "fencepost_locks"));
+
+        assertThat(tableExists("fencepost_locks")).isTrue();
+        assertThat(tableExists("fencepost_locks_tokens")).isTrue();
+        assertThat(sequenceExists("fencepost_locks_token_seq")).isTrue();
+    }
+
+    @Test
+    void shouldCreateQueueSchemaConcurrentlyWithoutFailing() throws Exception {
+        assertNoFailuresWhenCreatingConcurrently(() -> SchemaManager.createQueueSchema(dataSource, "fencepost_queue"));
+
+        assertThat(tableExists("fencepost_queue")).isTrue();
+        assertThat(indexExists("idx_fencepost_queue_dequeue")).isTrue();
+    }
+
+    private static void assertNoFailuresWhenCreatingConcurrently(Runnable create) throws InterruptedException {
+        int threads = 16;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            CountDownLatch done = new CountDownLatch(threads);
+            List<Throwable> failures = new CopyOnWriteArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                executor.submit(() -> {
+                    try {
+                        start.await();
+                        create.run();
+                    } catch (Throwable t) {
+                        failures.add(t);
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+            start.countDown();
+            assertThat(done.await(30, TimeUnit.SECONDS)).isTrue();
+            assertThat(failures).isEmpty();
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test
