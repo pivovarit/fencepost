@@ -982,6 +982,43 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void sessionIsSupersededShouldReturnFalseForCurrentToken() {
+        LockFactory<FencedLock> provider = Fencepost.Locks.session(dataSource).build();
+
+        FencedLock lock = provider.forName("session-superseded-test");
+        FencingToken token = lock.lock();
+
+        assertThat(lock.isSuperseded(token)).isFalse();
+
+        lock.unlock();
+    }
+
+    @Test
+    void sessionIsSupersededShouldReturnTrueForOldToken() {
+        LockFactory<FencedLock> provider = Fencepost.Locks.session(dataSource).build();
+
+        FencedLock lock1 = provider.forName("session-superseded-test-2");
+        FencingToken oldToken = lock1.lock();
+        lock1.unlock();
+
+        FencedLock lock2 = provider.forName("session-superseded-test-2");
+        lock2.lock();
+
+        assertThat(lock2.isSuperseded(oldToken)).isTrue();
+
+        lock2.unlock();
+    }
+
+    @Test
+    void advisoryUnlockWhenNotHeldShouldThrow() {
+        LockFactory<AdvisoryLock> provider = Fencepost.Locks.advisory(dataSource).build();
+
+        AdvisoryLock lock = provider.forName("advisory-not-held");
+        assertThatThrownBy(lock::unlock)
+          .isInstanceOf(LockNotHeldException.class);
+    }
+
+    @Test
     void advisoryLockShouldAcquireAndRelease() {
         LockFactory<AdvisoryLock> provider = Fencepost.Locks.advisory(dataSource).build();
 
