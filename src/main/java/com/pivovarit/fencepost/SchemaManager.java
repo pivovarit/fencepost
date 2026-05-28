@@ -54,12 +54,25 @@ final class SchemaManager {
         executeSql(dataSource, sql);
     }
 
+    private static final int MAX_DDL_ATTEMPTS = 5;
+
     private static void executeSql(DataSource dataSource, String sql) {
-        try (Connection conn = dataSource.getConnection(); Statement stmt = conn.createStatement()) {
-            conn.setAutoCommit(true);
-            stmt.execute(sql);
-        } catch (SQLException e) {
-            throw new FencepostException("Failed to execute schema SQL", e);
+        for (int attempt = 1; ; attempt++) {
+            try (Connection conn = dataSource.getConnection(); Statement stmt = conn.createStatement()) {
+                conn.setAutoCommit(true);
+                stmt.execute(sql);
+                return;
+            } catch (SQLException e) {
+                String state = e.getSQLState();
+                if (SqlStates.UNIQUE_VIOLATION.equals(state) || SqlStates.DUPLICATE_TABLE.equals(state) || SqlStates.DUPLICATE_OBJECT.equals(state)) {
+                    return;
+                }
+                // transient race, retry
+                if (SqlStates.TUPLE_CONCURRENTLY_UPDATED.equals(state) && attempt < MAX_DDL_ATTEMPTS) {
+                    continue;
+                }
+                throw new FencepostException("Failed to execute schema SQL", e);
+            }
         }
     }
 
