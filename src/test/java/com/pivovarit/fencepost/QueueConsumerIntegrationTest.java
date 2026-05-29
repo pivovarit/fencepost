@@ -221,6 +221,38 @@ class QueueConsumerIntegrationTest {
     }
 
     @Test
+    void closeShouldLetInFlightHandlerComplete() throws Exception {
+        CountDownLatch handlerStarted = new CountDownLatch(1);
+        AtomicReference<Boolean> completedNormally = new AtomicReference<>(false);
+        AtomicReference<Boolean> interrupted = new AtomicReference<>(false);
+
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
+            .visibilityTimeout(Duration.ofMinutes(5))
+            .handler(msg -> {
+                handlerStarted.countDown();
+                try {
+                    Thread.sleep(1000);
+                    completedNormally.set(true);
+                } catch (InterruptedException e) {
+                    interrupted.set(true);
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            })
+            .build();
+
+        enqueue("in-flight");
+        consumer.start();
+
+        assertThat(handlerStarted.await(5, TimeUnit.SECONDS)).isTrue();
+        consumer.close();
+
+        assertThat(interrupted.get()).as("in-flight handler must not be interrupted").isFalse();
+        assertThat(completedNormally.get()).as("in-flight handler must run to completion").isTrue();
+        assertThat(queueSize()).as("completed message must be acked, not redelivered").isZero();
+    }
+
+    @Test
     void startAfterCloseShouldThrow() {
         QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "test-queue")
             .visibilityTimeout(Duration.ofMinutes(5))
