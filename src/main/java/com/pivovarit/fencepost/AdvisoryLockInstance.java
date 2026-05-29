@@ -65,25 +65,30 @@ final class AdvisoryLockInstance implements AdvisoryLock {
     public void lock(Duration timeout) {
         Durations.requireAtLeastOneMillisecond(timeout, "timeout");
         ensureNotHeld();
+        boolean borrowedAutoCommit = true;
         try {
             connection = dataSource.getConnection();
-            Jdbc.setLockTimeout(connection, timeout);
+            borrowedAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
             try {
+                Jdbc.setLockTimeout(connection, timeout);
                 Jdbc.query(connection, sql.lock)
                   .bind(advisoryKey)
                   .map(ResultSet::next);
+                connection.commit();
             } catch (SQLException e) {
+                try {
+                    connection.rollback();
+                } catch (SQLException rollbackFailure) {
+                    e.addSuppressed(rollbackFailure);
+                }
                 if (SqlStates.LOCK_NOT_AVAILABLE.equals(e.getSQLState())) {
                     logger.debug("timed out acquiring advisory lock '{}' after {}", lockName, timeout);
                     throw new LockAcquisitionTimeoutException(lockName);
                 }
                 throw e;
             } finally {
-                try {
-                    Jdbc.resetLockTimeout(connection);
-                } catch (SQLException e) {
-                    logger.trace("failed to reset lock timeout for advisory lock '{}'", lockName, e);
-                }
+                restoreAutoCommit(borrowedAutoCommit);
             }
             held = true;
             logger.debug("acquired advisory lock '{}'", lockName);
@@ -168,6 +173,16 @@ final class AdvisoryLockInstance implements AdvisoryLock {
     private void ensureNotHeld() {
         if (held) {
             throw new IllegalStateException("Lock already held: " + lockName);
+        }
+    }
+
+    private void restoreAutoCommit(boolean autoCommit) {
+        try {
+            if (connection != null) {
+                connection.setAutoCommit(autoCommit);
+            }
+        } catch (SQLException e) {
+            logger.trace("failed to restore autoCommit for advisory lock '{}' connection", lockName, e);
         }
     }
 
