@@ -116,7 +116,7 @@ abstract class TableBasedLock {
 
     private void ensureSessionSequenceExists(Connection conn) throws SQLException {
         try {
-            Jdbc.execute(conn, String.format("CREATE SEQUENCE IF NOT EXISTS %s", sessionTokenSeqName));
+            Jdbc.execute(conn, String.format("CREATE SEQUENCE IF NOT EXISTS %s CACHE 1", sessionTokenSeqName));
         } catch (SQLException e) {
             String state = e.getSQLState();
             if (!SqlStates.UNIQUE_VIOLATION.equals(state) && !SqlStates.DUPLICATE_TABLE.equals(state) && !SqlStates.DUPLICATE_OBJECT.equals(state)) {

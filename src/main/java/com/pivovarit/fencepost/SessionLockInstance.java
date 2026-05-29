@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <p>Fencing tokens are allocated via a per-lock PostgreSQL sequence ({@code nextval}).
  * Because sequence increments are non-transactional, token values are visible to
- * {@link #isSuperseded} immediately — even while the lock-holding transaction is open —
+ * {@link #isSuperseded} immediately - even while the lock-holding transaction is open -
  * and survive holder crashes. This requires only a single pooled connection per lock attempt.
  */
 final class SessionLockInstance extends TableBasedLock implements FencedLock {
@@ -255,7 +255,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
                 throw new IllegalStateException("Lock already held by this thread: " + lockName);
             }
             throw new IllegalStateException(
-                "SessionLockInstance is not thread-safe — already in use by thread '"
+                "SessionLockInstance is not thread-safe - already in use by thread '"
                     + existing.getName() + "', called from thread '" + current.getName()
                     + "'. Create separate instances via Factory.forName for concurrent access.");
         }

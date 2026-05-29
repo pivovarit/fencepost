@@ -32,7 +32,7 @@ final class SchemaManager {
               last_locked_by TEXT,
               last_locked_at TIMESTAMP WITH TIME ZONE
             );
-            CREATE SEQUENCE IF NOT EXISTS %s""".formatted(tableName, tokenTable, tokenSeq);
+            CREATE SEQUENCE IF NOT EXISTS %3$s CACHE 1""".formatted(tableName, tokenTable, tokenSeq);
         executeSql(dataSource, sql);
     }
 
@@ -167,12 +167,18 @@ final class SchemaManager {
     private static void validateSequence(DataSource dataSource, String schema, String sequence) {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(
-                 "SELECT 1 FROM pg_sequences WHERE schemaname = ? AND sequencename = ?")) {
+                 "SELECT cache_size FROM pg_sequences WHERE schemaname = ? AND sequencename = ?")) {
             ps.setString(1, schema);
             ps.setString(2, sequence);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) {
                     throw new FencepostException("Required sequence '" + sequence + "' does not exist");
+                }
+                long cacheSize = rs.getLong(1);
+                if (cacheSize != 1) {
+                    throw new FencepostException("Sequence '" + sequence + "' has CACHE " + cacheSize
+                        + " but must be declared with CACHE 1: per-session caching breaks fencing-token "
+                        + "monotonicity across connections. Run 'ALTER SEQUENCE " + sequence + " CACHE 1'.");
                 }
             }
         } catch (SQLException e) {

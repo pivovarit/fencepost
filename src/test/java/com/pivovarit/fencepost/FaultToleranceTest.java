@@ -225,7 +225,7 @@ class FaultToleranceTest {
           .isPresent();
 
         assertThat(b.tryLock())
-          .as("second instance must not acquire a lease already held — acquire must commit under autoCommit=false")
+          .as("second instance must not acquire a lease already held - acquire must commit under autoCommit=false")
           .isEmpty();
 
         a.unlock();
@@ -247,7 +247,7 @@ class FaultToleranceTest {
         msg.ack();
 
         assertThat(queue.tryDequeue())
-          .as("queue must drain after ack — dequeue and ack must commit under autoCommit=false")
+          .as("queue must drain after ack - dequeue and ack must commit under autoCommit=false")
           .isEmpty();
     }
 
