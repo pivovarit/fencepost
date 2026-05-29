@@ -21,6 +21,29 @@ final class Jdbc {
         T map(ResultSet rs) throws SQLException;
     }
 
+    @FunctionalInterface
+    private interface SqlCallable<T> {
+        T call() throws SQLException;
+    }
+
+    private static <T> T inBorrowedTransaction(Connection c, SqlCallable<T> work) throws SQLException {
+        if (c.getAutoCommit()) {
+            return work.call();
+        }
+        try {
+            T result = work.call();
+            c.commit();
+            return result;
+        } catch (SQLException | RuntimeException e) {
+            try {
+                c.rollback();
+            } catch (SQLException rollbackFailure) {
+                e.addSuppressed(rollbackFailure);
+            }
+            throw e;
+        }
+    }
+
     public static Query query(DataSource ds, String sql) {
         return new Query(ds, null, sql);
     }
@@ -83,7 +106,7 @@ final class Jdbc {
         <T> T map(ResultSetMapper<T> mapper) throws SQLException {
             if (ds != null) {
                 try (Connection c = ds.getConnection()) {
-                    return execute(c, mapper);
+                    return inBorrowedTransaction(c, () -> execute(c, mapper));
                 }
             }
             return execute(conn, mapper);
@@ -131,7 +154,7 @@ final class Jdbc {
         int execute() throws SQLException {
             if (ds != null) {
                 try (Connection c = ds.getConnection()) {
-                    return execute(c);
+                    return inBorrowedTransaction(c, () -> execute(c));
                 }
             }
             return execute(conn);
