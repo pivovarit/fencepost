@@ -288,6 +288,22 @@ class QueueIntegrationTest {
     }
 
     @Test
+    void dequeueWithTimeoutShouldReturnMessageThatBecomesVisibleDuringFinalWait() {
+        Queue queue = Fencepost.Queues.queue(dataSource)
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .pollInterval(Duration.ofSeconds(1))
+          .build()
+          .forName("visible-during-final-wait");
+
+        queue.enqueue("delayed".getBytes(UTF_8), "test", Map.of(), Duration.ofMillis(300));
+
+        Message msg = queue.dequeue(Duration.ofSeconds(1));
+        assertThat(msg.payload()).isEqualTo("delayed".getBytes(UTF_8));
+        msg.ack();
+        queue.close();
+    }
+
+    @Test
     void dequeueTimeoutShouldNotOvershootByPollInterval() {
         Queue queue = Fencepost.Queues.queue(dataSource)
           .visibilityTimeout(Duration.ofMinutes(5))

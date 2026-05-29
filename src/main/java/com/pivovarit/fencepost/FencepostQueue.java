@@ -141,10 +141,6 @@ final class FencepostQueue implements Queue {
           : Long.MAX_VALUE;
 
         while (true) {
-            if (timeout != null && System.nanoTime() >= deadlineNanos) {
-                throw new FencepostException("Dequeue timed out on queue: " + queueName);
-            }
-
             Optional<Message> result = tryDequeue();
             if (result.isPresent()) {
                 return result.get();
