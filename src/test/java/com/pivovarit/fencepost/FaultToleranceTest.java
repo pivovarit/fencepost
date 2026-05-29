@@ -198,7 +198,6 @@ class FaultToleranceTest {
     @Test
     void sessionLockShouldRestoreNonDefaultAutoCommitOfPooledConnection() {
         List<Boolean> autoCommitAtClose = new CopyOnWriteArrayList<>();
-        // simulate a pool configured to hand out connections with autoCommit=false
         DataSource pool = poolHandingOutAutoCommit(dataSource, false, autoCommitAtClose);
 
         FencedLock lock = Fencepost.Locks.session(pool).build().forName("autocommit-restore-nondefault");
@@ -209,6 +208,47 @@ class FaultToleranceTest {
           .as("connection should be returned to the pool in the same autoCommit state it was borrowed in")
           .isNotEmpty()
           .containsOnly(false);
+    }
+
+    @Test
+    void leaseAcquireMustCommitUnderAutoCommitFalsePool() {
+        DataSource pool = poolHandingOutAutoCommit(dataSource, false, new CopyOnWriteArrayList<>());
+
+        RenewableLock a = Fencepost.Locks.lease(pool, Duration.ofSeconds(30)).build()
+          .forName("ac-false-lease");
+        RenewableLock b = Fencepost.Locks.lease(pool, Duration.ofSeconds(30)).build()
+          .forName("ac-false-lease");
+
+        Optional<FencingToken> tokenA = a.tryLock();
+        assertThat(tokenA)
+          .as("first instance should acquire the lease")
+          .isPresent();
+
+        assertThat(b.tryLock())
+          .as("second instance must not acquire a lease already held — acquire must commit under autoCommit=false")
+          .isEmpty();
+
+        a.unlock();
+    }
+
+    @Test
+    void queueDequeueAndAckMustCommitUnderAutoCommitFalsePool() {
+        DataSource pool = poolHandingOutAutoCommit(dataSource, false, new CopyOnWriteArrayList<>());
+
+        Queue queue = Fencepost.Queues.queue(pool)
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .build()
+          .forName("ac-false-queue");
+
+        queue.enqueue("payload".getBytes(UTF_8), "test", Map.of());
+
+        Message msg = queue.tryDequeue().orElseThrow(() -> new AssertionError("message should be dequeued"));
+
+        msg.ack();
+
+        assertThat(queue.tryDequeue())
+          .as("queue must drain after ack — dequeue and ack must commit under autoCommit=false")
+          .isEmpty();
     }
 
     @Test
