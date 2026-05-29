@@ -75,11 +75,7 @@ final class Jdbc {
     }
 
     static void setLockTimeout(Connection conn, Duration timeout) throws SQLException {
-        execute(conn, String.format("SET lock_timeout = '%dms'", Durations.toPositiveMillis(timeout, "timeout")));
-    }
-
-    static void resetLockTimeout(Connection conn) throws SQLException {
-        execute(conn, "SET lock_timeout = 0");
+        execute(conn, String.format("SET LOCAL lock_timeout = '%dms'", Durations.toPositiveMillis(timeout, "timeout")));
     }
 
     static String intervalMillis() {
