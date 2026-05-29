@@ -166,6 +166,9 @@ public final class Fencepost {
             }
 
             public LockFactory<RenewableLock> build() {
+                if (refreshInterval != null) {
+                    LeaseLockInstance.validateAutoRenewDetectionBudget(leaseDuration.toMillis(), refreshInterval.toMillis());
+                }
                 schemaMode.applyToLocks(dataSource, this.tableName);
                 return new LockFactory<>(lockName -> new LeaseLockInstance(lockName, dataSource,
                   this.tableName,
@@ -272,6 +275,7 @@ public final class Fencepost {
                 }
                 Durations.requireAtLeastOneMillisecond(effectiveRenew, "renewInterval");
                 Durations.requireAtLeastOneMillisecond(effectivePoll, "pollInterval");
+                LeaseLockInstance.validateAutoRenewDetectionBudget(leaseDuration.toMillis(), effectiveRenew.toMillis());
                 return new LeaderElectionInstance(
                     electionName,
                     dataSource,

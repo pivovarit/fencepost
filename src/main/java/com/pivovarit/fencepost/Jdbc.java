@@ -123,7 +123,6 @@ final class Jdbc {
         private final Connection conn;
         private final String sql;
         private final List<Object> params = new ArrayList<>();
-        private Duration queryTimeout;
         private Consumer<PreparedStatement> onStatement;
 
         private Update(DataSource ds, Connection conn, String sql) {
@@ -134,11 +133,6 @@ final class Jdbc {
 
         Update bind(Object value) {
             params.add(value);
-            return this;
-        }
-
-        Update queryTimeout(Duration timeout) {
-            this.queryTimeout = timeout;
             return this;
         }
 
@@ -158,9 +152,6 @@ final class Jdbc {
 
         private int execute(Connection c) throws SQLException {
             try (PreparedStatement ps = c.prepareStatement(sql)) {
-                if (queryTimeout != null) {
-                    ps.setQueryTimeout(Math.max(1, (int) queryTimeout.toSeconds()));
-                }
                 bindAll(ps, params);
                 if (onStatement != null) {
                     onStatement.accept(ps);
