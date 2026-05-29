@@ -28,6 +28,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
 
     private Connection connection;
     private boolean held;
+    private boolean borrowedAutoCommit = true;
 
     AdvisoryLockInstance(String lockName, DataSource dataSource) {
         this.lockName = lockName;
@@ -48,6 +49,8 @@ final class AdvisoryLockInstance implements AdvisoryLock {
         ensureNotHeld();
         try {
             connection = dataSource.getConnection();
+            borrowedAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(true);
             Jdbc.query(connection, sql.lock)
               .bind(advisoryKey)
               .map(ResultSet::next);
@@ -67,6 +70,8 @@ final class AdvisoryLockInstance implements AdvisoryLock {
         ensureNotHeld();
         try {
             connection = dataSource.getConnection();
+            borrowedAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(true);
             Jdbc.setLockTimeout(connection, timeout);
             try {
                 Jdbc.query(connection, sql.lock)
@@ -104,6 +109,8 @@ final class AdvisoryLockInstance implements AdvisoryLock {
         ensureNotHeld();
         try {
             connection = dataSource.getConnection();
+            borrowedAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(true);
             boolean acquired = Jdbc.query(connection, sql.tryLock)
               .bind(advisoryKey)
               .map(rs -> rs.next() && rs.getBoolean(1));
@@ -172,10 +179,16 @@ final class AdvisoryLockInstance implements AdvisoryLock {
     }
 
     private void closeConnection() {
+        if (connection == null) {
+            return;
+        }
         try {
-            if (connection != null) {
-                connection.close();
-            }
+            connection.setAutoCommit(borrowedAutoCommit);
+        } catch (SQLException e) {
+            logger.trace("failed to restore autoCommit for advisory lock '{}' connection", lockName, e);
+        }
+        try {
+            connection.close();
         } catch (SQLException e) {
             logger.trace("failed to close advisory lock '{}' connection", lockName, e);
         }
