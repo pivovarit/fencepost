@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -30,6 +31,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     private final Duration leaseDuration;
     private final long leaseDurationMs;
     private final Duration refreshInterval;
+    private final Duration autoRenewStatementTimeout;
     private final Duration quietPeriod;
     private final long quietPeriodMs;
     private final long pollIntervalMs;
@@ -52,6 +54,13 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         this.leaseDuration = leaseDuration;
         this.leaseDurationMs = leaseDuration.toMillis();
         this.refreshInterval = refreshInterval;
+        if (refreshInterval != null) {
+            validateAutoRenewDetectionBudget(leaseDurationMs, refreshInterval.toMillis());
+            this.autoRenewStatementTimeout = Duration.ofMillis(
+                autoRenewAttemptTimeoutMillis(leaseDurationMs, refreshInterval.toMillis()));
+        } else {
+            this.autoRenewStatementTimeout = null;
+        }
         this.quietPeriod = quietPeriod;
         this.quietPeriodMs = quietPeriod != null ? quietPeriod.toMillis() : 0;
         this.pollIntervalMs = pollInterval != null ? Durations.toPositiveMillis(pollInterval, "pollInterval") : DEFAULT_POLL_INTERVAL_MS;
@@ -326,13 +335,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         SQLException lastException = null;
         for (int attempt = 0; attempt < AUTO_RENEW_MAX_RETRIES; attempt++) {
             try {
-                int updated = Jdbc.update(dataSource, sql.renew)
-                        .queryTimeout(refreshInterval)
-                        .onStatement(ps -> autoRenewStatement = ps)
-                        .bind(windowMillis)
-                        .bind(lockName)
-                        .bind(token)
-                        .execute();
+                int updated = renewWithStatementTimeout(windowMillis, token);
                 if (updated == 0) {
                     throw new SQLException("Lock lost - token no longer matches or lease expired");
                 }
@@ -350,6 +353,99 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             }
         }
         throw lastException;
+    }
+
+    /**
+     * Renews the lease under a millisecond-precise, server-enforced
+     * {@code statement_timeout}. JDBC {@link java.sql.Statement#setQueryTimeout}
+     * only supports whole-second granularity, which floored sub-second renew
+     * windows up to a full second and let worst-case loss detection exceed the
+     * lease duration. {@code SET LOCAL statement_timeout} requires a transaction,
+     * so autocommit is disabled for the renew and restored afterwards.
+     */
+    private int renewWithStatementTimeout(long windowMillis, long token) throws SQLException {
+        try (Connection connection = dataSource.getConnection()) {
+            boolean previousAutoCommit = connection.getAutoCommit();
+            if (previousAutoCommit) {
+                connection.setAutoCommit(false);
+            }
+            try {
+                Jdbc.setStatementTimeout(connection, autoRenewStatementTimeout);
+                int updated = Jdbc.update(connection, sql.renew)
+                        .onStatement(ps -> autoRenewStatement = ps)
+                        .bind(windowMillis)
+                        .bind(lockName)
+                        .bind(token)
+                        .execute();
+                connection.commit();
+                return updated;
+            } catch (SQLException e) {
+                try {
+                    connection.rollback();
+                } catch (SQLException rollbackFailure) {
+                    e.addSuppressed(rollbackFailure);
+                }
+                throw e;
+            } finally {
+                if (previousAutoCommit) {
+                    try {
+                        connection.setAutoCommit(true);
+                    } catch (SQLException e) {
+                        logger.trace("failed to restore autoCommit on renew connection for lease lock '{}'", lockName, e);
+                    }
+                }
+            }
+        }
+    }
+
+    private static long autoRenewSafetyMarginMillis(long leaseMillis) {
+        return Math.max(1, leaseMillis / 10);
+    }
+
+    private static long autoRenewTotalBackoffMillis() {
+        long total = 0;
+        for (int attempt = 0; attempt < AUTO_RENEW_MAX_RETRIES - 1; attempt++) {
+            total += 100L * (attempt + 1);
+        }
+        return total;
+    }
+
+    private static long autoRenewAttemptBudgetMillis(long leaseMillis, long refreshMillis) {
+        return leaseMillis - refreshMillis - autoRenewTotalBackoffMillis() - autoRenewSafetyMarginMillis(leaseMillis);
+    }
+
+    /**
+     * Per-attempt {@code statement_timeout} sized so that all renew retries plus
+     * their backoff complete within the lease, with a safety margin, regardless
+     * of how slow the database is. Never larger than the refresh interval.
+     */
+    static long autoRenewAttemptTimeoutMillis(long leaseMillis, long refreshMillis) {
+        long perAttempt = Math.max(1, autoRenewAttemptBudgetMillis(leaseMillis, refreshMillis) / AUTO_RENEW_MAX_RETRIES);
+        return Math.min(perAttempt, refreshMillis);
+    }
+
+    /**
+     * Worst-case time from the last successful renew to reporting the loss: the
+     * refresh interval, then {@value #AUTO_RENEW_MAX_RETRIES} attempts each
+     * bounded by {@link #autoRenewAttemptTimeoutMillis}, plus inter-attempt
+     * backoff. Must stay strictly below the lease so a standby cannot acquire
+     * while the old leader still believes it holds the lease.
+     */
+    static long worstCaseAutoRenewDetectionMillis(long leaseMillis, long refreshMillis) {
+        return refreshMillis
+            + (long) AUTO_RENEW_MAX_RETRIES * autoRenewAttemptTimeoutMillis(leaseMillis, refreshMillis)
+            + autoRenewTotalBackoffMillis();
+    }
+
+    static void validateAutoRenewDetectionBudget(long leaseMillis, long refreshMillis) {
+        if (autoRenewAttemptBudgetMillis(leaseMillis, refreshMillis) < AUTO_RENEW_MAX_RETRIES) {
+            throw new IllegalArgumentException(
+                "auto-renew cannot detect lease loss before expiry: leaseDuration=" + leaseMillis
+                    + "ms with refreshInterval=" + refreshMillis + "ms leaves no time budget to retry renewals before the"
+                    + " lease expires (needs room for " + AUTO_RENEW_MAX_RETRIES + " attempts, "
+                    + autoRenewTotalBackoffMillis() + "ms backoff and a " + autoRenewSafetyMarginMillis(leaseMillis)
+                    + "ms safety margin within the lease). Increase leaseDuration or decrease refreshInterval.");
+        }
     }
 
     private static String activeLeasePredicate() {

@@ -1,0 +1,124 @@
+package com.pivovarit.fencepost;
+
+import com.pivovarit.fencepost.lock.LockFactory;
+import com.pivovarit.fencepost.lock.RenewableLock;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.postgresql.ds.PGSimpleDataSource;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import javax.sql.DataSource;
+import java.io.PrintWriter;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+
+@Testcontainers
+class LeaseAutoRenewTimeoutIntegrationTest {
+
+    @Container
+    static final PostgreSQLContainer PG = new PostgreSQLContainer("postgres:17");
+
+    static DataSource dataSource;
+
+    @BeforeAll
+    static void setupDataSource() {
+        PGSimpleDataSource ds = new PGSimpleDataSource();
+        ds.setUrl(PG.getJdbcUrl());
+        ds.setUser(PG.getUsername());
+        ds.setPassword(PG.getPassword());
+        dataSource = ds;
+    }
+
+    @BeforeEach
+    void createTables() throws SQLException {
+        TestSchema.resetLocks(dataSource);
+    }
+
+    @Test
+    void autoRenewShouldBoundEachRenewWithMillisecondPreciseStatementTimeout() {
+        // lease=3s / renew=300ms — JDBC setQueryTimeout would floor this to a whole
+        // second; the fix must enforce a sub-second, server-side statement_timeout so
+        // worst-case loss detection stays inside the lease.
+        List<String> recordedSql = new CopyOnWriteArrayList<>();
+        DataSource recording = recordingPrepareStatements(dataSource, recordedSql);
+
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(recording, Duration.ofSeconds(3))
+          .withAutoRenew(Duration.ofMillis(300))
+          .build();
+        RenewableLock lock = provider.forName("ms-precise-renew");
+        lock.lock();
+        try {
+            await().atMost(Duration.ofSeconds(2)).until(() ->
+              recordedSql.stream().anyMatch(s -> s.startsWith("SET LOCAL statement_timeout")));
+        } finally {
+            lock.close();
+        }
+
+        long expected = LeaseLockInstance.autoRenewAttemptTimeoutMillis(3_000, 300);
+        assertThat(timeoutsSetDuringRenew(recordedSql))
+          .as("renew must set a millisecond-precise, sub-second statement_timeout")
+          .isNotEmpty()
+          .allSatisfy(ms -> assertThat(ms).isEqualTo(expected))
+          .allSatisfy(ms -> assertThat(ms).isLessThan(1_000L));
+    }
+
+    private static List<Long> timeoutsSetDuringRenew(List<String> recordedSql) {
+        Pattern p = Pattern.compile("SET LOCAL statement_timeout = '(\\d+)ms'");
+        List<Long> timeouts = new CopyOnWriteArrayList<>();
+        for (String sql : recordedSql) {
+            Matcher m = p.matcher(sql);
+            if (m.find()) {
+                timeouts.add(Long.parseLong(m.group(1)));
+            }
+        }
+        return timeouts;
+    }
+
+    private static DataSource recordingPrepareStatements(DataSource real, List<String> sink) {
+        return (DataSource) Proxy.newProxyInstance(
+          DataSource.class.getClassLoader(),
+          new Class<?>[]{DataSource.class},
+          (proxy, method, args) -> {
+              if ("getConnection".equals(method.getName())) {
+                  return recordingConnection((Connection) invoke(real, method, args), sink);
+              }
+              return invoke(real, method, args);
+          });
+    }
+
+    private static Connection recordingConnection(Connection real, List<String> sink) {
+        return (Connection) Proxy.newProxyInstance(
+          Connection.class.getClassLoader(),
+          new Class<?>[]{Connection.class},
+          (proxy, method, args) -> {
+              if ("prepareStatement".equals(method.getName()) && args != null && args.length > 0
+                && args[0] instanceof String sql) {
+                  sink.add(sql);
+              }
+              return invoke(real, method, args);
+          });
+    }
+
+    private static Object invoke(Object target, java.lang.reflect.Method method, Object[] args) throws Throwable {
+        try {
+            return method.invoke(target, args);
+        } catch (InvocationTargetException e) {
+            throw e.getCause();
+        }
+    }
+}
