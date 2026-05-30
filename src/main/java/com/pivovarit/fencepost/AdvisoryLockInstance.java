@@ -51,6 +51,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             Jdbc.query(connection, sql.lock)
               .bind(advisoryKey)
               .map(ResultSet::next);
+            commitIfInTransaction();
             held = true;
             logger.debug("acquired advisory lock '{}'", lockName);
         } catch (Exception e) {
@@ -118,6 +119,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
                 logger.debug("tryLock failed for advisory lock '{}' - already held", lockName);
                 return false;
             }
+            commitIfInTransaction();
             held = true;
             logger.debug("acquired advisory lock '{}' via tryLock", lockName);
             return true;
@@ -173,6 +175,12 @@ final class AdvisoryLockInstance implements AdvisoryLock {
     private void ensureNotHeld() {
         if (held) {
             throw new IllegalStateException("Lock already held: " + lockName);
+        }
+    }
+
+    private void commitIfInTransaction() throws SQLException {
+        if (!connection.getAutoCommit()) {
+            connection.commit();
         }
     }
 
