@@ -91,30 +91,6 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
-    void sessionLockMetadataShouldBeVisibleAfterUnlock() throws Exception {
-        LockFactory<FencedLock> provider = Fencepost.Locks.session(dataSource).build();
-
-        FencedLock lock = provider.forName("session-visible-meta-test");
-        lock.lock();
-        lock.unlock();
-
-        try (Connection conn = dataSource.getConnection();
-             ResultSet rs = conn.createStatement()
-               .executeQuery("""
-                   SELECT t.last_locked_by, t.last_locked_at
-                   FROM fencepost_locks_tokens t
-                   WHERE t.lock_name = 'session-visible-meta-test'""")) {
-            assertThat(rs.next()).isTrue();
-            assertThat(rs.getString("last_locked_by"))
-              .as("last_locked_by should be visible after unlock")
-              .isNotNull();
-            assertThat(rs.getTimestamp("last_locked_at"))
-              .as("last_locked_at should be visible after unlock")
-              .isNotNull();
-        }
-    }
-
-    @Test
     void shouldReturnStrictlyIncreasingTokens() {
         LockFactory<FencedLock> provider = Fencepost.Locks.session(dataSource).build();
 

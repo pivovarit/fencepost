@@ -44,13 +44,9 @@ class SchemaManagerTest {
         TestSchema.dropAll(dataSource);
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
-                "DROP TABLE IF EXISTS custom_locks_tokens;"
-                + " DROP TABLE IF EXISTS custom_locks;"
-                + " DROP SEQUENCE IF EXISTS custom_locks_token_seq;"
+                "DROP TABLE IF EXISTS custom_locks;"
                 + " DROP TABLE IF EXISTS custom_queue;"
-                + " DROP TABLE IF EXISTS mylocks_tokens;"
                 + " DROP TABLE IF EXISTS mylocks;"
-                + " DROP SEQUENCE IF EXISTS mylocks_token_seq;"
                 + " DROP TABLE IF EXISTS myqueue;"
             );
         }
@@ -61,8 +57,6 @@ class SchemaManagerTest {
         SchemaManager.createLockSchema(dataSource, "fencepost_locks");
 
         assertThat(tableExists("fencepost_locks")).isTrue();
-        assertThat(tableExists("fencepost_locks_tokens")).isTrue();
-        assertThat(sequenceExists("fencepost_locks_token_seq")).isTrue();
     }
 
     @Test
@@ -78,15 +72,6 @@ class SchemaManagerTest {
         SchemaManager.createLockSchema(dataSource, "custom_locks");
 
         assertThat(tableExists("custom_locks")).isTrue();
-        assertThat(tableExists("custom_locks_tokens")).isTrue();
-        assertThat(sequenceExists("custom_locks_token_seq")).isTrue();
-    }
-
-    @Test
-    void shouldCreateLockSequenceWithCacheOne() throws SQLException {
-        SchemaManager.createLockSchema(dataSource, "fencepost_locks");
-
-        assertThat(sequenceCacheSize("fencepost_locks_token_seq")).isEqualTo(1L);
     }
 
     @Test
@@ -110,8 +95,6 @@ class SchemaManagerTest {
         assertNoFailuresWhenCreatingConcurrently(() -> SchemaManager.createLockSchema(dataSource, "fencepost_locks"));
 
         assertThat(tableExists("fencepost_locks")).isTrue();
-        assertThat(tableExists("fencepost_locks_tokens")).isTrue();
-        assertThat(sequenceExists("fencepost_locks_token_seq")).isTrue();
     }
 
     @Test
@@ -180,9 +163,7 @@ class SchemaManagerTest {
     void shouldFailValidationWhenColumnMissing() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute(
-                "CREATE TABLE fencepost_locks (lock_name TEXT PRIMARY KEY, lock_type TEXT NOT NULL);"
-                + " CREATE TABLE fencepost_locks_tokens (lock_name TEXT PRIMARY KEY, token BIGINT NOT NULL DEFAULT 0);"
-                + " CREATE SEQUENCE fencepost_locks_token_seq"
+                "CREATE TABLE fencepost_locks (lock_name TEXT PRIMARY KEY, lock_type TEXT NOT NULL)"
             );
         }
 
@@ -204,68 +185,11 @@ class SchemaManagerTest {
             .hasMessageContaining("Required table 'fencepost_queue' does not exist");
     }
 
-    @Test
-    void shouldFailValidationWhenSequenceMissing() throws SQLException {
-        try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-                "CREATE TABLE fencepost_locks ("
-                + "  lock_name TEXT PRIMARY KEY, lock_type TEXT NOT NULL,"
-                + "  token BIGINT NOT NULL DEFAULT 0, locked_by TEXT,"
-                + "  locked_at TIMESTAMPTZ, expires_at TIMESTAMPTZ);"
-                + " CREATE TABLE fencepost_locks_tokens ("
-                + "  lock_name TEXT PRIMARY KEY, token BIGINT NOT NULL DEFAULT 0,"
-                + "  last_locked_by TEXT, last_locked_at TIMESTAMPTZ)"
-            );
-        }
-
-        assertThatThrownBy(() -> SchemaManager.validateLockSchema(dataSource, "fencepost_locks"))
-            .isInstanceOf(FencepostException.class)
-            .hasMessageContaining("Required sequence 'fencepost_locks_token_seq' does not exist");
-    }
-
-    @Test
-    void shouldFailValidationWhenSequenceCacheIsNotOne() throws SQLException {
-        try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-                "CREATE TABLE fencepost_locks ("
-                + "  lock_name TEXT PRIMARY KEY, lock_type TEXT NOT NULL,"
-                + "  token BIGINT NOT NULL DEFAULT 0, locked_by TEXT,"
-                + "  locked_at TIMESTAMPTZ, expires_at TIMESTAMPTZ);"
-                + " CREATE TABLE fencepost_locks_tokens ("
-                + "  lock_name TEXT PRIMARY KEY, token BIGINT NOT NULL DEFAULT 0,"
-                + "  last_locked_by TEXT, last_locked_at TIMESTAMPTZ);"
-                + " CREATE SEQUENCE fencepost_locks_token_seq CACHE 50"
-            );
-        }
-
-        assertThatThrownBy(() -> SchemaManager.validateLockSchema(dataSource, "fencepost_locks"))
-            .isInstanceOf(FencepostException.class)
-            .hasMessageContaining("has CACHE 50")
-            .hasMessageContaining("CACHE 1");
-    }
-
     private boolean tableExists(String table) throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             ResultSet rs = conn.createStatement().executeQuery(
                 "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '" + table + "'");
             return rs.next();
-        }
-    }
-
-    private boolean sequenceExists(String sequence) throws SQLException {
-        try (Connection conn = dataSource.getConnection()) {
-            ResultSet rs = conn.createStatement().executeQuery(
-                "SELECT 1 FROM pg_sequences WHERE schemaname = 'public' AND sequencename = '" + sequence + "'");
-            return rs.next();
-        }
-    }
-
-    private long sequenceCacheSize(String sequence) throws SQLException {
-        try (Connection conn = dataSource.getConnection()) {
-            ResultSet rs = conn.createStatement().executeQuery(
-                "SELECT cache_size FROM pg_sequences WHERE schemaname = 'public' AND sequencename = '" + sequence + "'");
-            assertThat(rs.next()).isTrue();
-            return rs.getLong(1);
         }
     }
 

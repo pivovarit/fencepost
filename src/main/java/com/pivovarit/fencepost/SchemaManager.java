@@ -16,8 +16,6 @@ final class SchemaManager {
     }
 
     static void createLockSchema(DataSource dataSource, String tableName) {
-        String tokenTable = TableBasedLock.tokenTableName(tableName);
-        String tokenSeq = TableBasedLock.tokenSequenceName(tableName);
         String sql = """
             CREATE TABLE IF NOT EXISTS %s (
               lock_name TEXT PRIMARY KEY,
@@ -26,14 +24,7 @@ final class SchemaManager {
               locked_by TEXT,
               locked_at TIMESTAMP WITH TIME ZONE,
               expires_at TIMESTAMP WITH TIME ZONE
-            );
-            CREATE TABLE IF NOT EXISTS %s (
-              lock_name TEXT PRIMARY KEY,
-              token BIGINT NOT NULL DEFAULT 0,
-              last_locked_by TEXT,
-              last_locked_at TIMESTAMP WITH TIME ZONE
-            );
-            CREATE SEQUENCE IF NOT EXISTS %3$s CACHE 1""".formatted(tableName, tokenTable, tokenSeq);
+            )""".formatted(tableName);
         executeSql(dataSource, sql);
     }
 
@@ -88,11 +79,8 @@ final class SchemaManager {
     }
 
     static void validateLockSchema(DataSource dataSource, String tableName) {
-        String tokenTable = TableBasedLock.tokenTableName(tableName);
-        String tokenSeq = TableBasedLock.tokenSequenceName(tableName);
         String schema = schemaName(tableName);
         String bare = bareTableName(tableName);
-        String bareToken = bareTableName(tokenTable);
 
         validateTable(dataSource, schema, bare, Arrays.asList(
             new String[]{"lock_name", "text"},
@@ -102,13 +90,6 @@ final class SchemaManager {
             new String[]{"locked_at", "timestamp with time zone"},
             new String[]{"expires_at", "timestamp with time zone"}
         ));
-        validateTable(dataSource, schema, bareToken, Arrays.asList(
-            new String[]{"lock_name", "text"},
-            new String[]{"token", "bigint"},
-            new String[]{"last_locked_by", "text"},
-            new String[]{"last_locked_at", "timestamp with time zone"}
-        ));
-        validateSequence(dataSource, schema, bareTableName(tokenSeq));
     }
 
     static void validateQueueSchema(DataSource dataSource, String tableName) {
@@ -167,24 +148,4 @@ final class SchemaManager {
         }
     }
 
-    private static void validateSequence(DataSource dataSource, String schema, String sequence) {
-        try (Connection conn = dataSource.getConnection();
-            PreparedStatement ps = conn.prepareStatement("SELECT cache_size FROM pg_sequences WHERE schemaname = ? AND sequencename = ?")) {
-            ps.setString(1, schema.toLowerCase(Locale.ROOT));
-            ps.setString(2, sequence.toLowerCase(Locale.ROOT));
-            try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) {
-                    throw new FencepostException("Required sequence '" + sequence + "' does not exist");
-                }
-                long cacheSize = rs.getLong(1);
-                if (cacheSize != 1) {
-                    throw new FencepostException("Sequence '" + sequence + "' has CACHE " + cacheSize
-                        + " but must be declared with CACHE 1: per-session caching breaks fencing-token "
-                        + "monotonicity across connections. Run 'ALTER SEQUENCE " + sequence + " CACHE 1'.");
-                }
-            }
-        } catch (SQLException e) {
-            throw new FencepostException("Failed to validate schema", e);
-        }
-    }
 }

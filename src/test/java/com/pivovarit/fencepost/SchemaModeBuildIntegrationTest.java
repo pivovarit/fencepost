@@ -139,7 +139,6 @@ class SchemaModeBuildIntegrationTest {
         election.close();
 
         assertThat(tableExists("fencepost_locks")).isTrue();
-        assertThat(tableExists("fencepost_locks_tokens")).isTrue();
     }
 
     @Test

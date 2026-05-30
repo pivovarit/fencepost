@@ -105,8 +105,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
                     .bind(lockName)
                     .map(ResultSet::next);
 
-            String lockedBy = resolveLockedBy();
-            currentToken = recordSessionToken(connection, allocateSessionToken(connection, lockedBy));
+            currentToken = recordSessionToken(connection, allocateSessionToken(connection));
             logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
             return currentToken;
         } catch (Exception e) {
@@ -133,8 +132,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
             Jdbc.resetStatementTimeout(connection);
 
-            String lockedBy = resolveLockedBy();
-            currentToken = recordSessionToken(connection, allocateSessionToken(connection, lockedBy));
+            currentToken = recordSessionToken(connection, allocateSessionToken(connection));
             logger.debug("acquired session lock '{}', token={}", lockName, currentToken.value());
             return currentToken;
         } catch (Exception e) {
@@ -167,8 +165,7 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
                 return Optional.empty();
             }
 
-            String lockedBy = resolveLockedBy();
-            currentToken = recordSessionToken(connection, allocateSessionToken(connection, lockedBy));
+            currentToken = recordSessionToken(connection, allocateSessionToken(connection));
             logger.debug("acquired session lock '{}' via tryLock, token={}", lockName, currentToken.value());
             return Optional.of(currentToken);
         } catch (Exception e) {
@@ -263,9 +260,5 @@ final class SessionLockInstance extends TableBasedLock implements FencedLock {
 
     private void releaseOwnership() {
         owner.set(null);
-    }
-
-    private static String resolveLockedBy() {
-        return HOSTNAME + "/" + Thread.currentThread().getName();
     }
 }
