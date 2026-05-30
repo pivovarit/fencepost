@@ -95,10 +95,9 @@ class DashboardApiTest {
     void shouldReturnLockData() throws Exception {
         createLocksTable();
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "INSERT INTO fencepost_locks (lock_name, lock_type, token, locked_by, locked_at, expires_at) " +
-              "VALUES ('my-lock', 'LEASE', 42, 'worker-1', now(), now() + interval '1 hour')"
-            );
+            conn.createStatement().execute("""
+                INSERT INTO fencepost_locks (lock_name, lock_type, token, locked_by, locked_at, expires_at)
+                VALUES ('my-lock', 'LEASE', 42, 'worker-1', now(), now() + interval '1 hour')""");
         }
 
         String json = api().locks();
@@ -113,10 +112,9 @@ class DashboardApiTest {
     void shouldReturnQuietStatusDuringQuietPeriod() throws Exception {
         createLocksTable();
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "INSERT INTO fencepost_locks (lock_name, lock_type, token, locked_by, locked_at, expires_at) " +
-              "VALUES ('quiet-lock', 'LEASE', 5, 'worker-1', NULL, now() + interval '10 seconds')"
-            );
+            conn.createStatement().execute("""
+                INSERT INTO fencepost_locks (lock_name, lock_type, token, locked_by, locked_at, expires_at)
+                VALUES ('quiet-lock', 'LEASE', 5, 'worker-1', NULL, now() + interval '10 seconds')""");
         }
 
         String json = api().locks();
@@ -198,10 +196,9 @@ class DashboardApiTest {
     void shouldReturnQueueDetailWithInFlightMessages() throws Exception {
         createQueueTable();
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "INSERT INTO fencepost_queue (queue_name, payload, picked_by, attempts) VALUES " +
-              "('detail-queue', 'hello world'::bytea, 'worker-99', 2)"
-            );
+            conn.createStatement().execute("""
+                INSERT INTO fencepost_queue (queue_name, payload, picked_by, attempts) VALUES
+                ('detail-queue', 'hello world'::bytea, 'worker-99', 2)""");
         }
 
         String json = api().queue("detail-queue");

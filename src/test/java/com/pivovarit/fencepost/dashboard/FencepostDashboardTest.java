@@ -83,10 +83,9 @@ class FencepostDashboardTest {
     @Test
     void shouldServeLocksEndpoint() throws Exception {
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "INSERT INTO fencepost_locks (lock_name, lock_type, token, locked_by, locked_at, expires_at) " +
-              "VALUES ('test-lock', 'LEASE', 5, 'worker-1', now(), now() + interval '1 hour')"
-            );
+            conn.createStatement().execute("""
+                INSERT INTO fencepost_locks (lock_name, lock_type, token, locked_by, locked_at, expires_at)
+                VALUES ('test-lock', 'LEASE', 5, 'worker-1', now(), now() + interval '1 hour')""");
         }
 
         dashboard = new FencepostDashboard(dataSource);
@@ -119,10 +118,9 @@ class FencepostDashboardTest {
     @Test
     void shouldServeQueuesEndpoint() throws Exception {
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "INSERT INTO fencepost_queue (queue_name, payload, visible_at) " +
-              "VALUES ('my-queue', 'hello'::bytea, now() - interval '1 second')"
-            );
+            conn.createStatement().execute("""
+                INSERT INTO fencepost_queue (queue_name, payload, visible_at)
+                VALUES ('my-queue', 'hello'::bytea, now() - interval '1 second')""");
         }
 
         dashboard = new FencepostDashboard(dataSource);
@@ -137,10 +135,9 @@ class FencepostDashboardTest {
     @Test
     void shouldServeQueueDetailEndpoint() throws Exception {
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "INSERT INTO fencepost_queue (queue_name, payload, picked_by, attempts) " +
-              "VALUES ('tasks', 'do something'::bytea, 'worker-42', 3)"
-            );
+            conn.createStatement().execute("""
+                INSERT INTO fencepost_queue (queue_name, payload, picked_by, attempts)
+                VALUES ('tasks', 'do something'::bytea, 'worker-42', 3)""");
         }
 
         dashboard = new FencepostDashboard(dataSource);
@@ -157,10 +154,9 @@ class FencepostDashboardTest {
     @Test
     void shouldServeMessageDetailEndpoint() throws Exception {
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-              "INSERT INTO fencepost_queue (id, queue_name, payload, picked_by, attempts) " +
-              "VALUES (1, 'tasks', 'full payload content here'::bytea, 'worker-42', 3)"
-            );
+            conn.createStatement().execute("""
+                INSERT INTO fencepost_queue (id, queue_name, payload, picked_by, attempts)
+                VALUES (1, 'tasks', 'full payload content here'::bytea, 'worker-42', 3)""");
         }
 
         dashboard = new FencepostDashboard(dataSource);
