@@ -37,26 +37,6 @@ class SchemaNameTest {
     }
 
     @Test
-    void tokenTableNameShouldAppendSuffix() {
-        assertThat(TableBasedLock.tokenTableName("fencepost_locks")).isEqualTo("fencepost_locks_tokens");
-    }
-
-    @Test
-    void tokenTableNameShouldPreserveSchema() {
-        assertThat(TableBasedLock.tokenTableName("myschema.fencepost_locks")).isEqualTo("myschema.fencepost_locks_tokens");
-    }
-
-    @Test
-    void tokenSequenceNameShouldAppendSuffix() {
-        assertThat(TableBasedLock.tokenSequenceName("fencepost_locks")).isEqualTo("fencepost_locks_token_seq");
-    }
-
-    @Test
-    void tokenSequenceNameShouldPreserveSchema() {
-        assertThat(TableBasedLock.tokenSequenceName("myschema.fencepost_locks")).isEqualTo("myschema.fencepost_locks_token_seq");
-    }
-
-    @Test
     void computeSessionTokenSeqNameShouldQuoteName() {
         assertThat(TableBasedLock.computeSessionTokenSeqName("fencepost_locks", "my_lock"))
           .isEqualTo("\"fencepost_st_my_lock\"");

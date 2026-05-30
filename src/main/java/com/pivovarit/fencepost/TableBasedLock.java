@@ -42,33 +42,16 @@ abstract class TableBasedLock {
     static final class Sql {
         final String selectLockType;
         final String insertLockRow;
-        final String allocateToken;
         final String recordToken;
-        final String recordTokenMetadata;
         final String checkSuperseded;
-        final String checkSupersededByTokenTable;
 
         Sql(String tableName) {
-            String tokenTable = tokenTableName(tableName);
-            String tokenSequence = tokenSequenceName(tableName);
             this.selectLockType = String.format("SELECT lock_type FROM %s WHERE lock_name = ?", tableName);
             this.insertLockRow = String.format("INSERT INTO %s (lock_name, lock_type) VALUES (?, ?) ON CONFLICT DO NOTHING", tableName);
-            this.allocateToken = """
-                INSERT INTO %s AS t (lock_name, token, last_locked_by, last_locked_at)
-                VALUES (?, nextval('%s'), ?, now())
-                ON CONFLICT (lock_name) DO UPDATE
-                SET token = EXCLUDED.token, last_locked_by = EXCLUDED.last_locked_by, last_locked_at = EXCLUDED.last_locked_at
-                RETURNING token""".formatted(tokenTable, tokenSequence);
             this.recordToken = """
                 UPDATE %s SET token = ?, locked_by = ?, locked_at = now(), expires_at = NULL
                 WHERE lock_name = ? RETURNING token""".formatted(tableName);
-            this.recordTokenMetadata = """
-                INSERT INTO %s (lock_name, token, last_locked_by, last_locked_at)
-                VALUES (?, ?, ?, now())
-                ON CONFLICT (lock_name) DO UPDATE
-                SET token = EXCLUDED.token, last_locked_by = EXCLUDED.last_locked_by, last_locked_at = EXCLUDED.last_locked_at""".formatted(tokenTable);
             this.checkSuperseded = String.format("SELECT token > ? FROM %s WHERE lock_name = ?", tableName);
-            this.checkSupersededByTokenTable = String.format("SELECT token > ? FROM %s WHERE lock_name = ?", tokenTable);
         }
     }
 
@@ -125,17 +108,12 @@ abstract class TableBasedLock {
         }
     }
 
-    FencingToken allocateSessionToken(Connection conn, String lockedBy) throws SQLException {
+    FencingToken allocateSessionToken(Connection conn) throws SQLException {
         long token = Jdbc.query(conn, allocateSessionTokenSql)
             .map(rs -> {
                 rs.next();
                 return rs.getLong(1);
             });
-        Jdbc.update(conn, sql.recordTokenMetadata)
-            .bind(lockName)
-            .bind(token)
-            .bind(lockedBy)
-            .execute();
         return new FencingToken(token);
     }
 
@@ -191,22 +169,6 @@ abstract class TableBasedLock {
             return seqName;
         }
         return tableName.substring(0, dot + 1) + seqName;
-    }
-
-    static String tokenTableName(String tableName) {
-        int dot = tableName.lastIndexOf('.');
-        if (dot == -1) {
-            return tableName + "_tokens";
-        }
-        return tableName.substring(0, dot + 1) + tableName.substring(dot + 1) + "_tokens";
-    }
-
-    static String tokenSequenceName(String tableName) {
-        int dot = tableName.lastIndexOf('.');
-        if (dot == -1) {
-            return tableName + "_token_seq";
-        }
-        return tableName.substring(0, dot + 1) + tableName.substring(dot + 1) + "_token_seq";
     }
 
     abstract FencingToken doLock();

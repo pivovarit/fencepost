@@ -50,12 +50,7 @@ This applies to all lock types (`advisory`, `session`, `lease`). The `LockFactor
 
 ## Table Setup
 
-Session and lease locks require a table and a durable token table. Advisory locks don't need
-any setup. For custom lock tables, Fencepost expects the token table to use the same name
-with a `_tokens` suffix, in the same schema.
-
-Session locks also create per-lock PostgreSQL sequences automatically (named `fencepost_st_<lock_name>`)
-to allocate fencing tokens with immediate visibility.
+Session and lease locks require a single table. Advisory locks don't need any setup.
 
 ```sql
 CREATE TABLE fencepost_locks (
@@ -66,24 +61,21 @@ CREATE TABLE fencepost_locks (
     locked_at   TIMESTAMP WITH TIME ZONE,
     expires_at  TIMESTAMP WITH TIME ZONE
 );
-
-CREATE TABLE fencepost_locks_tokens (
-    lock_name       TEXT PRIMARY KEY,
-    token           BIGINT NOT NULL DEFAULT 0,
-    last_locked_by  TEXT,
-    last_locked_at  TIMESTAMP WITH TIME ZONE
-);
-
--- CACHE 1 is required: a larger cache hands each session a private block of pre-allocated
--- values, which breaks fencing-token monotonicity across concurrent holders.
-CREATE SEQUENCE fencepost_locks_token_seq CACHE 1;
 ```
 
 The table name defaults to `fencepost_locks` but can be customized via `.tableName("my_locks")` on the builder.
-The token table defaults to `fencepost_locks_tokens`; for `.tableName("my_locks")`, Fencepost expects `my_locks_tokens`.
-The token sequence defaults to `fencepost_locks_token_seq` (`<table>_token_seq`) and **must use `CACHE 1`** -
-`SchemaMode.VALIDATE` rejects any other cache size. `SchemaMode.CREATE` and the auto-created per-lock session
-sequences (`fencepost_st_<lock_name>`) already declare `CACHE 1` for you.
+
+Session locks allocate fencing tokens from per-lock PostgreSQL sequences (named `fencepost_st_<lock_name>`)
+that Fencepost creates automatically on first acquisition. These sequences are declared with `CACHE 1` -
+a larger cache hands each session a private block of pre-allocated values, which would break fencing-token
+monotonicity across concurrent holders - so you never need to create or manage them yourself.
+
+> **Use session locks for a bounded, stable set of names.** Each distinct session-lock name creates a
+> dedicated sequence that is never dropped, so dynamically generated, high-cardinality names (e.g.
+> `order-<uuid>`, one lock per entity) accumulate sequences in the PostgreSQL catalog indefinitely -
+> leading to `pg_class` bloat and autovacuum pressure on the catalog. For high-cardinality or
+> dynamically-named locks, prefer **lease** locks: they need no per-lock sequence (the fencing token
+> lives in the lock row), so the catalog footprint stays constant regardless of how many names you use.
 
 ## Examples
 

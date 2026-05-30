@@ -15,9 +15,7 @@ public final class TestSchema {
               "DO $$ DECLARE r RECORD;"
                 + " BEGIN FOR r IN SELECT sequencename FROM pg_sequences WHERE sequencename LIKE 'fencepost_st_%'"
                 + " LOOP EXECUTE 'DROP SEQUENCE IF EXISTS ' || quote_ident(r.sequencename); END LOOP; END$$;"
-                + " DROP TABLE IF EXISTS fencepost_locks_tokens;"
-                + " DROP TABLE IF EXISTS fencepost_locks;"
-                + " DROP SEQUENCE IF EXISTS fencepost_locks_token_seq"
+                + " DROP TABLE IF EXISTS fencepost_locks"
             );
         }
         SchemaManager.createLockSchema(ds, "fencepost_locks");
@@ -37,9 +35,7 @@ public final class TestSchema {
                 + " BEGIN FOR r IN SELECT sequencename FROM pg_sequences WHERE sequencename LIKE 'fencepost_st_%'"
                 + " LOOP EXECUTE 'DROP SEQUENCE IF EXISTS ' || quote_ident(r.sequencename); END LOOP; END$$;"
                 + " DROP TABLE IF EXISTS fencepost_queue;"
-                + " DROP TABLE IF EXISTS fencepost_locks_tokens;"
-                + " DROP TABLE IF EXISTS fencepost_locks;"
-                + " DROP SEQUENCE IF EXISTS fencepost_locks_token_seq"
+                + " DROP TABLE IF EXISTS fencepost_locks"
             );
         }
     }
