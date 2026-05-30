@@ -460,7 +460,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                 throw new IllegalStateException("Lock already held by this thread: " + lockName);
             }
             throw new IllegalStateException(
-                "LeaseLockInstance is not thread-safe — already in use by thread '"
+                "LeaseLockInstance is not thread-safe - already in use by thread '"
                     + existing.getName() + "', called from thread '" + current.getName()
                     + "'. Create separate instances via Factory.forName for concurrent access.");
         }

@@ -11,7 +11,7 @@ package com.pivovarit.fencepost.election;
  * However, if {@link #close()} times out waiting for the election thread
  * to exit, {@code onRevoked} fires on the thread that called
  * {@code close()} instead. The callback fires at most once regardless of
- * which thread delivers it. Callbacks must return quickly — they are
+ * which thread delivers it. Callbacks must return quickly - they are
  * state-change notifications, not the place to do real work. Real work
  * should run on the user's own thread, gated by {@link #isLeader()}.
  *
@@ -57,7 +57,7 @@ public interface LeaderElection extends AutoCloseable {
      * {@code onRevoked} synchronously and releases the lease before
      * returning. If the election thread does not exit within the join
      * timeout, {@code onRevoked} fires on the calling thread instead.
-     * Idempotent. Never throws — errors are reported via the
+     * Idempotent. Never throws - errors are reported via the
      * configured {@code onCallbackError} handler.
      */
     @Override

@@ -73,10 +73,17 @@ CREATE TABLE fencepost_locks_tokens (
     last_locked_by  TEXT,
     last_locked_at  TIMESTAMP WITH TIME ZONE
 );
+
+-- CACHE 1 is required: a larger cache hands each session a private block of pre-allocated
+-- values, which breaks fencing-token monotonicity across concurrent holders.
+CREATE SEQUENCE fencepost_locks_token_seq CACHE 1;
 ```
 
 The table name defaults to `fencepost_locks` but can be customized via `.tableName("my_locks")` on the builder.
 The token table defaults to `fencepost_locks_tokens`; for `.tableName("my_locks")`, Fencepost expects `my_locks_tokens`.
+The token sequence defaults to `fencepost_locks_token_seq` (`<table>_token_seq`) and **must use `CACHE 1`** -
+`SchemaMode.VALIDATE` rejects any other cache size. `SchemaMode.CREATE` and the auto-created per-lock session
+sequences (`fencepost_st_<lock_name>`) already declare `CACHE 1` for you.
 
 ## Examples
 

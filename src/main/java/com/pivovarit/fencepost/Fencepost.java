@@ -268,10 +268,10 @@ public final class Fencepost {
                 Duration effectiveRenew = renewInterval != null ? renewInterval : leaseDuration.dividedBy(3);
                 Duration effectivePoll = pollInterval != null ? pollInterval : leaseDuration.dividedBy(2);
                 if (effectiveRenew.isZero()) {
-                    throw new IllegalArgumentException("Default renewInterval (leaseDuration/3) is zero — leaseDuration is too small");
+                    throw new IllegalArgumentException("Default renewInterval (leaseDuration/3) is zero - leaseDuration is too small");
                 }
                 if (effectivePoll.isZero()) {
-                    throw new IllegalArgumentException("Default pollInterval (leaseDuration/2) is zero — leaseDuration is too small");
+                    throw new IllegalArgumentException("Default pollInterval (leaseDuration/2) is zero - leaseDuration is too small");
                 }
                 Durations.requireAtLeastOneMillisecond(effectiveRenew, "renewInterval");
                 Durations.requireAtLeastOneMillisecond(effectivePoll, "pollInterval");
