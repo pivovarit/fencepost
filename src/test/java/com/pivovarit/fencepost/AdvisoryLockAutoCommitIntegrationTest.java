@@ -4,9 +4,9 @@ import com.pivovarit.fencepost.lock.AdvisoryLock;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AdvisoryLockAutoCommitIntegrationTest {
 
     @Container
-    private static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+    private static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17-alpine");
 
     @Test
     void lockShouldNotLeaveHolderBackendIdleInTransactionUnderAutoCommitFalse() {
