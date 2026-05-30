@@ -48,9 +48,10 @@ class AdvisoryLockAutoCommitIntegrationTest {
     }
 
     private static String advisoryHolderState(HikariDataSource dataSource) {
-        String query = "SELECT a.state FROM pg_locks l "
-            + "JOIN pg_stat_activity a ON a.pid = l.pid "
-            + "WHERE l.locktype = 'advisory' AND a.pid <> pg_backend_pid()";
+        String query = """
+            SELECT a.state FROM pg_locks l
+            JOIN pg_stat_activity a ON a.pid = l.pid
+            WHERE l.locktype = 'advisory' AND a.pid <> pg_backend_pid()""";
         try (Connection observer = dataSource.getConnection();
              Statement statement = observer.createStatement();
              ResultSet rs = statement.executeQuery(query)) {

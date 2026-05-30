@@ -43,12 +43,11 @@ class SchemaManagerTest {
     void dropAll() throws SQLException {
         TestSchema.dropAll(dataSource);
         try (Connection conn = dataSource.getConnection()) {
-            conn.createStatement().execute(
-                "DROP TABLE IF EXISTS custom_locks;"
-                + " DROP TABLE IF EXISTS custom_queue;"
-                + " DROP TABLE IF EXISTS mylocks;"
-                + " DROP TABLE IF EXISTS myqueue;"
-            );
+            conn.createStatement().execute("""
+                DROP TABLE IF EXISTS custom_locks;
+                DROP TABLE IF EXISTS custom_queue;
+                DROP TABLE IF EXISTS mylocks;
+                DROP TABLE IF EXISTS myqueue;""");
         }
     }
 

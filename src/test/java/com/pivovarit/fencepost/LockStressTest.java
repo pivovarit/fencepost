@@ -295,9 +295,9 @@ class LockStressTest {
 
         // Kill the backend holding the lock
         try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(
-               "SELECT pg_terminate_backend(pid) FROM pg_stat_activity " +
-                 "WHERE state = 'idle in transaction' AND pid != pg_backend_pid()")) {
+             PreparedStatement ps = conn.prepareStatement("""
+               SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+               WHERE state = 'idle in transaction' AND pid != pg_backend_pid()""")) {
             ps.executeQuery();
         }
 
