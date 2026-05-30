@@ -75,11 +75,7 @@ final class Jdbc {
     }
 
     static void setLockTimeout(Connection conn, Duration timeout) throws SQLException {
-        execute(conn, String.format("SET lock_timeout = '%dms'", Durations.toPositiveMillis(timeout, "timeout")));
-    }
-
-    static void resetLockTimeout(Connection conn) throws SQLException {
-        execute(conn, "SET lock_timeout = 0");
+        execute(conn, String.format("SET LOCAL lock_timeout = '%dms'", Durations.toPositiveMillis(timeout, "timeout")));
     }
 
     static String intervalMillis() {
@@ -127,7 +123,6 @@ final class Jdbc {
         private final Connection conn;
         private final String sql;
         private final List<Object> params = new ArrayList<>();
-        private Duration queryTimeout;
         private Consumer<PreparedStatement> onStatement;
 
         private Update(DataSource ds, Connection conn, String sql) {
@@ -138,11 +133,6 @@ final class Jdbc {
 
         Update bind(Object value) {
             params.add(value);
-            return this;
-        }
-
-        Update queryTimeout(Duration timeout) {
-            this.queryTimeout = timeout;
             return this;
         }
 
@@ -162,9 +152,6 @@ final class Jdbc {
 
         private int execute(Connection c) throws SQLException {
             try (PreparedStatement ps = c.prepareStatement(sql)) {
-                if (queryTimeout != null) {
-                    ps.setQueryTimeout(Math.max(1, (int) queryTimeout.toSeconds()));
-                }
                 bindAll(ps, params);
                 if (onStatement != null) {
                     onStatement.accept(ps);

@@ -141,10 +141,6 @@ final class FencepostQueue implements Queue {
           : Long.MAX_VALUE;
 
         while (true) {
-            if (timeout != null && System.nanoTime() >= deadlineNanos) {
-                throw new FencepostException("Dequeue timed out on queue: " + queueName);
-            }
-
             Optional<Message> result = tryDequeue();
             if (result.isPresent()) {
                 return result.get();
@@ -195,7 +191,7 @@ final class FencepostQueue implements Queue {
         }
         try {
             var pgConn = conn.unwrap(PGConnection.class);
-            pgConn.getNotifications((int) waitMs);
+            pgConn.getNotifications((int) Math.min(waitMs, Integer.MAX_VALUE));
         } catch (Exception e) {
             listener.close();
             if (!listener.isStopped()) {

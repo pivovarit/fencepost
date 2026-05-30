@@ -48,6 +48,10 @@ class SchemaManagerTest {
                 + " DROP TABLE IF EXISTS custom_locks;"
                 + " DROP SEQUENCE IF EXISTS custom_locks_token_seq;"
                 + " DROP TABLE IF EXISTS custom_queue;"
+                + " DROP TABLE IF EXISTS mylocks_tokens;"
+                + " DROP TABLE IF EXISTS mylocks;"
+                + " DROP SEQUENCE IF EXISTS mylocks_token_seq;"
+                + " DROP TABLE IF EXISTS myqueue;"
             );
         }
     }
@@ -149,6 +153,20 @@ class SchemaManagerTest {
     void shouldValidateLockSchemaWhenCorrect() throws SQLException {
         TestSchema.resetLocks(dataSource);
         SchemaManager.validateLockSchema(dataSource, "fencepost_locks");
+    }
+
+    @Test
+    void shouldValidateLockSchemaWithMixedCaseTableName() throws SQLException {
+        SchemaManager.createLockSchema(dataSource, "MyLocks");
+
+        SchemaManager.validateLockSchema(dataSource, "MyLocks");
+    }
+
+    @Test
+    void shouldValidateQueueSchemaWithMixedCaseTableName() throws SQLException {
+        SchemaManager.createQueueSchema(dataSource, "MyQueue");
+
+        SchemaManager.validateQueueSchema(dataSource, "MyQueue");
     }
 
     @Test

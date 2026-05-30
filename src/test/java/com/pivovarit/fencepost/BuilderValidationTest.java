@@ -103,6 +103,25 @@ class BuilderValidationTest {
     }
 
     @Test
+    void leaseBuildShouldRejectAutoRenewThatCannotDetectLossBeforeExpiry() {
+        // refresh < lease (so withAutoRenew accepts it) but the lease is too short to
+        // detect a hung renew before it expires -> split-brain window.
+        Fencepost.Locks.LeaseBuilder builder = Fencepost.Locks.lease(FAILING_DATA_SOURCE, Duration.ofMillis(400))
+          .withAutoRenew(Duration.ofMillis(350));
+
+        assertThatThrownBy(builder::build)
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("detect lease loss before expiry");
+    }
+
+    @Test
+    void leaderElectionBuildShouldRejectLeaseTooShortToDetectLossBeforeExpiry() {
+        assertThatThrownBy(() -> Fencepost.Locks.leaderElection(FAILING_DATA_SOURCE, "name", Duration.ofMillis(400)).build())
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("detect lease loss before expiry");
+    }
+
+    @Test
     void leaseInstanceIdShouldRejectNull() {
         Fencepost.Locks.LeaseBuilder builder = Fencepost.Locks.lease(FAILING_DATA_SOURCE, Duration.ofSeconds(1));
 

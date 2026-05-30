@@ -8,6 +8,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 final class SchemaManager {
 
@@ -128,11 +129,13 @@ final class SchemaManager {
     }
 
     private static void validateTable(DataSource dataSource, String schema, String table, List<String[]> expectedColumns) {
+        String schemaFolded = schema.toLowerCase(Locale.ROOT);
+        String tableFolded = table.toLowerCase(Locale.ROOT);
         try (Connection conn = dataSource.getConnection()) {
             try (PreparedStatement ps = conn.prepareStatement(
                 "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ?")) {
-                ps.setString(1, schema);
-                ps.setString(2, table);
+                ps.setString(1, schemaFolded);
+                ps.setString(2, tableFolded);
                 try (ResultSet rs = ps.executeQuery()) {
                     if (!rs.next()) {
                         throw new FencepostException("Required table '" + table + "' does not exist");
@@ -145,8 +148,8 @@ final class SchemaManager {
                 String colType = col[1];
                 try (PreparedStatement ps = conn.prepareStatement(
                     "SELECT data_type FROM information_schema.columns WHERE table_schema = ? AND table_name = ? AND column_name = ?")) {
-                    ps.setString(1, schema);
-                    ps.setString(2, table);
+                    ps.setString(1, schemaFolded);
+                    ps.setString(2, tableFolded);
                     ps.setString(3, colName);
                     try (ResultSet rs = ps.executeQuery()) {
                         if (!rs.next()) {
@@ -166,10 +169,9 @@ final class SchemaManager {
 
     private static void validateSequence(DataSource dataSource, String schema, String sequence) {
         try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(
-                 "SELECT cache_size FROM pg_sequences WHERE schemaname = ? AND sequencename = ?")) {
-            ps.setString(1, schema);
-            ps.setString(2, sequence);
+            PreparedStatement ps = conn.prepareStatement("SELECT cache_size FROM pg_sequences WHERE schemaname = ? AND sequencename = ?")) {
+            ps.setString(1, schema.toLowerCase(Locale.ROOT));
+            ps.setString(2, sequence.toLowerCase(Locale.ROOT));
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) {
                     throw new FencepostException("Required sequence '" + sequence + "' does not exist");

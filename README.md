@@ -150,7 +150,9 @@ election.start();
 
 // elsewhere:
 if (election.isLeader()) {
-    // safe to act
+    // best-effort hint - fine for idempotent or token-gated work.
+    // For exclusive access to an external system, carry `token` and let
+    // that system reject stale tokens (see "absolute mutual-exclusion" below).
 }
 
 // on shutdown:
@@ -158,6 +160,8 @@ election.close();   // fires onRevoked synchronously, then releases the lease
 ```
 
 `onElected` and `onRevoked` are state-change callbacks - they should return quickly. Real work runs on your own thread, gated by `isLeader()`. If the leader's lease can't be renewed (DB hiccup, GC pause longer than the lease), `onRevoked` fires and the loop returns to standby; another instance takes over within roughly one lease duration.
+
+A hung or unreachable database is detected (and `onRevoked` fired) strictly before the lease can expire, so a standby never wins while the old leader still reports `isLeader() == true`. That bound covers the renew query itself - it cannot cover an unbounded pause of the leader's JVM (long GC, machine suspend), during which the lease may lapse and `isLeader()` may briefly stay `true` after another instance is already elected. `isLeader()` is therefore a best-effort hint, not a cross-node lock: to mutually exclude access to an *external* resource, gate writes on the fencing token from `onElected`, not on `isLeader()` (see [absolute mutual-exclusion guarantees](#important-postgresql-clock-behavior) below).
 
 ## Docker Compose Example
 

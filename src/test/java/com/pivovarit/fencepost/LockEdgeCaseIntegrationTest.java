@@ -6,6 +6,8 @@ import com.pivovarit.fencepost.lock.FencingToken;
 import com.pivovarit.fencepost.lock.LockFactory;
 import com.pivovarit.fencepost.lock.LockNotHeldException;
 import com.pivovarit.fencepost.lock.RenewableLock;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -163,6 +165,32 @@ class LockEdgeCaseIntegrationTest {
 
         lock.lock();
         lock.unlock();
+    }
+
+    @Test
+    void advisoryLockWithTimeoutShouldNotLeakLockTimeoutToPool() throws SQLException {
+        HikariConfig config = new HikariConfig();
+        config.setJdbcUrl(PG.getJdbcUrl());
+        config.setUsername(PG.getUsername());
+        config.setPassword(PG.getPassword());
+        config.setMaximumPoolSize(1);
+        config.setConnectionInitSql("SET lock_timeout = '11s'");
+
+        try (HikariDataSource pool = new HikariDataSource(config)) {
+            LockFactory<AdvisoryLock> provider = Fencepost.Locks.advisory(pool).build();
+            AdvisoryLock lock = provider.forName("advisory-timeout-leak");
+
+            lock.lock(Duration.ofSeconds(2));
+            lock.unlock();
+
+            try (Connection conn = pool.getConnection();
+                 ResultSet rs = conn.createStatement().executeQuery("SHOW lock_timeout")) {
+                rs.next();
+                assertThat(rs.getString(1))
+                  .as("operator-configured lock_timeout must survive an advisory lock(timeout) cycle")
+                  .isEqualTo("11s");
+            }
+        }
     }
 
     @Test

@@ -17,6 +17,23 @@ package com.pivovarit.fencepost.election;
  *
  * <p>Built on top of the lease lock; reuses the {@code fencepost_locks}
  * table.
+ *
+ * <p><strong>{@code isLeader()} is advisory, not a mutual-exclusion
+ * primitive.</strong> Leadership loss is detected by the auto-renew failing,
+ * and that detection is guaranteed to complete strictly before the lease can
+ * expire — so a standby cannot win while this instance still reports
+ * leadership. That guarantee covers a hung or unreachable database for the
+ * renew query itself; it cannot cover an unbounded pause of this JVM (for
+ * example a long GC or the machine being suspended), during which the lease
+ * may expire, a standby may be elected, and {@code isLeader()} may still
+ * momentarily return {@code true} here. Therefore, for mutually exclusive
+ * access to an <em>external</em> resource (a file, an API, another database),
+ * do not gate writes on {@code isLeader()} alone. Carry the {@link
+ * com.pivovarit.fencepost.lock.FencingToken} delivered to {@code onElected}
+ * and have the protected resource reject any token older than the highest it
+ * has seen. Only the monotonic fencing token provides correctness under
+ * arbitrary pauses; {@code isLeader()} is a fast, best-effort hint for work
+ * that is itself idempotent or token-gated.
  */
 public interface LeaderElection extends AutoCloseable {
 
@@ -28,8 +45,10 @@ public interface LeaderElection extends AutoCloseable {
     void start();
 
     /**
-     * Returns {@code true} if this instance currently holds the lease.
-     * Cheap, lock-free read.
+     * Returns {@code true} if this instance currently believes it holds the
+     * lease. Cheap, lock-free read. This is a best-effort hint, not a
+     * cross-node lock: see the class-level note on fencing tokens before using
+     * it to guard exclusive access to an external resource.
      */
     boolean isLeader();
 
