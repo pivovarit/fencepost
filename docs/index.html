@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>fencepost - distributed concurrency toolkit for Java + PostgreSQL</title>
-  <meta name="description" content="Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies, leader election, a PostgreSQL-backed message queue, and zero dependencies beyond java.sql." />
+  <meta name="description" content="Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies, leader election, a PostgreSQL-backed message queue, and zero dependencies beyond the PostgreSQL JDBC driver." />
 
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
@@ -17,14 +17,14 @@
   <meta property="og:url"         content="https://fencepost.pivovarit.com/" />
   <meta property="og:site_name"   content="fencepost" />
   <meta property="og:title"       content="fencepost - distributed concurrency toolkit for Java + PostgreSQL" />
-  <meta property="og:description" content="Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies, leader election, a PostgreSQL-backed message queue, and zero dependencies beyond java.sql." />
+  <meta property="og:description" content="Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies, leader election, a PostgreSQL-backed message queue, and zero dependencies beyond the PostgreSQL JDBC driver." />
   <meta property="og:image"       content="https://fencepost.pivovarit.com/social.png" />
 
   <!-- Twitter Card -->
   <meta name="twitter:card"        content="summary_large_image" />
   <meta name="twitter:url"         content="https://fencepost.pivovarit.com/" />
   <meta name="twitter:title"       content="fencepost - distributed concurrency toolkit for Java + PostgreSQL" />
-  <meta name="twitter:description" content="Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies, leader election, a PostgreSQL-backed message queue, and zero dependencies beyond java.sql." />
+  <meta name="twitter:description" content="Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies, leader election, a PostgreSQL-backed message queue, and zero dependencies beyond the PostgreSQL JDBC driver." />
   <meta name="twitter:image"       content="https://fencepost.pivovarit.com/social.png" />
 
   <!-- Schema.org structured data -->
@@ -34,7 +34,7 @@
     "@type": "SoftwareApplication",
     "name": "fencepost",
     "url": "https://fencepost.pivovarit.com/",
-    "description": "Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies, leader election, a PostgreSQL-backed message queue, and zero dependencies beyond java.sql.",
+    "description": "Distributed concurrency toolkit for Java + PostgreSQL. Three lock strategies, leader election, a PostgreSQL-backed message queue, and zero dependencies beyond the PostgreSQL JDBC driver.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "Any",
     "softwareVersion": "latest",
@@ -364,6 +364,10 @@
       top: 10px;
       right: 10px;
     }
+
+    .hero-code .tok-type { color: var(--accent); }
+    .hero-code .tok-str  { color: var(--green); }
+    .hero-code .tok-cmt  { color: var(--text2); font-style: italic; }
 
     .copy-btn {
       font-family: var(--font-mono);
@@ -712,6 +716,7 @@
       <li><a href="#lock-types">Lock Types</a></li>
       <li><a href="#leader-election">Leader Election</a></li>
       <li><a href="#queue">Queue</a></li>
+      <li><a href="#dashboard">Dashboard</a></li>
     </ul>
     <a href="https://github.com/pivovarit/fencepost" class="nav-github" target="_blank" rel="noopener">
       <svg class="icon-gh" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -729,14 +734,14 @@
   <div class="container">
     <div class="hero-badge">
       <span class="dot"></span>
-      Java 11+ &nbsp;&middot;&nbsp; PostgreSQL &nbsp;&middot;&nbsp; Zero Dependencies
+      Java 17+ &nbsp;&middot;&nbsp; PostgreSQL &nbsp;&middot;&nbsp; Zero Dependencies
     </div>
     <h1 class="hero-title">
       <span class="t-accent">f</span>encepost
     </h1>
     <p class="hero-subtitle">Distributed concurrency toolkit for Java + PostgreSQL.</p>
     <p class="hero-desc">
-      Three lock strategies, leader election, a PostgreSQL-backed message queue, and zero dependencies beyond <code>java.sql</code>.
+      Three lock strategies, leader election, a PostgreSQL-backed message queue, and zero dependencies beyond <code>org.postgresql:postgresql</code>.
     </p>
     <div class="hero-ctas">
       <a href="#lock-types" class="btn-primary">
@@ -749,6 +754,14 @@
         </svg>
         GitHub
       </a>
+    </div>
+    <div class="hero-install-multi hero-code">
+      <button class="copy-btn" data-copy="LockFactory&lt;FencedLock&gt; locks = Fencepost.Locks.session(dataSource).build();&#10;&#10;locks.forName(&quot;orders&quot;).runLocked(token -&gt; {&#10;    externalStore.write(data, token.value()); // fencing token blocks stale writes&#10;});">copy</button>
+      <pre><span class="tok-type">LockFactory</span>&lt;<span class="tok-type">FencedLock</span>&gt; locks = <span class="tok-type">Fencepost</span>.Locks.session(dataSource).build();
+
+locks.forName(<span class="tok-str">"orders"</span>).runLocked(token -&gt; {
+    externalStore.write(data, token.value());   <span class="tok-cmt">// fencing token blocks stale writes</span>
+});</pre>
     </div>
   </div>
 </section>
@@ -907,6 +920,50 @@
           <span class="feature-badge badge-green">auto ack / nack</span>
           <span class="feature-badge badge-violet">concurrency</span>
           <span class="feature-badge badge-yellow">error handling</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Dashboard ───────────────────────────────────────────────────────────── -->
+<section id="dashboard" style="border-top: 1px solid var(--border2);">
+  <div class="container">
+    <div class="section-head">
+      <p class="section-label">Observability</p>
+      <h2 class="section-title">See your locks and queues live.</h2>
+      <p class="section-desc">A built-in dashboard that streams the state of every lock and queue straight from PostgreSQL — no extra infrastructure to run.</p>
+    </div>
+
+    <div class="features-grid" style="grid-template-columns: repeat(3, 1fr);">
+      <div class="feature-card reveal reveal-delay-1">
+        <div class="feature-icon">sse</div>
+        <h3 class="feature-title">live updates</h3>
+        <p class="feature-desc">Pushes updates over Server-Sent Events, driven by PostgreSQL <code>LISTEN/NOTIFY</code> as messages flow — with an automatic polling fallback if the stream drops.</p>
+        <div class="feature-badges">
+          <span class="feature-badge badge-green">LISTEN/NOTIFY</span>
+          <span class="feature-badge badge-violet">SSE</span>
+          <span class="feature-badge badge-yellow">poll fallback</span>
+        </div>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-2">
+        <div class="feature-icon">obs</div>
+        <h3 class="feature-title">locks &amp; queues at a glance</h3>
+        <p class="feature-desc">Every lock's holder, fencing token, and status — held / quiet / free — plus per-queue depth: total, visible, in-flight, and oldest-message age, with drill-down to individual messages.</p>
+        <div class="feature-badges">
+          <span class="feature-badge badge-violet">locks + queues</span>
+          <span class="feature-badge badge-green">drill-down</span>
+        </div>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-3">
+        <div class="feature-icon">run</div>
+        <h3 class="feature-title">zero-config server</h3>
+        <p class="feature-desc">Runs on the JDK's built-in HTTP server. <code>new FencepostDashboard(dataSource).start()</code>, then open <code>localhost:3388</code> — no web framework, no extra dependency.</p>
+        <div class="feature-badges">
+          <span class="feature-badge badge-violet">built-in server</span>
+          <span class="feature-badge badge-yellow">no extra deps</span>
         </div>
       </div>
     </div>
