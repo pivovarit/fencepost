@@ -191,7 +191,7 @@ final class FencepostQueue implements Queue {
         }
         try {
             var pgConn = conn.unwrap(PGConnection.class);
-            pgConn.getNotifications((int) waitMs);
+            pgConn.getNotifications((int) Math.min(waitMs, Integer.MAX_VALUE));
         } catch (Exception e) {
             listener.close();
             if (!listener.isStopped()) {
