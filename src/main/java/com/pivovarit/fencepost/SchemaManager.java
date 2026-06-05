@@ -42,7 +42,7 @@ final class SchemaManager {
               attempts INT NOT NULL DEFAULT 0,
               picked_by TEXT
             );
-            CREATE INDEX IF NOT EXISTS %s ON %s (queue_name, visible_at)""".formatted(tableName, indexName, tableName);
+            CREATE INDEX IF NOT EXISTS %s ON %s (queue_name, visible_at, id)""".formatted(tableName, indexName, tableName);
         executeSql(dataSource, sql);
     }
 
