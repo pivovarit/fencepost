@@ -268,7 +268,7 @@ public final class DashboardApi {
                   CASE WHEN picked_by IS NOT NULL THEN 'in_flight'
                        WHEN visible_at > now() THEN 'delayed'
                        ELSE 'visible' END AS status
-                FROM %s WHERE queue_name = ? ORDER BY id""".formatted(queueTable);
+                FROM %s WHERE queue_name = ? ORDER BY id LIMIT 100""".formatted(queueTable);
 
             this.messageById = """
                 SELECT id, encode(payload, 'base64') AS payload_b64, type, headers,
