@@ -3,10 +3,12 @@ package com.pivovarit.fencepost;
 import com.pivovarit.fencepost.function.ThrowingConsumer;
 import com.pivovarit.fencepost.queue.Message;
 import com.pivovarit.fencepost.queue.Queue;
+import com.pivovarit.fencepost.queue.LostOwnershipException;
 import com.pivovarit.fencepost.queue.QueueConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -25,6 +27,8 @@ final class QueueConsumerInstance implements QueueConsumer {
     private final ThrowingConsumer<Message> handler;
     private final int concurrency;
     private final BiConsumer<Message, Throwable> onError;
+    private final int maxDeliveries;
+    private final Duration retryDelay;
 
     private final ExecutorService executor;
     private final Object lifecycleLock = new Object();
@@ -32,12 +36,15 @@ final class QueueConsumerInstance implements QueueConsumer {
     private boolean started;
 
     QueueConsumerInstance(String queueName, Queue queue, ThrowingConsumer<Message> handler,
-                          int concurrency, BiConsumer<Message, Throwable> onError) {
+                          int concurrency, BiConsumer<Message, Throwable> onError,
+                          int maxDeliveries, Duration retryDelay) {
         this.queueName = queueName;
         this.queue = queue;
         this.handler = handler;
         this.concurrency = concurrency;
         this.onError = onError;
+        this.maxDeliveries = maxDeliveries;
+        this.retryDelay = retryDelay;
         this.executor = Executors.newFixedThreadPool(concurrency, new ConsumerThreadFactory(queueName));
     }
 
@@ -113,12 +120,7 @@ final class QueueConsumerInstance implements QueueConsumer {
         try {
             handler.accept(msg);
         } catch (Throwable t) {
-            reportError(msg, t);
-            try {
-                msg.nack();
-            } catch (Exception nackEx) {
-                logger.trace("nack failed for message {} on queue '{}'", msg.id(), queueName, nackEx);
-            }
+            failMessage(msg, t);
             return;
         }
         try {
@@ -126,6 +128,32 @@ final class QueueConsumerInstance implements QueueConsumer {
         } catch (Throwable t) {
             reportError(msg, t);
         }
+    }
+
+    private void failMessage(Message msg, Throwable t) {
+        reportError(msg, t);
+        try {
+            if (msg instanceof AckableMessage am) {
+                if (maxDeliveries > 0 && msg.attempts() >= maxDeliveries) {
+                    am.deadLetter(describe(t));
+                } else {
+                    am.nack(retryDelay);
+                }
+            } else {
+                msg.nack();
+            }
+        } catch (LostOwnershipException lost) {
+            logger.debug("lost ownership resolving failed message {} on queue '{}'", msg.id(), queueName, lost);
+        } catch (Exception resolveEx) {
+            logger.warn("failed to resolve failed message {} on queue '{}'", msg.id(), queueName, resolveEx);
+        }
+    }
+
+    private static String describe(Throwable t) {
+        String s = t.getMessage() == null
+          ? t.getClass().getName()
+          : t.getClass().getName() + ": " + t.getMessage();
+        return s.length() > 1000 ? s.substring(0, 1000) : s;
     }
 
     private void reportError(Message msg, Throwable t) {

@@ -179,10 +179,16 @@ CREATE TABLE fencepost_queue (
     payload       BYTEA NOT NULL,
     type          TEXT,
     headers       JSONB,
+    created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     visible_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     picked_by     TEXT,
-    attempts      INT NOT NULL DEFAULT 0
+    attempts      INT NOT NULL DEFAULT 0,
+    dead_at       TIMESTAMP WITH TIME ZONE,
+    last_error    TEXT
 );
+
+CREATE INDEX idx_fencepost_queue_dequeue
+    ON fencepost_queue (queue_name, visible_at, id) WHERE dead_at IS NULL;
 ```
 
 The table name defaults to `fencepost_queue` but can be customized via `.tableName("my_queue")` on the builder.
@@ -269,6 +275,31 @@ consumer.start();
 
 // on shutdown:
 consumer.close(); // waits for in-flight handlers to finish
+```
+
+### Retries and the dead-letter queue
+
+A consumer that throws from its handler negatively-acknowledges the message for redelivery. Two `ConsumerBuilder` knobs control retry behavior:
+
+- `retryDelay(Duration)` — how long a failed message stays invisible before redelivery. Defaults to **1 second** (this prevents a deterministically-failing "poison" message from hot-looping at database-round-trip speed).
+- `maxDeliveries(int)` — after a message has been delivered this many times and still fails, it is **dead-lettered** instead of retried: the row is marked with `dead_at = now()` (and `last_error`) and is no longer dequeued. Delivery count is the `attempts` counter, which increments on every pick (explicit nacks and visibility-timeout redeliveries alike). Unset means unlimited retries.
+
+```java
+QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "orders")
+    .visibilityTimeout(Duration.ofMinutes(5))
+    .maxDeliveries(5)                 // 5 attempts, then dead-letter
+    .retryDelay(Duration.ofSeconds(2))
+    .handler(msg -> process(msg))
+    .build();
+consumer.start();
+```
+
+Dead-lettered messages remain in the queue table with `dead_at` set; inspect or drain them with SQL:
+
+```sql
+SELECT id, attempts, last_error, dead_at
+FROM fencepost_queue
+WHERE queue_name = 'orders' AND dead_at IS NOT NULL;
 ```
 
 ## Important: PostgreSQL Clock Behavior

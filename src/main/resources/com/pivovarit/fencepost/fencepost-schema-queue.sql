@@ -7,8 +7,10 @@ CREATE TABLE IF NOT EXISTS fencepost_queue (
     created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     visible_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     attempts    INT NOT NULL DEFAULT 0,
-    picked_by   TEXT
+    picked_by   TEXT,
+    dead_at     TIMESTAMP WITH TIME ZONE,
+    last_error  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_fencepost_queue_dequeue
-    ON fencepost_queue (queue_name, visible_at);
+    ON fencepost_queue (queue_name, visible_at, id) WHERE dead_at IS NULL;

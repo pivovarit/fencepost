@@ -350,6 +350,8 @@ public final class Fencepost {
             private ThrowingConsumer<Message> handler;
             private int concurrency = 1;
             private BiConsumer<Message, Throwable> onError = (msg, t) -> {};
+            private int maxDeliveries = 0;
+            private Duration retryDelay = Duration.ofSeconds(1);
             private SchemaMode schemaMode = SchemaMode.NONE;
 
             private ConsumerBuilder(DataSource dataSource, String queueName) {
@@ -393,6 +395,20 @@ public final class Fencepost {
                 return this;
             }
 
+            public ConsumerBuilder maxDeliveries(int maxDeliveries) {
+                if (maxDeliveries < 1) {
+                    throw new IllegalArgumentException("maxDeliveries must be at least 1");
+                }
+                this.maxDeliveries = maxDeliveries;
+                return this;
+            }
+
+            public ConsumerBuilder retryDelay(Duration retryDelay) {
+                Durations.toNonNegativeMillis(retryDelay, "retryDelay");
+                this.retryDelay = retryDelay;
+                return this;
+            }
+
             public ConsumerBuilder schemaMode(SchemaMode schemaMode) {
                 this.schemaMode = Objects.requireNonNull(schemaMode, "schemaMode must not be null");
                 return this;
@@ -409,7 +425,7 @@ public final class Fencepost {
                     qb.pollInterval(pollInterval);
                 }
                 Queue queue = qb.build().forName(queueName);
-                return new QueueConsumerInstance(queueName, queue, handler, concurrency, onError);
+                return new QueueConsumerInstance(queueName, queue, handler, concurrency, onError, maxDeliveries, retryDelay);
             }
         }
 

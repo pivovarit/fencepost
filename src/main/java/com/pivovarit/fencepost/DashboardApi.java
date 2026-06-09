@@ -252,7 +252,7 @@ public final class DashboardApi {
                   COUNT(*) FILTER (WHERE visible_at <= now() AND picked_by IS NULL) AS visible,
                   COUNT(*) FILTER (WHERE picked_by IS NOT NULL) AS in_flight,
                   EXTRACT(EPOCH FROM now() - MIN(visible_at) FILTER (WHERE visible_at <= now())) AS oldest_age_seconds
-                FROM %s GROUP BY queue_name ORDER BY queue_name""".formatted(queueTable);
+                FROM %s WHERE dead_at IS NULL GROUP BY queue_name ORDER BY queue_name""".formatted(queueTable);
 
             this.queueByName = """
                 SELECT queue_name,
@@ -260,7 +260,7 @@ public final class DashboardApi {
                   COUNT(*) FILTER (WHERE visible_at <= now() AND picked_by IS NULL) AS visible,
                   COUNT(*) FILTER (WHERE picked_by IS NOT NULL) AS in_flight,
                   EXTRACT(EPOCH FROM now() - MIN(visible_at) FILTER (WHERE visible_at <= now())) AS oldest_age_seconds
-                FROM %s WHERE queue_name = ? GROUP BY queue_name""".formatted(queueTable);
+                FROM %s WHERE queue_name = ? AND dead_at IS NULL GROUP BY queue_name""".formatted(queueTable);
 
             this.messagesByQueue = """
                 SELECT id, encode(substring(payload from 1 for 200), 'base64') AS payload_preview,
@@ -268,7 +268,7 @@ public final class DashboardApi {
                   CASE WHEN picked_by IS NOT NULL THEN 'in_flight'
                        WHEN visible_at > now() THEN 'delayed'
                        ELSE 'visible' END AS status
-                FROM %s WHERE queue_name = ? ORDER BY id LIMIT 100""".formatted(queueTable);
+                FROM %s WHERE queue_name = ? AND dead_at IS NULL ORDER BY id LIMIT 100""".formatted(queueTable);
 
             this.messageById = """
                 SELECT id, encode(payload, 'base64') AS payload_b64, type, headers,
@@ -276,7 +276,7 @@ public final class DashboardApi {
                   CASE WHEN picked_by IS NOT NULL THEN 'in_flight'
                        WHEN visible_at > now() THEN 'delayed'
                        ELSE 'visible' END AS status
-                FROM %s WHERE queue_name = ? AND id = ?""".formatted(queueTable);
+                FROM %s WHERE queue_name = ? AND id = ? AND dead_at IS NULL""".formatted(queueTable);
         }
     }
 }
