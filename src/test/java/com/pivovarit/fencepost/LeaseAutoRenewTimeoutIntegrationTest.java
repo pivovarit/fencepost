@@ -77,6 +77,36 @@ class LeaseAutoRenewTimeoutIntegrationTest {
           .allSatisfy(ms -> assertThat(ms).isLessThan(1_000L));
     }
 
+    @Test
+    void autoRenewShouldBoundRenewConnectionsWithNetworkTimeout() {
+        // statement_timeout only cancels the renew UPDATE server-side; if the TCP
+        // connection is blackholed, getConnection/commit block at the OS retransmit
+        // timeout. Each renew connection must carry a network timeout equal to the
+        // per-attempt budget so the loss-detection bound holds without a healthy network.
+        List<String> recordedSql = new CopyOnWriteArrayList<>();
+        List<Integer> networkTimeouts = new CopyOnWriteArrayList<>();
+        DataSource recording = recordingPrepareStatements(
+          recordingNetworkTimeouts(dataSource, networkTimeouts), recordedSql);
+
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(recording, Duration.ofSeconds(3))
+          .withAutoRenew(Duration.ofMillis(300))
+          .build();
+        RenewableLock lock = provider.forName("network-timeout-renew");
+        lock.lock();
+        try {
+            await().atMost(Duration.ofSeconds(2)).until(() ->
+              recordedSql.stream().anyMatch(s -> s.startsWith("SET LOCAL statement_timeout")));
+        } finally {
+            lock.close();
+        }
+
+        int expected = (int) LeaseLockInstance.autoRenewAttemptTimeoutMillis(3_000, 300);
+        assertThat(networkTimeouts.stream().filter(ms -> ms > 0))
+          .as("renew connections must bound every network round trip with the per-attempt timeout")
+          .isNotEmpty()
+          .allSatisfy(ms -> assertThat(ms).isEqualTo(expected));
+    }
+
     private static List<Long> timeoutsSetDuringRenew(List<String> recordedSql) {
         Pattern p = Pattern.compile("SET LOCAL statement_timeout = '(\\d+)ms'");
         List<Long> timeouts = new CopyOnWriteArrayList<>();
@@ -109,6 +139,27 @@ class LeaseAutoRenewTimeoutIntegrationTest {
               if ("prepareStatement".equals(method.getName()) && args != null && args.length > 0
                 && args[0] instanceof String sql) {
                   sink.add(sql);
+              }
+              return invoke(real, method, args);
+          });
+    }
+
+    private static DataSource recordingNetworkTimeouts(DataSource real, List<Integer> sink) {
+        return (DataSource) Proxy.newProxyInstance(
+          DataSource.class.getClassLoader(),
+          new Class<?>[]{DataSource.class},
+          (proxy, method, args) -> {
+              if ("getConnection".equals(method.getName())) {
+                  Connection connection = (Connection) invoke(real, method, args);
+                  return (Connection) Proxy.newProxyInstance(
+                    Connection.class.getClassLoader(),
+                    new Class<?>[]{Connection.class},
+                    (connProxy, connMethod, connArgs) -> {
+                        if ("setNetworkTimeout".equals(connMethod.getName()) && connArgs != null && connArgs.length == 2) {
+                            sink.add((Integer) connArgs[1]);
+                        }
+                        return invoke(connection, connMethod, connArgs);
+                    });
               }
               return invoke(real, method, args);
           });
