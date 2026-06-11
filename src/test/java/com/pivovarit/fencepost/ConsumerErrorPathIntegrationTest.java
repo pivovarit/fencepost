@@ -257,12 +257,6 @@ class ConsumerErrorPathIntegrationTest {
     }
 
     private void enqueue(String queueName, String... messages) {
-        Queue queue = Fencepost.Queues.queue(dataSource)
-          .visibilityTimeout(Duration.ofMinutes(5))
-          .build()
-          .forName(queueName);
-        for (String msg : messages) {
-            queue.enqueue(msg.getBytes(UTF_8), "test", Map.of());
-        }
+        TestQueues.enqueue(dataSource, queueName, messages);
     }
 }

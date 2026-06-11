@@ -201,6 +201,15 @@ class SchemaManagerTest {
     }
 
     @Test
+    void shouldCreateQueueSchemaWithDlqIndex() throws SQLException {
+        SchemaManager.createQueueSchema(dataSource, "fencepost_queue");
+
+        assertThat(indexDefinition("idx_fencepost_queue_dlq"))
+            .contains("(queue_name)")
+            .contains("WHERE (dead_at IS NOT NULL)");
+    }
+
+    @Test
     void shouldFailValidationWhenQueueDeadAtColumnMissing() throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             conn.createStatement().execute("""

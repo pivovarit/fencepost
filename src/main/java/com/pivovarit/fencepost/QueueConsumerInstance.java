@@ -131,15 +131,12 @@ final class QueueConsumerInstance implements QueueConsumer {
     }
 
     private void failMessage(Message msg, Throwable t) {
-        reportError(msg, t);
         try {
             if (msg instanceof AckableMessage am) {
-                if (maxDeliveries > 0 && msg.attempts() >= maxDeliveries) {
-                    am.deadLetter(describe(t));
-                } else {
-                    am.nack(retryDelay);
-                }
+                resolveFailed(am, t);
             } else {
+                logger.warn("message {} on queue '{}' is not consumer-managed ({}); nacking without retryDelay/maxDeliveries",
+                  msg.id(), queueName, msg.getClass().getName());
                 msg.nack();
             }
         } catch (LostOwnershipException lost) {
@@ -147,12 +144,30 @@ final class QueueConsumerInstance implements QueueConsumer {
         } catch (Exception resolveEx) {
             logger.warn("failed to resolve failed message {} on queue '{}'", msg.id(), queueName, resolveEx);
         }
+        reportError(msg, t);
+    }
+
+    private void resolveFailed(AckableMessage msg, Throwable t) {
+        switch (msg.currentState()) {
+            case ACTIVE -> {
+                if (maxDeliveries > 0 && msg.attempts() >= maxDeliveries) {
+                    String reason = describe(t);
+                    msg.deadLetter(reason);
+                    logger.warn("dead-lettered message {} on queue '{}' after {} deliveries: {}",
+                      msg.id(), queueName, msg.attempts(), reason);
+                } else {
+                    msg.nack(retryDelay);
+                }
+            }
+            case ACKED -> logger.debug("handler acked message {} on queue '{}' before throwing; nothing to resolve",
+              msg.id(), queueName);
+            default -> logger.warn("message {} on queue '{}' was already {} when its handler threw; retryDelay/maxDeliveries not applied",
+              msg.id(), queueName, msg.currentState().name().toLowerCase());
+        }
     }
 
     private static String describe(Throwable t) {
-        String s = t.getMessage() == null
-          ? t.getClass().getName()
-          : t.getClass().getName() + ": " + t.getMessage();
+        String s = t.toString().replace('\0', ' ');
         return s.length() > 1000 ? s.substring(0, 1000) : s;
     }
 

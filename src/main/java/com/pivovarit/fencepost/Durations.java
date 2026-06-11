@@ -12,7 +12,7 @@ final class Durations {
 
     static long toPositiveMillis(Duration duration, String name) {
         requireAtLeastOneMillisecond(duration, name);
-        return duration.toMillis();
+        return toMillisChecked(duration, name);
     }
 
     static long toNonNegativeMillis(Duration duration, String name) {
@@ -23,7 +23,19 @@ final class Durations {
         if (!duration.isZero() && duration.compareTo(ONE_MILLISECOND) < 0) {
             throw new IllegalArgumentException(name + " must be zero or at least 1 millisecond");
         }
-        return duration.toMillis();
+        return toMillisChecked(duration, name);
+    }
+
+    static void requireNonNegative(Duration duration, String name) {
+        toNonNegativeMillis(duration, name);
+    }
+
+    private static long toMillisChecked(Duration duration, String name) {
+        try {
+            return duration.toMillis();
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException(name + " is too large", e);
+        }
     }
 
     static void requireAtLeastOneMillisecond(Duration duration, String name) {

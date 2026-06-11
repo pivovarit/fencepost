@@ -404,7 +404,7 @@ public final class Fencepost {
             }
 
             public ConsumerBuilder retryDelay(Duration retryDelay) {
-                Durations.toNonNegativeMillis(retryDelay, "retryDelay");
+                Durations.requireNonNegative(retryDelay, "retryDelay");
                 this.retryDelay = retryDelay;
                 return this;
             }

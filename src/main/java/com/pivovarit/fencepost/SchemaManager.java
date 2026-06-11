@@ -30,6 +30,7 @@ final class SchemaManager {
 
     static void createQueueSchema(DataSource dataSource, String tableName) {
         String indexName = "idx_" + bareTableName(tableName) + "_dequeue";
+        String dlqIndexName = "idx_" + bareTableName(tableName) + "_dlq";
         String sql = """
             CREATE TABLE IF NOT EXISTS %s (
               id BIGSERIAL PRIMARY KEY,
@@ -44,7 +45,8 @@ final class SchemaManager {
               dead_at TIMESTAMP WITH TIME ZONE,
               last_error TEXT
             );
-            CREATE INDEX IF NOT EXISTS %s ON %s (queue_name, visible_at, id) WHERE dead_at IS NULL""".formatted(tableName, indexName, tableName);
+            CREATE INDEX IF NOT EXISTS %s ON %s (queue_name, visible_at, id) WHERE dead_at IS NULL;
+            CREATE INDEX IF NOT EXISTS %s ON %s (queue_name) WHERE dead_at IS NOT NULL""".formatted(tableName, indexName, tableName, dlqIndexName, tableName);
         executeSql(dataSource, sql);
     }
 

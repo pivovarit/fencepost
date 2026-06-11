@@ -14,3 +14,6 @@ CREATE TABLE IF NOT EXISTS fencepost_queue (
 
 CREATE INDEX IF NOT EXISTS idx_fencepost_queue_dequeue
     ON fencepost_queue (queue_name, visible_at, id) WHERE dead_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_fencepost_queue_dlq
+    ON fencepost_queue (queue_name) WHERE dead_at IS NOT NULL;

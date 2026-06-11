@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 final class AckableMessage implements Message {
 
-    private enum State {ACTIVE, ACKED, NACKED, DEAD_LETTERED, CLOSED, LOST}
+    enum State {ACTIVE, ACKED, NACKED, DEAD_LETTERED, CLOSED, LOST}
 
     private final long id;
     private final byte[] payload;
@@ -46,7 +46,7 @@ final class AckableMessage implements Message {
         Sql(String tableName) {
             this.ack = String.format("DELETE FROM %s WHERE id = ? AND picked_by = ?", tableName);
             this.nack = String.format("UPDATE %s SET visible_at = now() + %s, picked_by = NULL WHERE id = ? AND picked_by = ?", tableName, Jdbc.intervalMillis());
-            this.deadLetter = String.format("UPDATE %s SET dead_at = now(), picked_by = NULL, last_error = ? WHERE id = ? AND picked_by = ?", tableName);
+            this.deadLetter = String.format("UPDATE %s SET dead_at = now(), visible_at = now(), picked_by = NULL, last_error = ? WHERE id = ? AND picked_by = ?", tableName);
         }
     }
 
@@ -77,28 +77,9 @@ final class AckableMessage implements Message {
 
     @Override
     public void ack() {
-        if (!state.compareAndSet(State.ACTIVE, State.ACKED)) {
-            throw new IllegalStateException("Message already " + state.get().name().toLowerCase());
-        }
-        try {
-            int updated = Jdbc.update(dataSource, sql.ack)
-              .bind(id)
-              .bind(pickToken)
-              .execute();
-
-            if (updated != 1) {
-                state.set(State.LOST);
-                throw new LostOwnershipException(id);
-            }
-        } catch (SQLException e) {
-            state.set(State.ACTIVE);
-            throw new AckUnknownException(id, "ack", e);
-        } catch (LostOwnershipException e) {
-            throw e;
-        } catch (Exception e) {
-            state.set(State.ACTIVE);
-            throw e;
-        }
+        resolve(State.ACKED, "ack", Jdbc.update(dataSource, sql.ack)
+          .bind(id)
+          .bind(pickToken));
     }
 
     @Override
@@ -107,48 +88,37 @@ final class AckableMessage implements Message {
     }
 
     void nack(Duration delay) {
-        if (!state.compareAndSet(State.ACTIVE, State.NACKED)) {
-            throw new IllegalStateException("Message already " + state.get().name().toLowerCase());
-        }
         long delayMillis = Durations.toNonNegativeMillis(delay, "delay");
-        try {
-            int updated = Jdbc.update(dataSource, sql.nack)
-              .bind(delayMillis)
-              .bind(id)
-              .bind(pickToken)
-              .execute();
-            if (updated != 1) {
-                state.set(State.LOST);
-                throw new LostOwnershipException(id);
-            }
-        } catch (SQLException e) {
-            state.set(State.ACTIVE);
-            throw new AckUnknownException(id, "nack", e);
-        } catch (LostOwnershipException e) {
-            throw e;
-        } catch (Exception e) {
-            state.set(State.ACTIVE);
-            throw e;
-        }
+        resolve(State.NACKED, "nack", Jdbc.update(dataSource, sql.nack)
+          .bind(delayMillis)
+          .bind(id)
+          .bind(pickToken));
     }
 
     void deadLetter(String reason) {
-        if (!state.compareAndSet(State.ACTIVE, State.DEAD_LETTERED)) {
+        resolve(State.DEAD_LETTERED, "deadLetter", Jdbc.update(dataSource, sql.deadLetter)
+          .bind(reason)
+          .bind(id)
+          .bind(pickToken));
+    }
+
+    State currentState() {
+        return state.get();
+    }
+
+    private void resolve(State target, String operation, Jdbc.Update update) {
+        if (!state.compareAndSet(State.ACTIVE, target)) {
             throw new IllegalStateException("Message already " + state.get().name().toLowerCase());
         }
         try {
-            int updated = Jdbc.update(dataSource, sql.deadLetter)
-              .bind(reason)
-              .bind(id)
-              .bind(pickToken)
-              .execute();
+            int updated = update.execute();
             if (updated != 1) {
                 state.set(State.LOST);
                 throw new LostOwnershipException(id);
             }
         } catch (SQLException e) {
             state.set(State.ACTIVE);
-            throw new AckUnknownException(id, "deadLetter", e);
+            throw new AckUnknownException(id, operation, e);
         } catch (LostOwnershipException e) {
             throw e;
         } catch (Exception e) {

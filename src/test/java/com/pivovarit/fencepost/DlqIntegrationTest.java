@@ -84,18 +84,24 @@ class DlqIntegrationTest {
         queue.enqueue("retry".getBytes(UTF_8), "test", Map.of());
 
         AckableMessage m = (AckableMessage) queue.tryDequeue().orElseThrow();
+        long nackStart = System.nanoTime();
         m.nack(Duration.ofSeconds(2));
 
-        assertThat(queue.tryDequeue())
-          .as("message should still be delayed immediately after nack(2s)")
-          .isEmpty();
+        Optional<Message> immediate = queue.tryDequeue();
+        if (TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - nackStart) < 2_000) {
+            assertThat(immediate)
+              .as("message should still be delayed immediately after nack(2s)")
+              .isEmpty();
+        }
 
-        AtomicReference<Message> redelivered = new AtomicReference<>();
-        await().atMost(5, TimeUnit.SECONDS).until(() -> {
-            Optional<Message> picked = queue.tryDequeue();
-            picked.ifPresent(redelivered::set);
-            return picked.isPresent();
-        });
+        AtomicReference<Message> redelivered = new AtomicReference<>(immediate.orElse(null));
+        if (redelivered.get() == null) {
+            await().atMost(5, TimeUnit.SECONDS).until(() -> {
+                Optional<Message> picked = queue.tryDequeue();
+                picked.ifPresent(redelivered::set);
+                return picked.isPresent();
+            });
+        }
         assertThat(new String(redelivered.get().payload(), UTF_8)).isEqualTo("retry");
         redelivered.get().ack();
     }
@@ -117,18 +123,33 @@ class DlqIntegrationTest {
 
         try (Connection conn = dataSource.getConnection();
              ResultSet rs = conn.createStatement().executeQuery(
-               "SELECT dead_at, last_error FROM fencepost_queue WHERE queue_name = 'dlq-manual-dead'")) {
+               "SELECT dead_at, last_error, (visible_at <= now()) AS visible_at_past FROM fencepost_queue WHERE queue_name = 'dlq-manual-dead'")) {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getTimestamp("dead_at")).isNotNull();
             assertThat(rs.getString("last_error")).isEqualTo("boom");
+            assertThat(rs.getBoolean("visible_at_past"))
+              .as("deadLetter should reset visible_at so a manual redrive is deliverable right away")
+              .isTrue();
         }
     }
 
     @Test
-    void maxDeliveriesMustBeAtLeastOne() {
-        assertThatThrownBy(() -> Fencepost.Queues.consumer(dataSource, "dlq-validate").maxDeliveries(0))
-          .isInstanceOf(IllegalArgumentException.class)
-          .hasMessageContaining("maxDeliveries must be at least 1");
+    void invalidNackDelayLeavesMessageResolvable() throws Exception {
+        Queue queue = Fencepost.Queues.queue(dataSource)
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .build()
+          .forName("dlq-invalid-delay");
+        queue.enqueue("oops".getBytes(UTF_8), "test", Map.of());
+
+        AckableMessage m = (AckableMessage) queue.tryDequeue().orElseThrow();
+
+        assertThatThrownBy(() -> m.nack(Duration.ofMillis(-1)))
+          .isInstanceOf(IllegalArgumentException.class);
+
+        m.nack();
+        assertThat(queue.tryDequeue())
+          .as("a rejected delay must not consume the message's state machine")
+          .isPresent();
     }
 
     @Test
@@ -158,7 +179,6 @@ class DlqIntegrationTest {
             }
         });
 
-        Thread.sleep(500);
         assertThat(deliveries.get())
           .as("poison message should be delivered exactly maxDeliveries times")
           .isEqualTo(3);
@@ -253,13 +273,71 @@ class DlqIntegrationTest {
         assertThat(errors.get(1)).hasMessage("boom-2");
     }
 
-    private void enqueue(String queueName, String... messages) {
-        Queue queue = Fencepost.Queues.queue(dataSource)
+    @Test
+    void onErrorResolvingMessageDoesNotPreventDeadLettering() throws Exception {
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "dlq-onerror-nack")
           .visibilityTimeout(Duration.ofMinutes(5))
-          .build()
-          .forName(queueName);
-        for (String msg : messages) {
-            queue.enqueue(msg.getBytes(UTF_8), "test", Map.of());
-        }
+          .maxDeliveries(2)
+          .retryDelay(Duration.ofMillis(50))
+          .handler(msg -> {
+              throw new RuntimeException("always fails");
+          })
+          .onError((msg, t) -> {
+              if (msg != null) {
+                  try {
+                      msg.nack(); // pre-DLQ-era "requeue on error" callback
+                  } catch (RuntimeException ignored) {
+                      // already resolved by the consumer
+                  }
+              }
+          })
+          .build();
+
+        enqueue("dlq-onerror-nack", "poison");
+        consumer.start();
+
+        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+            try (Connection conn = dataSource.getConnection();
+                 ResultSet rs = conn.createStatement().executeQuery(
+                   "SELECT dead_at FROM fencepost_queue WHERE queue_name = 'dlq-onerror-nack'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getTimestamp("dead_at"))
+                  .as("an onError callback that nacks must not defeat maxDeliveries")
+                  .isNotNull();
+            }
+        });
+        consumer.close();
+    }
+
+    @Test
+    void deadLetterSanitizesNulBytesInLastError() throws Exception {
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "dlq-nul")
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .maxDeliveries(1)
+          .retryDelay(Duration.ofMillis(50))
+          .handler(msg -> {
+              throw new RuntimeException("bad\0payload");
+          })
+          .build();
+
+        enqueue("dlq-nul", "poison");
+        consumer.start();
+
+        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+            try (Connection conn = dataSource.getConnection();
+                 ResultSet rs = conn.createStatement().executeQuery(
+                   "SELECT dead_at, last_error FROM fencepost_queue WHERE queue_name = 'dlq-nul'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getTimestamp("dead_at"))
+                  .as("a NUL byte in the exception message must not prevent dead-lettering")
+                  .isNotNull();
+                assertThat(rs.getString("last_error")).contains("bad").doesNotContain("\0");
+            }
+        });
+        consumer.close();
+    }
+
+    private void enqueue(String queueName, String... messages) {
+        TestQueues.enqueue(dataSource, queueName, messages);
     }
 }

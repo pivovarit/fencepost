@@ -189,6 +189,9 @@ CREATE TABLE fencepost_queue (
 
 CREATE INDEX idx_fencepost_queue_dequeue
     ON fencepost_queue (queue_name, visible_at, id) WHERE dead_at IS NULL;
+
+CREATE INDEX idx_fencepost_queue_dlq
+    ON fencepost_queue (queue_name) WHERE dead_at IS NOT NULL;
 ```
 
 The table name defaults to `fencepost_queue` but can be customized via `.tableName("my_queue")` on the builder.
@@ -284,6 +287,8 @@ A consumer that throws from its handler negatively-acknowledges the message for 
 - `retryDelay(Duration)` — how long a failed message stays invisible before redelivery. Defaults to **1 second** (this prevents a deterministically-failing "poison" message from hot-looping at database-round-trip speed).
 - `maxDeliveries(int)` — after a message has been delivered this many times and still fails, it is **dead-lettered** instead of retried: the row is marked with `dead_at = now()` (and `last_error`) and is no longer dequeued. Delivery count is the `attempts` counter, which increments on every pick (explicit nacks and visibility-timeout redeliveries alike). Unset means unlimited retries.
 
+Both knobs apply **only when the handler throws**. A handler that calls `msg.nack()` itself and returns normally requeues the message **immediately** (zero delay) and is never dead-lettered — `attempts` still counts those picks, but the `maxDeliveries` threshold is only evaluated when a delivery ends in a throw.
+
 ```java
 QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "orders")
     .visibilityTimeout(Duration.ofMinutes(5))
@@ -294,11 +299,23 @@ QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "orders")
 consumer.start();
 ```
 
-Dead-lettered messages remain in the queue table with `dead_at` set; inspect or drain them with SQL:
+Dead-lettered messages remain in the queue table with `dead_at` set; inspect, redrive, or drain them with SQL:
 
 ```sql
+-- inspect
 SELECT id, attempts, last_error, dead_at
 FROM fencepost_queue
+WHERE queue_name = 'orders' AND dead_at IS NOT NULL;
+
+-- redrive: clear the marker AND reset the delivery budget —
+-- with attempts still >= maxDeliveries, the next failure would
+-- instantly dead-letter the message again
+UPDATE fencepost_queue
+SET dead_at = NULL, last_error = NULL, attempts = 0
+WHERE queue_name = 'orders' AND id = 42;
+
+-- drain
+DELETE FROM fencepost_queue
 WHERE queue_name = 'orders' AND dead_at IS NOT NULL;
 ```
 

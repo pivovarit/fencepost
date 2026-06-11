@@ -331,13 +331,7 @@ class QueueConsumerIntegrationTest {
     }
 
     private void enqueue(String... messages) {
-        var queue = Fencepost.Queues.queue(dataSource)
-            .visibilityTimeout(Duration.ofMinutes(5))
-            .build()
-            .forName("test-queue");
-        for (String msg : messages) {
-            queue.enqueue(msg.getBytes(UTF_8), "test", Map.of());
-        }
+        TestQueues.enqueue(dataSource, "test-queue", messages);
     }
 
     private long queueSize() throws SQLException {
