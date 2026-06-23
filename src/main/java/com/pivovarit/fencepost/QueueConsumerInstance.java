@@ -166,9 +166,19 @@ final class QueueConsumerInstance implements QueueConsumer {
         }
     }
 
-    private static String describe(Throwable t) {
-        String s = t.toString().replace('\0', ' ');
-        return s.length() > 1000 ? s.substring(0, 1000) : s;
+    private static final int MAX_ERROR_LENGTH = 1000;
+
+    static String describe(Throwable t) {
+        String s = t.toString();
+        if (s == null) {
+            s = t.getClass().getName();
+        }
+        s = s.replace('\0', ' ');
+        if (s.length() <= MAX_ERROR_LENGTH) {
+            return s;
+        }
+        int end = Character.isHighSurrogate(s.charAt(MAX_ERROR_LENGTH - 1)) ? MAX_ERROR_LENGTH - 1 : MAX_ERROR_LENGTH;
+        return s.substring(0, end);
     }
 
     private void reportError(Message msg, Throwable t) {
