@@ -178,6 +178,41 @@ class BuilderValidationTest {
     }
 
     @Test
+    void consumerBuilderShouldRejectZeroMaxDeliveries() {
+        assertThatThrownBy(() -> Fencepost.Queues.consumer(FAILING_DATA_SOURCE, "q").maxDeliveries(0))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("maxDeliveries must be at least 1");
+    }
+
+    @Test
+    void consumerBuilderShouldRejectNullRetryDelay() {
+        assertThatThrownBy(() -> Fencepost.Queues.consumer(FAILING_DATA_SOURCE, "q").retryDelay(null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("retryDelay");
+    }
+
+    @Test
+    void consumerBuilderShouldRejectNegativeRetryDelay() {
+        assertThatThrownBy(() -> Fencepost.Queues.consumer(FAILING_DATA_SOURCE, "q").retryDelay(Duration.ofMillis(-1)))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("retryDelay must not be negative");
+    }
+
+    @Test
+    void consumerBuilderShouldRejectSubMillisecondRetryDelay() {
+        assertThatThrownBy(() -> Fencepost.Queues.consumer(FAILING_DATA_SOURCE, "q").retryDelay(Duration.ofNanos(500_000)))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("retryDelay must be zero or at least 1 millisecond");
+    }
+
+    @Test
+    void consumerBuilderShouldRejectOverflowingRetryDelay() {
+        assertThatThrownBy(() -> Fencepost.Queues.consumer(FAILING_DATA_SOURCE, "q").retryDelay(Duration.ofSeconds(Long.MAX_VALUE)))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("retryDelay is too large");
+    }
+
+    @Test
     void queueBuilderShouldRejectNullDataSource() {
         assertThatThrownBy(() -> Fencepost.Queues.queue(null))
           .isInstanceOf(NullPointerException.class);

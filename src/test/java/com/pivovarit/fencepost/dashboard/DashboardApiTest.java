@@ -12,6 +12,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -208,5 +209,58 @@ class DashboardApiTest {
         assertThat(json).contains("\"payload_preview\":\"aGVsbG8gd29ybGQ=\"");
         assertThat(json).contains("\"picked_by\":\"worker-99\"");
         assertThat(json).contains("\"attempts\":2,");
+    }
+
+    @Test
+    void shouldExcludeDeadLetteredMessagesFromQueueSummary() throws Exception {
+        createQueueTable();
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute("""
+                INSERT INTO fencepost_queue (queue_name, payload, visible_at, picked_by, dead_at) VALUES
+                ('dlq-queue', 'live'::bytea, now() - interval '1 second', NULL, NULL),
+                ('dlq-queue', 'dead'::bytea, now() - interval '2 seconds', NULL, now())""");
+        }
+
+        String json = api().queues();
+
+        assertThat(json).contains("\"name\":\"dlq-queue\"");
+        assertThat(json).contains("\"total\":1,");
+        assertThat(json).contains("\"visible\":1,");
+        assertThat(json).contains("\"in_flight\":0,");
+    }
+
+    @Test
+    void shouldExcludeDeadLetteredMessagesFromQueueDetail() throws Exception {
+        createQueueTable();
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute("""
+                INSERT INTO fencepost_queue (queue_name, payload, dead_at) VALUES
+                ('dlq-detail', 'gone'::bytea, now())""");
+        }
+
+        String json = api().queue("dlq-detail");
+
+        assertThat(json).contains("\"total\":0,");
+        assertThat(json).contains("\"messages\":[]");
+    }
+
+    @Test
+    void shouldReturnNullForDeadLetteredMessageById() throws Exception {
+        createQueueTable();
+        long id;
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute("""
+                INSERT INTO fencepost_queue (queue_name, payload, dead_at) VALUES
+                ('dlq-msg', 'gone'::bytea, now())""");
+            try (ResultSet rs = conn.createStatement().executeQuery(
+                   "SELECT id FROM fencepost_queue WHERE queue_name = 'dlq-msg'")) {
+                rs.next();
+                id = rs.getLong(1);
+            }
+        }
+
+        String json = api().message("dlq-msg", id);
+
+        assertThat(json).isEqualTo("null");
     }
 }

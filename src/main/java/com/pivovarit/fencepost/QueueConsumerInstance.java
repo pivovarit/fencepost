@@ -3,10 +3,12 @@ package com.pivovarit.fencepost;
 import com.pivovarit.fencepost.function.ThrowingConsumer;
 import com.pivovarit.fencepost.queue.Message;
 import com.pivovarit.fencepost.queue.Queue;
+import com.pivovarit.fencepost.queue.LostOwnershipException;
 import com.pivovarit.fencepost.queue.QueueConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -25,6 +27,8 @@ final class QueueConsumerInstance implements QueueConsumer {
     private final ThrowingConsumer<Message> handler;
     private final int concurrency;
     private final BiConsumer<Message, Throwable> onError;
+    private final int maxDeliveries;
+    private final Duration retryDelay;
 
     private final ExecutorService executor;
     private final Object lifecycleLock = new Object();
@@ -32,12 +36,15 @@ final class QueueConsumerInstance implements QueueConsumer {
     private boolean started;
 
     QueueConsumerInstance(String queueName, Queue queue, ThrowingConsumer<Message> handler,
-                          int concurrency, BiConsumer<Message, Throwable> onError) {
+                          int concurrency, BiConsumer<Message, Throwable> onError,
+                          int maxDeliveries, Duration retryDelay) {
         this.queueName = queueName;
         this.queue = queue;
         this.handler = handler;
         this.concurrency = concurrency;
         this.onError = onError;
+        this.maxDeliveries = maxDeliveries;
+        this.retryDelay = retryDelay;
         this.executor = Executors.newFixedThreadPool(concurrency, new ConsumerThreadFactory(queueName));
     }
 
@@ -113,12 +120,7 @@ final class QueueConsumerInstance implements QueueConsumer {
         try {
             handler.accept(msg);
         } catch (Throwable t) {
-            reportError(msg, t);
-            try {
-                msg.nack();
-            } catch (Exception nackEx) {
-                logger.trace("nack failed for message {} on queue '{}'", msg.id(), queueName, nackEx);
-            }
+            failMessage(msg, t);
             return;
         }
         try {
@@ -126,6 +128,57 @@ final class QueueConsumerInstance implements QueueConsumer {
         } catch (Throwable t) {
             reportError(msg, t);
         }
+    }
+
+    private void failMessage(Message msg, Throwable t) {
+        try {
+            if (msg instanceof AckableMessage am) {
+                resolveFailed(am, t);
+            } else {
+                logger.warn("message {} on queue '{}' is not consumer-managed ({}); nacking without retryDelay/maxDeliveries",
+                  msg.id(), queueName, msg.getClass().getName());
+                msg.nack();
+            }
+        } catch (LostOwnershipException lost) {
+            logger.debug("lost ownership resolving failed message {} on queue '{}'", msg.id(), queueName, lost);
+        } catch (Exception resolveEx) {
+            logger.warn("failed to resolve failed message {} on queue '{}'", msg.id(), queueName, resolveEx);
+        }
+        reportError(msg, t);
+    }
+
+    private void resolveFailed(AckableMessage msg, Throwable t) {
+        switch (msg.currentState()) {
+            case ACTIVE -> {
+                if (maxDeliveries > 0 && msg.attempts() >= maxDeliveries) {
+                    String reason = describe(t);
+                    msg.deadLetter(reason);
+                    logger.warn("dead-lettered message {} on queue '{}' after {} deliveries: {}",
+                      msg.id(), queueName, msg.attempts(), reason);
+                } else {
+                    msg.nack(retryDelay);
+                }
+            }
+            case ACKED -> logger.debug("handler acked message {} on queue '{}' before throwing; nothing to resolve",
+              msg.id(), queueName);
+            default -> logger.warn("message {} on queue '{}' was already {} when its handler threw; retryDelay/maxDeliveries not applied",
+              msg.id(), queueName, msg.currentState().name().toLowerCase());
+        }
+    }
+
+    private static final int MAX_ERROR_LENGTH = 1000;
+
+    static String describe(Throwable t) {
+        String s = t.toString();
+        if (s == null) {
+            s = t.getClass().getName();
+        }
+        s = s.replace('\0', ' ');
+        if (s.length() <= MAX_ERROR_LENGTH) {
+            return s;
+        }
+        int end = Character.isHighSurrogate(s.charAt(MAX_ERROR_LENGTH - 1)) ? MAX_ERROR_LENGTH - 1 : MAX_ERROR_LENGTH;
+        return s.substring(0, end);
     }
 
     private void reportError(Message msg, Throwable t) {

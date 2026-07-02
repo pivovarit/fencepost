@@ -30,6 +30,7 @@ final class SchemaManager {
 
     static void createQueueSchema(DataSource dataSource, String tableName) {
         String indexName = "idx_" + bareTableName(tableName) + "_dequeue";
+        String dlqIndexName = "idx_" + bareTableName(tableName) + "_dlq";
         String sql = """
             CREATE TABLE IF NOT EXISTS %s (
               id BIGSERIAL PRIMARY KEY,
@@ -40,9 +41,12 @@ final class SchemaManager {
               created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
               visible_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
               attempts INT NOT NULL DEFAULT 0,
-              picked_by TEXT
+              picked_by TEXT,
+              dead_at TIMESTAMP WITH TIME ZONE,
+              last_error TEXT
             );
-            CREATE INDEX IF NOT EXISTS %s ON %s (queue_name, visible_at, id)""".formatted(tableName, indexName, tableName);
+            CREATE INDEX IF NOT EXISTS %s ON %s (queue_name, visible_at, id) WHERE dead_at IS NULL;
+            CREATE INDEX IF NOT EXISTS %s ON %s (queue_name) WHERE dead_at IS NOT NULL""".formatted(tableName, indexName, tableName, dlqIndexName, tableName);
         executeSql(dataSource, sql);
     }
 
@@ -105,7 +109,9 @@ final class SchemaManager {
             new String[]{"created_at", "timestamp with time zone"},
             new String[]{"visible_at", "timestamp with time zone"},
             new String[]{"attempts", "integer"},
-            new String[]{"picked_by", "text"}
+            new String[]{"picked_by", "text"},
+            new String[]{"dead_at", "timestamp with time zone"},
+            new String[]{"last_error", "text"}
         ));
     }
 

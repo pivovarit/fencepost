@@ -543,7 +543,7 @@
       if (r.status === 404) {
         clearError();
         document.getElementById('message-detail-body').innerHTML =
-          '<div class="info-msg">This message has been acknowledged and is no longer in the queue.</div>';
+          '<div class="info-msg">This message is no longer in the active queue — it was acknowledged or dead-lettered.</div>';
         return;
       }
       if (!r.ok) throw new Error('HTTP ' + r.status);

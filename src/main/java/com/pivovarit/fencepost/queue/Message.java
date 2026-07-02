@@ -12,6 +12,11 @@ import java.util.Optional;
  * timeout expires, the broker assumes the consumer crashed and makes the message
  * eligible for redelivery to another consumer.
  *
+ * <p>A managed {@link QueueConsumer} resolves failed deliveries itself: it nacks the
+ * message with its configured retry delay and, once a configured delivery cap is
+ * exhausted, dead-letters it — a terminal resolution after which the message is never
+ * delivered again.
+ *
  * <p>Instances are not thread-safe. Each message must be operated on by a single thread:
  * concurrent calls to {@link #ack()}, {@link #nack()}, or {@link #close()} from multiple
  * threads on the same instance are unsupported and may produce misleading exceptions.
@@ -56,7 +61,8 @@ public interface Message extends AutoCloseable {
      *                                indeterminate. Local state is reset to active, so the
      *                                caller may retry or {@link #close()}.
      * @throws IllegalStateException  if this message has already been resolved locally via
-     *                                {@code ack()}, {@link #nack()}, or {@link #close()}.
+     *                                {@code ack()}, {@link #nack()}, or {@link #close()},
+     *                                or dead-lettered by a managed consumer.
      */
     void ack();
 
@@ -72,7 +78,8 @@ public interface Message extends AutoCloseable {
      *                                indeterminate. Local state is reset to active, so the
      *                                caller may retry or {@link #close()}.
      * @throws IllegalStateException  if this message has already been resolved locally via
-     *                                {@link #ack()}, {@code nack()}, or {@link #close()}.
+     *                                {@link #ack()}, {@code nack()}, or {@link #close()},
+     *                                or dead-lettered by a managed consumer.
      */
     void nack();
 

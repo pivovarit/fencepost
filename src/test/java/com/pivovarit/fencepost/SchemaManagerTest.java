@@ -184,6 +184,74 @@ class SchemaManagerTest {
             .hasMessageContaining("Required table 'fencepost_queue' does not exist");
     }
 
+    @Test
+    void shouldCreateQueueSchemaWithDeadLetterColumns() throws SQLException {
+        SchemaManager.createQueueSchema(dataSource, "fencepost_queue");
+
+        assertThat(columnExists("fencepost_queue", "dead_at")).isTrue();
+        assertThat(columnExists("fencepost_queue", "last_error")).isTrue();
+    }
+
+    @Test
+    void shouldCreateQueueSchemaWithPartialDequeueIndex() throws SQLException {
+        SchemaManager.createQueueSchema(dataSource, "fencepost_queue");
+
+        assertThat(indexDefinition("idx_fencepost_queue_dequeue"))
+            .contains("WHERE (dead_at IS NULL)");
+    }
+
+    @Test
+    void shouldCreateQueueSchemaWithDlqIndex() throws SQLException {
+        SchemaManager.createQueueSchema(dataSource, "fencepost_queue");
+
+        assertThat(indexDefinition("idx_fencepost_queue_dlq"))
+            .contains("(queue_name)")
+            .contains("WHERE (dead_at IS NOT NULL)");
+    }
+
+    @Test
+    void shouldFailValidationWhenQueueDeadAtColumnMissing() throws SQLException {
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute("""
+                CREATE TABLE fencepost_queue (
+                  id BIGSERIAL PRIMARY KEY,
+                  queue_name TEXT NOT NULL,
+                  payload BYTEA NOT NULL,
+                  type TEXT,
+                  headers JSONB,
+                  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                  visible_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                  attempts INT NOT NULL DEFAULT 0,
+                  picked_by TEXT)""");
+        }
+
+        assertThatThrownBy(() -> SchemaManager.validateQueueSchema(dataSource, "fencepost_queue"))
+            .isInstanceOf(FencepostException.class)
+            .hasMessageContaining("missing column 'dead_at'");
+    }
+
+    @Test
+    void shouldFailValidationWhenQueueLastErrorColumnMissing() throws SQLException {
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute("""
+                CREATE TABLE fencepost_queue (
+                  id BIGSERIAL PRIMARY KEY,
+                  queue_name TEXT NOT NULL,
+                  payload BYTEA NOT NULL,
+                  type TEXT,
+                  headers JSONB,
+                  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                  visible_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                  attempts INT NOT NULL DEFAULT 0,
+                  picked_by TEXT,
+                  dead_at TIMESTAMP WITH TIME ZONE)""");
+        }
+
+        assertThatThrownBy(() -> SchemaManager.validateQueueSchema(dataSource, "fencepost_queue"))
+            .isInstanceOf(FencepostException.class)
+            .hasMessageContaining("missing column 'last_error'");
+    }
+
     private boolean tableExists(String table) throws SQLException {
         try (Connection conn = dataSource.getConnection()) {
             ResultSet rs = conn.createStatement().executeQuery(
@@ -197,6 +265,23 @@ class SchemaManagerTest {
             ResultSet rs = conn.createStatement().executeQuery(
                 "SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = '" + index + "'");
             return rs.next();
+        }
+    }
+
+    private boolean columnExists(String table, String column) throws SQLException {
+        try (Connection conn = dataSource.getConnection()) {
+            ResultSet rs = conn.createStatement().executeQuery(
+                "SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'"
+                    + " AND table_name = '" + table + "' AND column_name = '" + column + "'");
+            return rs.next();
+        }
+    }
+
+    private String indexDefinition(String index) throws SQLException {
+        try (Connection conn = dataSource.getConnection()) {
+            ResultSet rs = conn.createStatement().executeQuery(
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = '" + index + "'");
+            return rs.next() ? rs.getString(1) : "";
         }
     }
 }

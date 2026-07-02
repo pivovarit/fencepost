@@ -58,7 +58,7 @@ final class FencepostQueue implements Queue {
             this.notifyQueue = "NOTIFY " + channelName;
             this.dequeue = """
                 UPDATE %s SET visible_at = now() + %s, picked_by = ?, attempts = attempts + 1
-                WHERE id = (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now()
+                WHERE id = (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now() AND dead_at IS NULL
                 ORDER BY visible_at, id LIMIT 1 FOR UPDATE SKIP LOCKED)
                 RETURNING id, payload, type, headers, attempts""".formatted(tableName, Jdbc.intervalMillis(), tableName);
         }
