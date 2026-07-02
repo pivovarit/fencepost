@@ -362,9 +362,18 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
      * windows up to a full second and let worst-case loss detection exceed the
      * lease duration. {@code SET LOCAL statement_timeout} requires a transaction,
      * so autocommit is disabled for the renew and restored afterwards.
+     *
+     * <p>{@code statement_timeout} only cancels server-side execution; if the TCP
+     * connection is blackholed (no RST), the client would block at the OS retransmit
+     * timeout instead. The same per-attempt budget is therefore also applied as the
+     * connection's network timeout so every round trip on the renew connection is
+     * client-side bounded too. Establishing the connection itself remains bounded
+     * only by the driver/pool ({@code connectTimeout}, checkout timeout).
      */
     private int renewWithStatementTimeout(long windowMillis, long token) throws SQLException {
         try (Connection connection = dataSource.getConnection()) {
+            int previousNetworkTimeout = connection.getNetworkTimeout();
+            connection.setNetworkTimeout(Runnable::run, Math.toIntExact(autoRenewStatementTimeout.toMillis()));
             boolean previousAutoCommit = connection.getAutoCommit();
             if (previousAutoCommit) {
                 connection.setAutoCommit(false);
@@ -393,6 +402,11 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                     } catch (SQLException e) {
                         logger.trace("failed to restore autoCommit on renew connection for lease lock '{}'", lockName, e);
                     }
+                }
+                try {
+                    connection.setNetworkTimeout(Runnable::run, previousNetworkTimeout);
+                } catch (SQLException e) {
+                    logger.trace("failed to restore network timeout on renew connection for lease lock '{}'", lockName, e);
                 }
             }
         }
