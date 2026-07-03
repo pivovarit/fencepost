@@ -125,6 +125,24 @@ public final class Fencepost {
                 return this;
             }
 
+            /**
+             * Renews the lease every {@code refreshInterval} on a background thread
+             * and reports lease loss via {@link #onAutoRenewFailure(Consumer)} before
+             * the lease can expire, so a standby cannot acquire it while the holder
+             * still believes it is held. Every renew attempt is bounded server-side
+             * ({@code statement_timeout}) and client-side (network timeout), and time
+             * spent checking a connection out of the pool is charged against the same
+             * detection budget.
+             *
+             * <p>The one step this library cannot bound is the pool checkout itself:
+             * if {@code DataSource#getConnection} blocks past the detection deadline
+             * (an exhausted pool with a long checkout timeout), loss is reported as
+             * soon as it returns — late by at most the pool's checkout timeout. To
+             * keep the bound strict, configure the pool's checkout timeout (e.g.
+             * HikariCP {@code connectionTimeout}) to no more than the per-attempt
+             * renew timeout, which is never larger than {@code refreshInterval}. A
+             * breach only delays detection; fencing tokens still protect writes.
+             */
             public LeaseBuilder withAutoRenew(Duration refreshInterval) {
                 Durations.requireAtLeastOneMillisecond(refreshInterval, "Refresh interval");
                 if (refreshInterval.compareTo(leaseDuration) >= 0) {

@@ -20,6 +20,9 @@ import java.sql.SQLFeatureNotSupportedException;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -105,6 +108,90 @@ class LeaseAutoRenewTimeoutIntegrationTest {
           .as("renew connections must bound every network round trip with the per-attempt timeout")
           .isNotEmpty()
           .allSatisfy(ms -> assertThat(ms).isEqualTo(expected));
+    }
+
+    @Test
+    void slowCheckoutShouldShrinkRenewStatementTimeoutToRemainingDetectionBudget() {
+        // lease=6s / renew=600ms: per-attempt budget 600ms, cycle deadline 2100ms
+        // (3 attempts + 300ms backoff). A pool checkout that eats 1600ms of the cycle
+        // leaves only ~500ms until the deadline — the statement_timeout must shrink to
+        // what is left, not assume checkout was free, or detection can overrun the lease.
+        List<String> recordedSql = new CopyOnWriteArrayList<>();
+        AtomicBoolean delayCheckouts = new AtomicBoolean(false);
+        DataSource slow = delayingCheckouts(dataSource, delayCheckouts, 1_600, new AtomicInteger());
+        DataSource recording = recordingPrepareStatements(slow, recordedSql);
+
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(recording, Duration.ofSeconds(6))
+          .withAutoRenew(Duration.ofMillis(600))
+          .build();
+        RenewableLock lock = provider.forName("slow-checkout-renew");
+        lock.lock();
+        delayCheckouts.set(true);
+        try {
+            await().atMost(Duration.ofSeconds(8)).until(() ->
+              !timeoutsSetDuringRenew(recordedSql).isEmpty());
+        } finally {
+            delayCheckouts.set(false);
+            lock.close();
+        }
+
+        long cycleBudget = LeaseLockInstance.autoRenewCycleBudgetMillis(6_000, 600);
+        assertThat(timeoutsSetDuringRenew(recordedSql))
+          .as("renew statement_timeout must be charged for the 1600ms pool checkout")
+          .isNotEmpty()
+          .allSatisfy(ms -> assertThat(ms).isBetween(1L, cycleBudget - 1_600));
+    }
+
+    @Test
+    void checkoutBlockingPastDetectionDeadlineShouldReportLossWithoutRetrying() {
+        // A checkout that blocks past the whole 2100ms cycle deadline must fail the
+        // renew immediately when it returns: no SQL on a blown budget, no further
+        // retries (each would block another 2500ms in the pool), loss reported.
+        List<String> recordedSql = new CopyOnWriteArrayList<>();
+        AtomicBoolean delayCheckouts = new AtomicBoolean(false);
+        AtomicInteger delayedCheckouts = new AtomicInteger();
+        DataSource slow = delayingCheckouts(dataSource, delayCheckouts, 2_500, delayedCheckouts);
+        DataSource recording = recordingPrepareStatements(slow, recordedSql);
+        AtomicReference<FencepostException> reported = new AtomicReference<>();
+
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(recording, Duration.ofSeconds(6))
+          .withAutoRenew(Duration.ofMillis(600))
+          .onAutoRenewFailure(reported::set)
+          .build();
+        RenewableLock lock = provider.forName("blocked-checkout-renew");
+        lock.lock();
+        delayCheckouts.set(true);
+        try {
+            await().atMost(Duration.ofSeconds(8)).until(() -> reported.get() != null);
+
+            assertThat(delayedCheckouts.get())
+              .as("a checkout that blew the cycle deadline must not be retried")
+              .isEqualTo(1);
+            assertThat(timeoutsSetDuringRenew(recordedSql))
+              .as("no renew statement may run once the detection deadline has passed")
+              .isEmpty();
+        } finally {
+            delayCheckouts.set(false);
+            lock.close();
+        }
+    }
+
+    private static DataSource delayingCheckouts(DataSource real, AtomicBoolean enabled, long delayMillis, AtomicInteger delayed) {
+        return (DataSource) Proxy.newProxyInstance(
+          DataSource.class.getClassLoader(),
+          new Class<?>[]{DataSource.class},
+          (proxy, method, args) -> {
+              if ("getConnection".equals(method.getName()) && enabled.get()) {
+                  delayed.incrementAndGet();
+                  try {
+                      Thread.sleep(delayMillis);
+                  } catch (InterruptedException e) {
+                      Thread.currentThread().interrupt();
+                      throw new SQLException("interrupted while checking out connection", e);
+                  }
+              }
+              return invoke(real, method, args);
+          });
     }
 
     private static List<Long> timeoutsSetDuringRenew(List<String> recordedSql) {

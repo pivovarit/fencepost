@@ -124,6 +124,8 @@ try {
 }
 ```
 
+Auto-renew reports lease loss (`onAutoRenewFailure`) before the lease can expire, even against a hung database or dead network — renew statements, network round trips, and pool checkout time are all charged against the detection budget. The one thing the library cannot bound is a `getConnection()` call that blocks past the detection deadline: keep the pool's checkout timeout (e.g. HikariCP `connectionTimeout`) at or below the refresh interval to keep the bound strict. A longer checkout timeout only delays detection; fencing tokens still protect writes.
+
 ### Leader Election
 
 Use leader election when you want one of N instances to *pick up* a piece of work and *keep doing it*, with automatic failover when the leader dies. It's built on top of `leaseLock` - a sticky single-leader primitive, not per-iteration mutual exclusion (use `leaseLock` directly for that).

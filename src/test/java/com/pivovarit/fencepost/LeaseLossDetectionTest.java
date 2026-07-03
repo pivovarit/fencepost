@@ -36,6 +36,19 @@ class LeaseLossDetectionTest {
     }
 
     @Test
+    void enforcedCycleBudgetShouldMatchDocumentedWorstCaseBound() {
+        // the auto-renew loop enforces an absolute deadline of cycleBudget per renew
+        // cycle; the documented worst case is that deadline plus the refresh sleep.
+        // If the two ever diverge, the enforced bound no longer backs the documented one.
+        for (long lease = 1_000; lease <= 60_000; lease += 1_000) {
+            long refresh = lease / 3;
+            assertThat(refresh + LeaseLockInstance.autoRenewCycleBudgetMillis(lease, refresh))
+              .as("lease=%dms refresh=%dms", lease, refresh)
+              .isEqualTo(LeaseLockInstance.worstCaseAutoRenewDetectionMillis(lease, refresh));
+        }
+    }
+
+    @Test
     void validationShouldAcceptTheReportedConfig() {
         LeaseLockInstance.validateAutoRenewDetectionBudget(3_000, 1_000);
     }
