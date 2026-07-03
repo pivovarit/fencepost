@@ -420,7 +420,7 @@ public final class Fencepost {
                     throw new IllegalStateException("visibilityTimeout must be set");
                 }
                 Objects.requireNonNull(handler, "handler must be set");
-                QueueBuilder qb = Queues.queue(dataSource).tableName(tableName).visibilityTimeout(visibilityTimeout);
+                QueueBuilder qb = Queues.queue(dataSource).tableName(tableName).visibilityTimeout(visibilityTimeout).maxDeliveries(maxDeliveries);
                 if (pollInterval != null) {
                     qb.pollInterval(pollInterval);
                 }
@@ -434,6 +434,7 @@ public final class Fencepost {
             private String tableName = "fencepost_queue";
             private Duration visibilityTimeout;
             private long pollIntervalMs = 100;
+            private int maxDeliveries = 0;
             private SchemaMode schemaMode = SchemaMode.NONE;
 
             private QueueBuilder(DataSource dataSource) {
@@ -457,6 +458,11 @@ public final class Fencepost {
                 return this;
             }
 
+            QueueBuilder maxDeliveries(int maxDeliveries) {
+                this.maxDeliveries = maxDeliveries;
+                return this;
+            }
+
             public QueueBuilder schemaMode(SchemaMode schemaMode) {
                 this.schemaMode = Objects.requireNonNull(schemaMode, "schemaMode must not be null");
                 return this;
@@ -470,7 +476,8 @@ public final class Fencepost {
                 String t = this.tableName;
                 Duration vt = this.visibilityTimeout;
                 long pi = this.pollIntervalMs;
-                return new QueueFactory<>(queueName -> new FencepostQueue(queueName, dataSource, t, vt, pi));
+                int md = this.maxDeliveries;
+                return new QueueFactory<>(queueName -> new FencepostQueue(queueName, dataSource, t, vt, pi, md));
             }
         }
     }
