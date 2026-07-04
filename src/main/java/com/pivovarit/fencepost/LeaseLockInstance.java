@@ -32,6 +32,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     private final long leaseDurationMs;
     private final Duration refreshInterval;
     private final Duration autoRenewStatementTimeout;
+    private final long autoRenewCycleBudgetMillis;
     private final Duration quietPeriod;
     private final long quietPeriodMs;
     private final long pollIntervalMs;
@@ -58,8 +59,10 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             validateAutoRenewDetectionBudget(leaseDurationMs, refreshInterval.toMillis());
             this.autoRenewStatementTimeout = Duration.ofMillis(
                 autoRenewAttemptTimeoutMillis(leaseDurationMs, refreshInterval.toMillis()));
+            this.autoRenewCycleBudgetMillis = autoRenewCycleBudgetMillis(leaseDurationMs, refreshInterval.toMillis());
         } else {
             this.autoRenewStatementTimeout = null;
+            this.autoRenewCycleBudgetMillis = 0;
         }
         this.quietPeriod = quietPeriod;
         this.quietPeriodMs = quietPeriod != null ? quietPeriod.toMillis() : 0;
@@ -331,11 +334,20 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         autoRenewThread.start();
     }
 
+    /**
+     * Retries the renew under an absolute deadline of
+     * {@link #autoRenewCycleBudgetMillis} per cycle, so that time spent anywhere
+     * in an attempt — including pool checkout, which no statement or network
+     * timeout covers — is charged against the loss-detection budget. Once the
+     * deadline cannot fund another backoff and attempt, the loss is reported
+     * immediately instead of retrying into the standby's acquisition window.
+     */
     private void refreshWithRetry(long windowMillis, long token) throws SQLException, InterruptedException {
+        long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(autoRenewCycleBudgetMillis);
         SQLException lastException = null;
         for (int attempt = 0; attempt < AUTO_RENEW_MAX_RETRIES; attempt++) {
             try {
-                int updated = renewWithStatementTimeout(windowMillis, token);
+                int updated = renewWithStatementTimeout(windowMillis, token, deadlineNanos);
                 if (updated == 0) {
                     throw new SQLException("Lock lost - token no longer matches or lease expired");
                 }
@@ -346,7 +358,11 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                     throw new InterruptedException();
                 }
                 if (attempt < AUTO_RENEW_MAX_RETRIES - 1) {
-                    Thread.sleep(100L * (attempt + 1));
+                    long backoffMillis = 100L * (attempt + 1);
+                    if (TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()) <= backoffMillis) {
+                        throw lastException;
+                    }
+                    Thread.sleep(backoffMillis);
                 }
             } finally {
                 autoRenewStatement = null;
@@ -365,21 +381,38 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
      *
      * <p>{@code statement_timeout} only cancels server-side execution; if the TCP
      * connection is blackholed (no RST), the client would block at the OS retransmit
-     * timeout instead. The same per-attempt budget is therefore also applied as the
+     * timeout instead. The same budget is therefore also applied as the
      * connection's network timeout so every round trip on the renew connection is
-     * client-side bounded too. Establishing the connection itself remains bounded
-     * only by the driver/pool ({@code connectTimeout}, checkout timeout).
+     * client-side bounded too.
+     *
+     * <p>Establishing the connection itself is bounded only by the driver/pool
+     * ({@code connectTimeout}, checkout timeout), so the time it takes is measured
+     * and charged against the cycle deadline instead: the statement gets
+     * {@code min(per-attempt budget, time left until the deadline)}, and a checkout
+     * that returns with no budget left fails the attempt without touching the
+     * database. The one case this cannot bound is a checkout still blocked when the
+     * deadline passes — detection then happens as soon as it returns, late by at
+     * most the pool's checkout timeout. Keeping that timeout at or below the
+     * per-attempt budget ({@link #autoRenewAttemptTimeoutMillis}) restores the
+     * strict bound; a breach only delays detection, never unfences writes.
      */
-    private int renewWithStatementTimeout(long windowMillis, long token) throws SQLException {
+    private int renewWithStatementTimeout(long windowMillis, long token, long deadlineNanos) throws SQLException {
         try (Connection connection = dataSource.getConnection()) {
+            long budgetMillis = Math.min(
+                autoRenewStatementTimeout.toMillis(),
+                TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
+            if (budgetMillis < 1) {
+                throw new SQLException("Renew connection checkout consumed the remaining loss-detection budget for lock: " + lockName);
+            }
+            Duration attemptTimeout = Duration.ofMillis(budgetMillis);
             int previousNetworkTimeout = connection.getNetworkTimeout();
-            connection.setNetworkTimeout(Runnable::run, Math.toIntExact(autoRenewStatementTimeout.toMillis()));
+            connection.setNetworkTimeout(Runnable::run, Math.toIntExact(budgetMillis));
             boolean previousAutoCommit = connection.getAutoCommit();
             if (previousAutoCommit) {
                 connection.setAutoCommit(false);
             }
             try {
-                Jdbc.setStatementTimeout(connection, autoRenewStatementTimeout);
+                Jdbc.setStatementTimeout(connection, attemptTimeout);
                 int updated = Jdbc.update(connection, sql.renew)
                         .onStatement(ps -> autoRenewStatement = ps)
                         .bind(windowMillis)
@@ -439,16 +472,25 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
     }
 
     /**
+     * Absolute time budget for one renew cycle: {@value #AUTO_RENEW_MAX_RETRIES}
+     * attempts each bounded by {@link #autoRenewAttemptTimeoutMillis}, plus
+     * inter-attempt backoff. Enforced as a deadline by the renew loop, so it
+     * covers everything an attempt does — including pool checkout, which no
+     * per-statement timeout can bound.
+     */
+    static long autoRenewCycleBudgetMillis(long leaseMillis, long refreshMillis) {
+        return (long) AUTO_RENEW_MAX_RETRIES * autoRenewAttemptTimeoutMillis(leaseMillis, refreshMillis)
+            + autoRenewTotalBackoffMillis();
+    }
+
+    /**
      * Worst-case time from the last successful renew to reporting the loss: the
-     * refresh interval, then {@value #AUTO_RENEW_MAX_RETRIES} attempts each
-     * bounded by {@link #autoRenewAttemptTimeoutMillis}, plus inter-attempt
-     * backoff. Must stay strictly below the lease so a standby cannot acquire
-     * while the old leader still believes it holds the lease.
+     * refresh interval, then one full cycle budget. Must stay strictly below the
+     * lease so a standby cannot acquire while the old leader still believes it
+     * holds the lease.
      */
     static long worstCaseAutoRenewDetectionMillis(long leaseMillis, long refreshMillis) {
-        return refreshMillis
-            + (long) AUTO_RENEW_MAX_RETRIES * autoRenewAttemptTimeoutMillis(leaseMillis, refreshMillis)
-            + autoRenewTotalBackoffMillis();
+        return refreshMillis + autoRenewCycleBudgetMillis(leaseMillis, refreshMillis);
     }
 
     static void validateAutoRenewDetectionBudget(long leaseMillis, long refreshMillis) {
