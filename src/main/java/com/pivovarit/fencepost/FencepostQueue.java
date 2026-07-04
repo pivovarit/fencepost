@@ -27,6 +27,7 @@ final class FencepostQueue implements Queue {
     private final DataSource dataSource;
     private final long visibilityTimeoutMs;
     private final long pollIntervalMs;
+    private final int maxDeliveries;
     private final ListenerConnection listener;
     private final Sql sql;
     private final AckableMessage.Sql ackSql;
@@ -35,14 +36,15 @@ final class FencepostQueue implements Queue {
     private volatile boolean polling;
 
     FencepostQueue(String queueName, DataSource dataSource, String tableName,
-                   Duration visibilityTimeout, long pollIntervalMs) {
+                   Duration visibilityTimeout, long pollIntervalMs, int maxDeliveries) {
         this.queueName = queueName;
         this.dataSource = dataSource;
         this.visibilityTimeoutMs = visibilityTimeout.toMillis();
         this.pollIntervalMs = pollIntervalMs;
+        this.maxDeliveries = maxDeliveries;
         var channelName = "fencepost_q_" + Long.toUnsignedString(HashUtils.fnv1a64("fencepost:" + queueName));
         this.listener = new ListenerConnection(dataSource, channelName);
-        this.sql = new Sql(tableName, channelName);
+        this.sql = new Sql(tableName, channelName, maxDeliveries);
         this.ackSql = new AckableMessage.Sql(tableName);
     }
 
@@ -51,12 +53,24 @@ final class FencepostQueue implements Queue {
         final String notifyQueue;
         final String dequeue;
 
-        Sql(String tableName, String channelName) {
+        Sql(String tableName, String channelName, int maxDeliveries) {
             this.enqueue = """
                 INSERT INTO %s (queue_name, payload, type, headers, visible_at)
                 VALUES (?, ?, ?, ?::jsonb, now() + %s)""".formatted(tableName, Jdbc.intervalMillis());
             this.notifyQueue = "NOTIFY " + channelName;
-            this.dequeue = """
+            this.dequeue = maxDeliveries > 0
+              ? """
+                WITH exhausted AS (
+                    UPDATE %s SET dead_at = now(), visible_at = now(), picked_by = NULL,
+                        last_error = 'exceeded max deliveries (' || attempts || ')'
+                    WHERE id IN (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now() AND dead_at IS NULL AND attempts >= %d
+                    FOR UPDATE SKIP LOCKED)
+                )
+                UPDATE %s SET visible_at = now() + %s, picked_by = ?, attempts = attempts + 1
+                WHERE id = (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now() AND dead_at IS NULL AND attempts < %d
+                ORDER BY visible_at, id LIMIT 1 FOR UPDATE SKIP LOCKED)
+                RETURNING id, payload, type, headers, attempts""".formatted(tableName, tableName, maxDeliveries, tableName, Jdbc.intervalMillis(), tableName, maxDeliveries)
+              : """
                 UPDATE %s SET visible_at = now() + %s, picked_by = ?, attempts = attempts + 1
                 WHERE id = (SELECT id FROM %s WHERE queue_name = ? AND visible_at <= now() AND dead_at IS NULL
                 ORDER BY visible_at, id LIMIT 1 FOR UPDATE SKIP LOCKED)
@@ -111,7 +125,11 @@ final class FencepostQueue implements Queue {
         String pickToken = TableBasedLock.HOSTNAME + "/" + Thread.currentThread().getName() + "/" + Long.toHexString(ThreadLocalRandom.current().nextLong()) + Long.toHexString(ThreadLocalRandom.current().nextLong());
 
         try {
-            return Jdbc.query(dataSource, sql.dequeue)
+            Jdbc.Query query = Jdbc.query(dataSource, sql.dequeue);
+            if (maxDeliveries > 0) {
+                query.bind(queueName);
+            }
+            return query
               .bind(visibilityTimeoutMs)
               .bind(pickToken)
               .bind(queueName)

@@ -187,6 +187,67 @@ class DlqIntegrationTest {
     }
 
     @Test
+    void dequeueSweepsExpiredExhaustedMessagesToDlqInsteadOfRedelivering() throws Exception {
+        Queue queue = Fencepost.Queues.queue(dataSource)
+          .visibilityTimeout(Duration.ofMillis(100))
+          .maxDeliveries(2)
+          .build()
+          .forName("dlq-sweep");
+        queue.enqueue("poison".getBytes(UTF_8), "test", Map.of());
+
+        assertThat(queue.tryDequeue()).isPresent();
+        await().atMost(5, TimeUnit.SECONDS)
+          .until(() -> queue.tryDequeue().isPresent());
+
+        await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> {
+            assertThat(queue.tryDequeue())
+              .as("a visible message that exhausted maxDeliveries must be swept to the DLQ, not redelivered")
+              .isEmpty();
+            try (Connection conn = dataSource.getConnection();
+                 ResultSet rs = conn.createStatement().executeQuery(
+                   "SELECT dead_at, attempts, last_error FROM fencepost_queue WHERE queue_name = 'dlq-sweep'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getTimestamp("dead_at")).isNotNull();
+                assertThat(rs.getInt("attempts")).isEqualTo(2);
+                assertThat(rs.getString("last_error")).contains("exceeded max deliveries");
+            }
+        });
+    }
+
+    @Test
+    void slowPoisonHandlerOutlivingVisibilityTimeoutIsStillDeadLettered() throws Exception {
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "dlq-livelock")
+          .visibilityTimeout(Duration.ofMillis(200))
+          .maxDeliveries(3)
+          .retryDelay(Duration.ofMillis(50))
+          .concurrency(2)
+          .handler(msg -> {
+              Thread.sleep(600);
+              throw new RuntimeException("slow poison");
+          })
+          .build();
+
+        enqueue("dlq-livelock", "poison");
+        consumer.start();
+
+        await().atMost(15, TimeUnit.SECONDS).untilAsserted(() -> {
+            try (Connection conn = dataSource.getConnection();
+                 ResultSet rs = conn.createStatement().executeQuery(
+                   "SELECT dead_at, attempts, last_error FROM fencepost_queue WHERE queue_name = 'dlq-livelock'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getTimestamp("dead_at"))
+                  .as("a poison message whose handler outlives visibilityTimeout must still be dead-lettered")
+                  .isNotNull();
+                assertThat(rs.getInt("attempts"))
+                  .as("deliveries must be capped at maxDeliveries")
+                  .isEqualTo(3);
+                assertThat(rs.getString("last_error")).isNotNull();
+            }
+        });
+        consumer.close();
+    }
+
+    @Test
     void retryDelaySpacesOutRedeliveries() throws Exception {
         List<Long> attemptTimes = new CopyOnWriteArrayList<>();
         CountDownLatch twice = new CountDownLatch(2);
