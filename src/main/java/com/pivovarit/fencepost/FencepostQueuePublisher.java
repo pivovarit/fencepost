@@ -46,6 +46,7 @@ final class FencepostQueuePublisher implements QueuePublisher {
         HeadersCodec.requirePrintable(type, "Message type");
         long delayMillis = Durations.toNonNegativeMillis(delay, "delay");
         try (Connection conn = dataSource.getConnection()) {
+            boolean borrowedAutoCommit = conn.getAutoCommit();
             conn.setAutoCommit(false);
             try {
                 Jdbc.update(conn, sql.enqueue)
@@ -62,6 +63,12 @@ final class FencepostQueuePublisher implements QueuePublisher {
             } catch (Exception e) {
                 conn.rollback();
                 throw e;
+            } finally {
+                try {
+                    conn.setAutoCommit(borrowedAutoCommit);
+                } catch (SQLException e) {
+                    logger.trace("failed to restore autoCommit after publishing to queue '{}'", queueName, e);
+                }
             }
         } catch (SQLException e) {
             throw new FencepostException("Failed to publish message to queue: " + queueName, e);
