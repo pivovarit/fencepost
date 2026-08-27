@@ -238,7 +238,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                     .bind(token.value())
                     .execute();
             if (updated == 0) {
-                invalidateCurrentToken(token.value());
+                releaseLostLease(token.value());
                 throw new LockNotHeldException(lockName);
             }
             logger.debug("renewed lease lock '{}', token={}, duration={}", lockName, token.value(), duration);
@@ -526,10 +526,21 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         owner.set(null);
     }
 
-    private void invalidateCurrentToken(long token) {
+    /**
+     * Tears down the held-state after {@link #renew} observes that the lease
+     * is no longer ours. Mirrors the cleanup in {@link #unlock}'s {@code finally}:
+     * the auto-renew thread is stopped so it cannot report a stale loss after a
+     * re-acquisition, the token is dropped, and ownership is released so the
+     * instance can be locked again. Without releasing ownership the instance
+     * would be bricked: {@code unlock()} throws before reaching its cleanup and
+     * {@code close()} skips it because no token is held.
+     */
+    private void releaseLostLease(long token) {
         FencingToken held = currentToken;
         if (held != null && held.value() == token) {
+            stopAutoRenew();
             currentToken = null;
+            releaseOwnership();
         }
     }
 

@@ -785,6 +785,83 @@ class FencepostLockIntegrationTest {
     }
 
     @Test
+    void instanceShouldBeReusableAfterRenewDetectsLostLeaseAndUnlockThrows() throws Exception {
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(60))
+          .withAutoRenew(Duration.ofSeconds(30))
+          .build();
+
+        RenewableLock lock = provider.forName("renew-lost-reuse-unlock");
+        FencingToken first = lock.lock();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement()
+              .execute("UPDATE fencepost_locks SET expires_at = now() WHERE lock_name = 'renew-lost-reuse-unlock'");
+        }
+
+        assertThatThrownBy(() -> lock.renew(Duration.ofSeconds(5)))
+          .isInstanceOf(LockNotHeldException.class);
+        assertThatThrownBy(lock::unlock)
+          .isInstanceOf(LockNotHeldException.class);
+
+        FencingToken second = lock.lock();
+        assertThat(second.value()).isGreaterThan(first.value());
+        lock.renew(Duration.ofSeconds(5));
+        lock.unlock();
+
+        Optional<FencingToken> third = lock.tryLock();
+        assertThat(third).isPresent();
+        lock.unlock();
+    }
+
+    @Test
+    void instanceShouldBeReusableAfterRenewDetectsLostLeaseAndClose() throws Exception {
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(60))
+          .withAutoRenew(Duration.ofSeconds(30))
+          .build();
+
+        RenewableLock lock = provider.forName("renew-lost-reuse-close");
+        lock.lock();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement()
+              .execute("UPDATE fencepost_locks SET expires_at = now() WHERE lock_name = 'renew-lost-reuse-close'");
+        }
+
+        assertThatThrownBy(() -> lock.renew(Duration.ofSeconds(5)))
+          .isInstanceOf(LockNotHeldException.class);
+        lock.close();
+
+        assertThat(lock.tryLock()).isPresent();
+        lock.unlock();
+    }
+
+    @Test
+    void renewDetectingLostLeaseShouldStopAutoRenewThread() throws Exception {
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(dataSource, Duration.ofSeconds(60))
+          .withAutoRenew(Duration.ofSeconds(30))
+          .build();
+
+        RenewableLock lock = provider.forName("renew-lost-stops-auto-renew");
+        lock.lock();
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement()
+              .execute("UPDATE fencepost_locks SET expires_at = now() WHERE lock_name = 'renew-lost-stops-auto-renew'");
+        }
+
+        assertThatThrownBy(() -> lock.renew(Duration.ofSeconds(5)))
+          .isInstanceOf(LockNotHeldException.class);
+
+        long autoRenewThreads = Thread.getAllStackTraces().keySet().stream()
+          .filter(t -> t.getName().contains("renew-lost-stops-auto-renew"))
+          .filter(Thread::isAlive)
+          .count();
+        assertThat(autoRenewThreads)
+          .as("auto-renew thread should be stopped as soon as renew() detects the lease is lost")
+          .isZero();
+    }
+
+    @Test
     void unlockShouldWaitForAutoRenewFailureCallbackToComplete() throws Exception {
         CountDownLatch callbackStarted = new CountDownLatch(1);
         CountDownLatch callbackFinished = new CountDownLatch(1);
