@@ -316,14 +316,21 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
-                } catch (SQLException e) {
-                    if (autoRenewStopped) {
-                        return;
+                } catch (SQLException | RuntimeException | Error e) {
+                    // Anything that escapes a renew attempt ends this thread, so it must be reported
+                    // as lease loss - not only SQLException. A RuntimeException from the DataSource
+                    // (e.g. a routing DataSource with no target bound) or an Error would otherwise
+                    // kill the loop silently, and the holder would keep believing it owns the lease
+                    // until a standby acquires it.
+                    if (!autoRenewStopped) {
+                        logger.warn("auto-renew failed for lease lock '{}', token={}", lockName, token, e);
+                        FencepostException ex = new FencepostException("Auto-renew failed for lock: " + lockName, e);
+                        if (onAutoRenewFailure != null) {
+                            onAutoRenewFailure.accept(ex);
+                        }
                     }
-                    logger.warn("auto-renew failed for lease lock '{}', token={}", lockName, token, e);
-                    FencepostException ex = new FencepostException("Auto-renew failed for lock: " + lockName, e);
-                    if (onAutoRenewFailure != null) {
-                        onAutoRenewFailure.accept(ex);
+                    if (e instanceof Error error) {
+                        throw error;
                     }
                     return;
                 }
@@ -406,7 +413,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
             }
             Duration attemptTimeout = Duration.ofMillis(budgetMillis);
             int previousNetworkTimeout = connection.getNetworkTimeout();
-            connection.setNetworkTimeout(Runnable::run, Math.toIntExact(budgetMillis));
+            connection.setNetworkTimeout(Runnable::run, (int) Math.min(budgetMillis, Integer.MAX_VALUE));
             boolean previousAutoCommit = connection.getAutoCommit();
             if (previousAutoCommit) {
                 connection.setAutoCommit(false);
