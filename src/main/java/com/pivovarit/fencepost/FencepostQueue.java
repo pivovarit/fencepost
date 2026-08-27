@@ -166,6 +166,11 @@ final class FencepostQueue implements Queue {
           : Long.MAX_VALUE;
 
         while (true) {
+            // interrupt is observed here rather than inside waitForNotification, so a pending interrupt
+            // fails fast instead of re-entering wait() (which would throw instantly, hot-spinning on tryDequeue)
+            if (Thread.currentThread().isInterrupted()) {
+                throw new FencepostException("Dequeue interrupted on queue: " + queueName);
+            }
             Optional<Message> result = tryDequeue();
             if (result.isPresent()) {
                 return result.get();

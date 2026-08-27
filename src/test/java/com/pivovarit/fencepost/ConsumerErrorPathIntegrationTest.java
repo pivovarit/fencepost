@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 @Testcontainers
 class ConsumerErrorPathIntegrationTest {
@@ -258,5 +259,36 @@ class ConsumerErrorPathIntegrationTest {
 
     private void enqueue(String queueName, String... messages) {
         TestQueues.enqueue(dataSource, queueName, messages);
+    }
+
+    @Test
+    void interruptedConsumerThreadShouldStopInsteadOfSpinningOnFailingDatabase() throws Exception {
+        FaultToleranceTest.FaultDataSource faultDs = new FaultToleranceTest.FaultDataSource(dataSource);
+        AtomicInteger errors = new AtomicInteger();
+        AtomicReference<Thread> worker = new AtomicReference<>();
+
+        QueueConsumer consumer = Fencepost.Queues.consumer(faultDs, "interrupted-consumer")
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .handler(msg -> {
+          })
+          .onError((msg, t) -> {
+              errors.incrementAndGet();
+              worker.set(Thread.currentThread());
+          })
+          .build();
+
+        faultDs.startFailing();
+        consumer.start();
+        await().atMost(Duration.ofSeconds(5)).until(() -> worker.get() != null);
+
+        worker.get().interrupt();
+        Thread.sleep(1500);
+
+        assertThat(errors.get())
+          .as("an interrupted worker must exit its loop, not hammer the failing database with no backoff")
+          .isLessThanOrEqualTo(2);
+
+        faultDs.stopFailing();
+        consumer.close();
     }
 }

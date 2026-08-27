@@ -216,7 +216,7 @@ queue.enqueue("{\"to\":\"user@example.com\"}".getBytes(), "send-email.v1", Map.o
 
 Message msg = queue.dequeue();           // blocking (LISTEN/NOTIFY)
 Message msg = queue.dequeue(Duration.ofSeconds(5)); // with timeout
-Optional<Message> msg = queue.tryDequeue();         // non-blocking
+Optional<Message> msg = queue.tryDequeue();         // non-blocking; interrupting a blocked dequeue() throws FencepostException
 
 msg.type();       // Optional[send-email.v1]
 msg.headers();    // {"priority": "high"}
@@ -229,6 +229,8 @@ msg.nack();
 Each message carries a required `type` (a plain text label for routing or versioning) and optional `headers` (a `Map<String, String>` stored as JSONB).
 
 If processing fails without calling `ack()` or `nack()`, the message becomes visible again after the visibility timeout expires, with an incremented `attempts` counter.
+
+Blocking `dequeue()` calls respond to `Thread.interrupt()`: they throw `FencepostException` and leave the thread's interrupt flag set. An interrupt that arrives while the thread is blocked on the LISTEN/NOTIFY socket is noticed after at most one poll interval.
 
 ### Queue Publisher
 
