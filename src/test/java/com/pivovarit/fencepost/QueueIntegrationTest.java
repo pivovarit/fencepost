@@ -22,6 +22,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -728,6 +729,75 @@ class QueueIntegrationTest {
 
         assertThatThrownBy(queue::dequeue)
           .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void dequeueShouldThrowImmediatelyWhenCallingThreadIsAlreadyInterrupted() {
+        Queue queue = newQueue();
+        Thread.currentThread().interrupt();
+        try {
+            long start = System.nanoTime();
+            assertThatThrownBy(() -> queue.dequeue(Duration.ofSeconds(5)))
+              .isInstanceOf(FencepostException.class)
+              .hasMessageContaining("interrupted");
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+            assertThat(elapsedMs)
+              .as("an interrupted dequeue() must fail fast, not wait for the timeout")
+              .isLessThan(1000);
+            assertThat(Thread.currentThread().isInterrupted())
+              .as("interrupt flag must be preserved for the caller")
+              .isTrue();
+        } finally {
+            Thread.interrupted();
+            queue.close();
+        }
+    }
+
+    @Test
+    void interruptingBlockedDequeuersShouldUnblockThemWithoutSpinning() throws Exception {
+        Queue queue = Fencepost.Queues.queue(dataSource)
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .pollInterval(Duration.ofMillis(500))
+          .build()
+          .forName("interrupted-dequeuers");
+
+        // two blocked dequeuers: one ends up polling LISTEN/NOTIFY, the other waiting on the shared lock
+        List<Throwable> outcomes = new CopyOnWriteArrayList<>();
+        AtomicInteger flagPreserved = new AtomicInteger();
+        List<Thread> threads = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            Thread t = new Thread(() -> {
+                try {
+                    queue.dequeue();
+                    outcomes.add(new AssertionError("dequeue() returned a message from an empty queue"));
+                } catch (Throwable e) {
+                    outcomes.add(e);
+                    if (Thread.currentThread().isInterrupted()) {
+                        flagPreserved.incrementAndGet();
+                    }
+                }
+            }, "interrupted-dequeuer-" + i);
+            t.start();
+            threads.add(t);
+        }
+        Thread.sleep(500);
+
+        threads.forEach(Thread::interrupt);
+        for (Thread t : threads) {
+            t.join(3000);
+        }
+
+        assertThat(threads).allSatisfy(t -> assertThat(t.isAlive())
+          .as("%s should have left dequeue() after being interrupted", t.getName())
+          .isFalse());
+        assertThat(outcomes).hasSize(2).allSatisfy(e -> assertThat(e)
+          .isInstanceOf(FencepostException.class)
+          .hasMessageContaining("interrupted"));
+        assertThat(flagPreserved.get())
+          .as("interrupt flag must be preserved for the caller")
+          .isEqualTo(2);
+        queue.close();
     }
 
     private Queue newQueue() {
