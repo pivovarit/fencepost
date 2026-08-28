@@ -238,7 +238,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                     .bind(token.value())
                     .execute();
             if (updated == 0) {
-                invalidateCurrentToken(token.value());
+                releaseLostLease(token.value());
                 throw new LockNotHeldException(lockName);
             }
             logger.debug("renewed lease lock '{}', token={}, duration={}", lockName, token.value(), duration);
@@ -528,10 +528,12 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
         owner.set(null);
     }
 
-    private void invalidateCurrentToken(long token) {
+    private void releaseLostLease(long token) {
         FencingToken held = currentToken;
         if (held != null && held.value() == token) {
+            stopAutoRenew();
             currentToken = null;
+            releaseOwnership();
         }
     }
 
