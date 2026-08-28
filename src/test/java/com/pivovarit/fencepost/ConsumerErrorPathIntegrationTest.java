@@ -257,6 +257,106 @@ class ConsumerErrorPathIntegrationTest {
         stolen.ack();
     }
 
+    @Test
+    void handlerNackShouldNotReportError() throws Exception {
+        List<Throwable> errors = new CopyOnWriteArrayList<>();
+        CountDownLatch redelivered = new CountDownLatch(1);
+
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "handler-nack")
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .handler(msg -> {
+              if (msg.attempts() == 1) {
+                  msg.nack();
+              } else {
+                  redelivered.countDown();
+              }
+          })
+          .onError((msg, t) -> errors.add(t))
+          .build();
+
+        enqueue("handler-nack", "retry-me");
+        consumer.start();
+
+        assertThat(redelivered.await(10, TimeUnit.SECONDS)).isTrue();
+        consumer.close();
+
+        assertThat(errors)
+          .as("a handler that nacks and returns normally is a correctly handled message")
+          .isEmpty();
+        assertThat(countRows("handler-nack"))
+          .as("second delivery should have been auto-acked")
+          .isZero();
+    }
+
+    @Test
+    void handlerAckShouldNotReportError() throws Exception {
+        List<Throwable> errors = new CopyOnWriteArrayList<>();
+        CountDownLatch processed = new CountDownLatch(1);
+
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "handler-ack")
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .handler(msg -> {
+              msg.ack();
+              processed.countDown();
+          })
+          .onError((msg, t) -> errors.add(t))
+          .build();
+
+        enqueue("handler-ack", "ack-me");
+        consumer.start();
+
+        assertThat(processed.await(10, TimeUnit.SECONDS)).isTrue();
+        consumer.close();
+
+        assertThat(errors)
+          .as("a handler that acks itself must not trigger a second ack")
+          .isEmpty();
+        assertThat(countRows("handler-ack")).isZero();
+    }
+
+    @Test
+    void handlerCloseShouldNotReportErrorAndShouldLeaveRowForRedelivery() throws Exception {
+        List<Throwable> errors = new CopyOnWriteArrayList<>();
+        CountDownLatch processed = new CountDownLatch(1);
+
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "handler-close")
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .handler(msg -> {
+              try (Message m = msg) {
+                  processed.countDown();
+              }
+          })
+          .onError((msg, t) -> errors.add(t))
+          .build();
+
+        enqueue("handler-close", "abandon-me");
+        consumer.start();
+
+        assertThat(processed.await(10, TimeUnit.SECONDS)).isTrue();
+        consumer.close();
+
+        assertThat(errors)
+          .as("close() is a documented resolution; it must not be reported as an error")
+          .isEmpty();
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.createStatement().executeQuery(
+               "SELECT picked_by FROM fencepost_queue WHERE queue_name = 'handler-close'")) {
+            assertThat(rs.next()).as("closed message stays in the queue").isTrue();
+            assertThat(rs.getString(1))
+              .as("closed message remains invisible until the visibility timeout")
+              .isNotNull();
+        }
+    }
+
+    private int countRows(String queueName) throws SQLException {
+        try (Connection conn = dataSource.getConnection();
+             ResultSet rs = conn.createStatement().executeQuery(
+               "SELECT COUNT(*) FROM fencepost_queue WHERE queue_name = '" + queueName + "'")) {
+            rs.next();
+            return rs.getInt(1);
+        }
+    }
+
     private void enqueue(String queueName, String... messages) {
         TestQueues.enqueue(dataSource, queueName, messages);
     }
