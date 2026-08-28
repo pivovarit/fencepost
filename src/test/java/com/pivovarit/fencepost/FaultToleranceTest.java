@@ -97,6 +97,29 @@ class FaultToleranceTest {
     }
 
     @Test
+    void leaseAutoRenewShouldFireCallbackWhenDataSourceThrowsRuntimeException() throws Exception {
+        FaultDataSource faultDs = new FaultDataSource(dataSource);
+        CountDownLatch callbackFired = new CountDownLatch(1);
+
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(faultDs, Duration.ofSeconds(2))
+          .withAutoRenew(Duration.ofMillis(200))
+          .onAutoRenewFailure(ex -> callbackFired.countDown())
+          .build();
+
+        RenewableLock lock = provider.forName("renew-runtime-fail-test");
+        lock.lock();
+
+        faultDs.startFailingWithRuntimeException();
+
+        assertThat(callbackFired.await(10, TimeUnit.SECONDS))
+          .as("onAutoRenewFailure should fire when getConnection throws a RuntimeException")
+          .isTrue();
+
+        faultDs.stopFailing();
+        lock.close();
+    }
+
+    @Test
     void leaseAutoRenewShouldRecoverFromTransientConnectionFailure() throws Exception {
         FaultDataSource faultDs = new FaultDataSource(dataSource);
         AtomicBoolean callbackFired = new AtomicBoolean(false);
@@ -333,9 +356,40 @@ class FaultToleranceTest {
         election.close();
     }
 
+    @Test
+    void leaderElectionShouldRevokeWhenDataSourceThrowsRuntimeExceptionDuringRenew() throws Exception {
+        FaultDataSource faultDs = new FaultDataSource(dataSource);
+
+        CountDownLatch elected = new CountDownLatch(1);
+        CountDownLatch revoked = new CountDownLatch(1);
+
+        LeaderElection election = Fencepost.Locks.leaderElection(faultDs, "runtime-fault-election", Duration.ofSeconds(2))
+          .withRenewInterval(Duration.ofMillis(200))
+          .withPollInterval(Duration.ofMillis(200))
+          .onElected(token -> elected.countDown())
+          .onRevoked(revoked::countDown)
+          .build();
+
+        election.start();
+
+        assertThat(elected.await(5, TimeUnit.SECONDS))
+          .as("should become leader")
+          .isTrue();
+
+        faultDs.startFailingWithRuntimeException();
+
+        assertThat(revoked.await(10, TimeUnit.SECONDS))
+          .as("leadership should be revoked when the renew thread dies on a RuntimeException")
+          .isTrue();
+        assertThat(election.isLeader()).isFalse();
+
+        election.close();
+    }
+
     static final class FaultDataSource implements DataSource {
         private final DataSource delegate;
         private volatile boolean failing;
+        private volatile boolean failingWithRuntimeException;
         private final AtomicInteger remainingFailures = new AtomicInteger(0);
 
         FaultDataSource(DataSource delegate) {
@@ -346,8 +400,13 @@ class FaultToleranceTest {
             failing = true;
         }
 
+        void startFailingWithRuntimeException() {
+            failingWithRuntimeException = true;
+        }
+
         void stopFailing() {
             failing = false;
+            failingWithRuntimeException = false;
         }
 
         void failNext(int n) {
@@ -356,6 +415,9 @@ class FaultToleranceTest {
 
         @Override
         public Connection getConnection() throws SQLException {
+            if (failingWithRuntimeException) {
+                throw new IllegalStateException("simulated routing failure: no target DataSource bound");
+            }
             if (failing || remainingFailures.getAndUpdate(v -> v > 0 ? v - 1 : 0) > 0) {
                 throw new SQLException("simulated connection failure");
             }
