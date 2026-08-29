@@ -88,22 +88,22 @@ final class QueueConsumerInstance implements QueueConsumer {
 
     private void consumeLoop() {
         while (!closed) {
-            if (Thread.currentThread().isInterrupted()) {
-                logger.warn("consumer thread for queue '{}' was interrupted; stopping", queueName);
-                return;
+            if (Thread.interrupted()) {
+                logger.warn("consumer thread for queue '{}' found its interrupt flag set outside close(), most likely re-asserted by the handler; clearing it and continuing",
+                  queueName);
             }
             try {
                 dispatch(queue.dequeue());
             } catch (FencepostException e) {
                 if (closed || Thread.currentThread().isInterrupted()) {
-                    continue; // loop head exits without reporting or backing off
+                    continue; // loop head exits, or clears a handler-set flag and retries, without reporting or backing off
                 }
                 logger.debug("dequeue error on queue '{}': {}", queueName, e.getMessage());
                 reportError(null, e);
                 backoff();
             } catch (RuntimeException e) {
                 if (closed || Thread.currentThread().isInterrupted()) {
-                    continue; // loop head exits without reporting or backing off
+                    continue; // loop head exits, or clears a handler-set flag and retries, without reporting or backing off
                 }
                 logger.warn("unexpected error in consumer loop for queue '{}'", queueName, e);
                 reportError(null, e);
