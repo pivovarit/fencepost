@@ -362,15 +362,46 @@ class ConsumerErrorPathIntegrationTest {
     }
 
     @Test
-    void interruptedConsumerThreadShouldStopInsteadOfSpinningOnFailingDatabase() throws Exception {
+    void handlerReassertingInterruptFlagShouldNotKillConsumerWorker() throws Exception {
+        CountDownLatch firstProcessed = new CountDownLatch(1);
+        CountDownLatch bothProcessed = new CountDownLatch(2);
+        List<String> received = new CopyOnWriteArrayList<>();
+
+        QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "interrupt-reassert")
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .concurrency(1)
+          .handler(msg -> {
+              received.add(new String(msg.payload(), UTF_8));
+              firstProcessed.countDown();
+              bothProcessed.countDown();
+              // the standard idiom: catch InterruptedException, then re-assert the flag for the caller
+              Thread.currentThread().interrupt();
+          })
+          .build();
+
+        enqueue("interrupt-reassert", "msg-1");
+        consumer.start();
+        assertThat(firstProcessed.await(10, TimeUnit.SECONDS)).isTrue();
+
+        enqueue("interrupt-reassert", "msg-2");
+        assertThat(bothProcessed.await(10, TimeUnit.SECONDS))
+          .as("the only worker must keep consuming after a handler leaves the interrupt flag set")
+          .isTrue();
+        assertThat(received).containsExactly("msg-1", "msg-2");
+
+        consumer.close();
+    }
+
+    @Test
+    void interruptedConsumerThreadShouldKeepBackingOffInsteadOfSpinningOnFailingDatabase() throws Exception {
         FaultToleranceTest.FaultDataSource faultDs = new FaultToleranceTest.FaultDataSource(dataSource);
         AtomicInteger errors = new AtomicInteger();
         AtomicReference<Thread> worker = new AtomicReference<>();
+        CountDownLatch processed = new CountDownLatch(1);
 
         QueueConsumer consumer = Fencepost.Queues.consumer(faultDs, "interrupted-consumer")
           .visibilityTimeout(Duration.ofMinutes(5))
-          .handler(msg -> {
-          })
+          .handler(msg -> processed.countDown())
           .onError((msg, t) -> {
               errors.incrementAndGet();
               worker.set(Thread.currentThread());
@@ -385,10 +416,15 @@ class ConsumerErrorPathIntegrationTest {
         Thread.sleep(1500);
 
         assertThat(errors.get())
-          .as("an interrupted worker must exit its loop, not hammer the failing database with no backoff")
-          .isLessThanOrEqualTo(2);
+          .as("an interrupted worker must keep backing off, not hammer the failing database")
+          .isLessThanOrEqualTo(4);
 
         faultDs.stopFailing();
+        enqueue("interrupted-consumer", "msg-1");
+        assertThat(processed.await(10, TimeUnit.SECONDS))
+          .as("the worker must survive an interrupt that did not come from close()")
+          .isTrue();
+
         consumer.close();
     }
 }

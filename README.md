@@ -284,6 +284,8 @@ consumer.start();
 consumer.close(); // waits for in-flight handlers to finish
 ```
 
+Consumer threads are private to the consumer, so the only interrupt they expect is the one `close()` sends after the shutdown timeout. A handler that leaves the thread's interrupt flag set (the usual `catch (InterruptedException e) { Thread.currentThread().interrupt(); }` idiom) does not stop the worker: the flag is cleared with a warning and the thread keeps consuming.
+
 ### Retries and the dead-letter queue
 
 A consumer that throws from its handler negatively-acknowledges the message for redelivery. Two `ConsumerBuilder` knobs control retry behavior:
