@@ -343,10 +343,15 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
      * timeout covers — is charged against the loss-detection budget. Once the
      * deadline cannot fund another backoff and attempt, the loss is reported
      * immediately instead of retrying into the standby's acquisition window.
+     *
+     * <p>Unchecked exceptions are retried on the same terms as {@link SQLException}:
+     * a pool or routing {@link DataSource} that throws a {@link RuntimeException}
+     * from {@code getConnection()} is just as transient as a refused connection,
+     * and must not skip the retry budget and report loss while the lease is valid.
      */
     private void refreshWithRetry(long windowMillis, long token) throws SQLException, InterruptedException {
         long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(autoRenewCycleBudgetMillis);
-        SQLException lastException = null;
+        Exception lastException = null;
         for (int attempt = 0; attempt < AUTO_RENEW_MAX_RETRIES; attempt++) {
             try {
                 int updated = renewWithStatementTimeout(windowMillis, token, deadlineNanos);
@@ -354,7 +359,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                     throw new SQLException("Lock lost - token no longer matches or lease expired");
                 }
                 return;
-            } catch (SQLException e) {
+            } catch (SQLException | RuntimeException e) {
                 lastException = e;
                 if (Thread.currentThread().isInterrupted()) {
                     throw new InterruptedException();
@@ -362,7 +367,7 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                 if (attempt < AUTO_RENEW_MAX_RETRIES - 1) {
                     long backoffMillis = 100L * (attempt + 1);
                     if (TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()) <= backoffMillis) {
-                        throw lastException;
+                        throw renewFailure(lastException);
                     }
                     Thread.sleep(backoffMillis);
                 }
@@ -370,7 +375,14 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
                 autoRenewStatement = null;
             }
         }
-        throw lastException;
+        throw renewFailure(lastException);
+    }
+
+    private static SQLException renewFailure(Exception e) throws SQLException {
+        if (e instanceof RuntimeException runtime) {
+            throw runtime;
+        }
+        throw (SQLException) e;
     }
 
     /**

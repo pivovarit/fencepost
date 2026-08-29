@@ -144,6 +144,33 @@ class FaultToleranceTest {
     }
 
     @Test
+    void leaseAutoRenewShouldRecoverFromTransientRuntimeException() throws Exception {
+        // A RuntimeException from getConnection() (e.g. a routing DataSource with no
+        // target bound yet) must consume the same retry/backoff budget as a
+        // SQLException — not skip retries and report loss while the lease is valid.
+        FaultDataSource faultDs = new FaultDataSource(dataSource);
+        AtomicBoolean callbackFired = new AtomicBoolean(false);
+
+        LockFactory<RenewableLock> provider = Fencepost.Locks.lease(faultDs, Duration.ofSeconds(5))
+          .withAutoRenew(Duration.ofMillis(200))
+          .onAutoRenewFailure(ex -> callbackFired.set(true))
+          .build();
+
+        RenewableLock lock = provider.forName("transient-runtime-renew-test");
+        lock.lock();
+
+        faultDs.failNextWithRuntimeException(2);
+
+        Thread.sleep(2000);
+
+        assertThat(callbackFired.get())
+          .as("onAutoRenewFailure should not fire when retries recover from a transient RuntimeException")
+          .isFalse();
+
+        lock.unlock();
+    }
+
+    @Test
     void leaseUnlockFailureShouldNotPreventLeaseExpiry() {
         FaultDataSource faultDs = new FaultDataSource(dataSource);
 
@@ -391,6 +418,7 @@ class FaultToleranceTest {
         private volatile boolean failing;
         private volatile boolean failingWithRuntimeException;
         private final AtomicInteger remainingFailures = new AtomicInteger(0);
+        private final AtomicInteger remainingRuntimeFailures = new AtomicInteger(0);
 
         FaultDataSource(DataSource delegate) {
             this.delegate = delegate;
@@ -413,9 +441,13 @@ class FaultToleranceTest {
             remainingFailures.set(n);
         }
 
+        void failNextWithRuntimeException(int n) {
+            remainingRuntimeFailures.set(n);
+        }
+
         @Override
         public Connection getConnection() throws SQLException {
-            if (failingWithRuntimeException) {
+            if (failingWithRuntimeException || remainingRuntimeFailures.getAndUpdate(v -> v > 0 ? v - 1 : 0) > 0) {
                 throw new IllegalStateException("simulated routing failure: no target DataSource bound");
             }
             if (failing || remainingFailures.getAndUpdate(v -> v > 0 ? v - 1 : 0) > 0) {
