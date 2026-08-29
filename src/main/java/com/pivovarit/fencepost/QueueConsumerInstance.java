@@ -142,7 +142,7 @@ final class QueueConsumerInstance implements QueueConsumer {
         AckableMessage.State state = am.currentState();
         switch (state) {
             case ACTIVE -> am.ack();
-            case CLOSED -> logger.warn("handler closed message {} on queue '{}' without acking or nacking; it will be redelivered after the visibility timeout",
+            case CLOSED -> logger.debug("handler released message {} on queue '{}' via close(); it becomes eligible for redelivery (or dead-lettering if maxDeliveries is reached) once the visibility timeout expires",
               am.id(), queueName);
             default -> logger.debug("handler already {} message {} on queue '{}'; skipping auto-ack",
               state.name().toLowerCase(), am.id(), queueName);
