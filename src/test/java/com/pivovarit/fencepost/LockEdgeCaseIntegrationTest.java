@@ -327,6 +327,49 @@ class LockEdgeCaseIntegrationTest {
     }
 
     @Test
+    void sessionLockShouldNotIssueDuplicateTokensAcrossDifferentSearchPaths() throws Exception {
+        try (Connection conn = dataSource.getConnection()) {
+            conn.createStatement().execute("CREATE SCHEMA IF NOT EXISTS a");
+            conn.createStatement().execute("CREATE SCHEMA IF NOT EXISTS b");
+        }
+
+        HikariConfig configA = new HikariConfig();
+        configA.setJdbcUrl(PG.getJdbcUrl());
+        configA.setUsername(PG.getUsername());
+        configA.setPassword(PG.getPassword());
+        configA.setMaximumPoolSize(1);
+        configA.setConnectionInitSql("SET search_path TO a, public");
+
+        HikariConfig configB = new HikariConfig();
+        configB.setJdbcUrl(PG.getJdbcUrl());
+        configB.setUsername(PG.getUsername());
+        configB.setPassword(PG.getPassword());
+        configB.setMaximumPoolSize(1);
+        configB.setConnectionInitSql("SET search_path TO b, public");
+
+        try (HikariDataSource dsA = new HikariDataSource(configA);
+             HikariDataSource dsB = new HikariDataSource(configB)) {
+
+            FencedLock lockA = Fencepost.Locks.session(dsA).build().forName("cross-search-path");
+            FencedLock lockB = Fencepost.Locks.session(dsB).build().forName("cross-search-path");
+
+            FencingToken tokenA = lockA.lock();
+            lockA.unlock();
+
+            FencingToken tokenB = lockB.lock();
+
+            assertThat(tokenB.value())
+              .as("second holder's fencing token must be strictly greater than the first's")
+              .isGreaterThan(tokenA.value());
+            assertThat(lockA.isSuperseded(tokenA))
+              .as("first holder's token must be recognized as superseded")
+              .isTrue();
+
+            lockB.unlock();
+        }
+    }
+
+    @Test
     void sessionTryLockDuringConnectionFailureShouldThrow() {
         FaultToleranceTest.FaultDataSource faultDs = new FaultToleranceTest.FaultDataSource(dataSource);
 
