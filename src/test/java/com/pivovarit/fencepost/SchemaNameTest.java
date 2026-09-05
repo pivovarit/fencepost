@@ -37,9 +37,9 @@ class SchemaNameTest {
     }
 
     @Test
-    void computeSessionTokenSeqNameShouldQuoteName() {
+    void computeSessionTokenSeqNameShouldQualifyWithPublicWhenNoDot() {
         assertThat(TableBasedLock.computeSessionTokenSeqName("fencepost_locks", "my_lock"))
-          .isEqualTo("\"fencepost_st_my_lock\"");
+          .isEqualTo("public.\"fencepost_st_my_lock\"");
     }
 
     @Test

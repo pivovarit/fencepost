@@ -164,11 +164,7 @@ abstract class TableBasedLock {
 
     static String computeSessionTokenSeqName(String tableName, String lockName) {
         String seqName = "\"fencepost_st_" + lockName + "\"";
-        int dot = tableName.lastIndexOf('.');
-        if (dot == -1) {
-            return seqName;
-        }
-        return tableName.substring(0, dot + 1) + seqName;
+        return SchemaManager.schemaName(tableName) + "." + seqName;
     }
 
     abstract FencingToken doLock();
