@@ -80,10 +80,10 @@ final class LeaseLockInstance extends TableBasedLock implements RenewableLock {
 
         Sql(String tableName) {
             this.acquire = """
-                UPDATE %s SET token = token + 1, locked_by = ?, locked_at = now(), expires_at = now() + %s
+                UPDATE %s SET token = token + 1, locked_by = ?, locked_at = clock_timestamp(), expires_at = clock_timestamp() + %s
                 WHERE lock_name IN (
                   SELECT lock_name FROM %s
-                  WHERE lock_name = ? AND (locked_by IS NULL OR expires_at IS NULL OR expires_at <= now())
+                  WHERE lock_name = ? AND (locked_by IS NULL OR expires_at IS NULL OR expires_at <= clock_timestamp())
                   FOR UPDATE SKIP LOCKED)
                 RETURNING token""".formatted(tableName, Jdbc.intervalMillis(), tableName);
             this.renew = """
