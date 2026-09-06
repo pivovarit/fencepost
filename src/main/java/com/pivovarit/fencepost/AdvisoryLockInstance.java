@@ -11,6 +11,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.concurrent.Executor;
 
 /**
  * Not thread-safe. Each instance should be used by a single thread at a time.
@@ -55,8 +56,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             held = true;
             logger.debug("acquired advisory lock '{}'", lockName);
         } catch (Exception e) {
-            closeConnection();
-            connection = null;
+            closeConnectionReleasingAnyGrantedLock();
             logger.debug("failed to acquire advisory lock '{}'", lockName, e);
             throw (e instanceof FencepostException fe) ? fe : new FencepostException("Failed to acquire advisory lock: " + lockName, e);
         }
@@ -94,12 +94,10 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             held = true;
             logger.debug("acquired advisory lock '{}'", lockName);
         } catch (LockAcquisitionTimeoutException e) {
-            closeConnection();
-            connection = null;
+            closeConnectionReleasingAnyGrantedLock();
             throw e;
         } catch (Exception e) {
-            closeConnection();
-            connection = null;
+            closeConnectionReleasingAnyGrantedLock();
             logger.debug("failed to acquire advisory lock '{}'", lockName, e);
             throw (e instanceof FencepostException fe) ? fe : new FencepostException("Failed to acquire advisory lock: " + lockName, e);
         }
@@ -124,8 +122,7 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             logger.debug("acquired advisory lock '{}' via tryLock", lockName);
             return true;
         } catch (Exception e) {
-            closeConnection();
-            connection = null;
+            closeConnectionReleasingAnyGrantedLock();
             logger.debug("failed to tryLock advisory lock '{}'", lockName, e);
             throw (e instanceof FencepostException fe) ? fe : new FencepostException("Failed to try-lock advisory: " + lockName, e);
         }
@@ -194,6 +191,26 @@ final class AdvisoryLockInstance implements AdvisoryLock {
         }
     }
 
+    // On acquisition failure PostgreSQL may have still granted the lock server-side before we saw the error
+    private void closeConnectionReleasingAnyGrantedLock() {
+        if (connection == null) {
+            return;
+        }
+        boolean released = false;
+        try {
+            Jdbc.execute(connection, sql.unlockAll);
+            released = true;
+        } catch (SQLException e) {
+            logger.trace("failed to release advisory lock '{}' after acquisition failure", lockName, e);
+        }
+        if (released) {
+            closeConnection();
+        } else {
+            discardConnection();
+        }
+        connection = null;
+    }
+
     private void closeConnection() {
         try {
             if (connection != null) {
@@ -201,6 +218,14 @@ final class AdvisoryLockInstance implements AdvisoryLock {
             }
         } catch (SQLException e) {
             logger.trace("failed to close advisory lock '{}' connection", lockName, e);
+        }
+    }
+
+    private void discardConnection() {
+        try {
+            connection.abort(Runnable::run);
+        } catch (SQLException e) {
+            logger.trace("failed to abort advisory lock '{}' connection", lockName, e);
         }
     }
 }
