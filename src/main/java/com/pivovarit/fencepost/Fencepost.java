@@ -7,6 +7,7 @@ import com.pivovarit.fencepost.lock.FencingToken;
 import com.pivovarit.fencepost.lock.FencedLock;
 import com.pivovarit.fencepost.lock.LockFactory;
 import com.pivovarit.fencepost.lock.RenewableLock;
+import com.pivovarit.fencepost.queue.DeadLetters;
 import com.pivovarit.fencepost.queue.Message;
 import com.pivovarit.fencepost.queue.Queue;
 import com.pivovarit.fencepost.queue.QueueConsumer;
@@ -332,6 +333,10 @@ public final class Fencepost {
             return new QueueBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
         }
 
+        public static DeadLettersBuilder deadLetters(DataSource dataSource) {
+            return new DeadLettersBuilder(Objects.requireNonNull(dataSource, "dataSource must not be null"));
+        }
+
         public static final class PublisherBuilder {
             private final DataSource dataSource;
             private String tableName = "fencepost_queue";
@@ -496,6 +501,33 @@ public final class Fencepost {
                 long pi = this.pollIntervalMs;
                 int md = this.maxDeliveries;
                 return new QueueFactory<>(queueName -> new FencepostQueue(queueName, dataSource, t, vt, pi, md));
+            }
+        }
+
+        public static final class DeadLettersBuilder {
+            private final DataSource dataSource;
+            private String tableName = "fencepost_queue";
+            private SchemaMode schemaMode = SchemaMode.NONE;
+
+            private DeadLettersBuilder(DataSource dataSource) {
+                this.dataSource = dataSource;
+            }
+
+            public DeadLettersBuilder tableName(String tableName) {
+                validateTableName(tableName);
+                this.tableName = tableName;
+                return this;
+            }
+
+            public DeadLettersBuilder schemaMode(SchemaMode schemaMode) {
+                this.schemaMode = Objects.requireNonNull(schemaMode, "schemaMode must not be null");
+                return this;
+            }
+
+            public QueueFactory<DeadLetters> build() {
+                schemaMode.applyToQueue(dataSource, tableName);
+                String t = this.tableName;
+                return new QueueFactory<>(queueName -> new FencepostDeadLetters(queueName, dataSource, t));
             }
         }
     }
