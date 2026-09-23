@@ -24,7 +24,7 @@ final class FencepostQueuePublisher implements QueuePublisher {
     FencepostQueuePublisher(String queueName, DataSource dataSource, String tableName) {
         this.queueName = queueName;
         this.dataSource = dataSource;
-        var channelName = "fencepost_q_" + Long.toUnsignedString(HashUtils.fnv1a64("fencepost:" + queueName));
+        var channelName = QueueChannels.name(queueName);
         this.sql = new Sql(tableName, channelName);
     }
 

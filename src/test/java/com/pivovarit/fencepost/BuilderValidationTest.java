@@ -272,6 +272,56 @@ class BuilderValidationTest {
           .isInstanceOf(NullPointerException.class);
     }
 
+    @Test
+    void deadLettersBuilderShouldRejectNullDataSource() {
+        assertThatThrownBy(() -> Fencepost.Queues.deadLetters(null))
+          .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void deadLettersBuilderShouldRejectInvalidTableName() {
+        assertThatThrownBy(() -> Fencepost.Queues.deadLetters(FAILING_DATA_SOURCE).tableName("bad name"))
+          .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void deadLettersBuilderShouldRejectNullSchemaMode() {
+        assertThatThrownBy(() -> Fencepost.Queues.deadLetters(FAILING_DATA_SOURCE).schemaMode(null))
+          .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void deadLettersFactoryShouldRejectInvalidQueueName() {
+        var factory = Fencepost.Queues.deadLetters(FAILING_DATA_SOURCE).build();
+
+        assertThatThrownBy(() -> factory.forName("Bad Name"))
+          .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void deadLettersListShouldRejectNonPositiveLimitBeforeTouchingTheDatabase() {
+        var dlq = Fencepost.Queues.deadLetters(FAILING_DATA_SOURCE).build().forName("q");
+
+        assertThatThrownBy(() -> dlq.list(0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> dlq.list(-1)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void deadLettersRedriveAllShouldRejectNonPositiveMaxBeforeTouchingTheDatabase() {
+        var dlq = Fencepost.Queues.deadLetters(FAILING_DATA_SOURCE).build().forName("q");
+
+        assertThatThrownBy(() -> dlq.redriveAll(0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> dlq.redriveAll(-1)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void deadLettersPurgeAllShouldRejectNonPositiveMaxBeforeTouchingTheDatabase() {
+        var dlq = Fencepost.Queues.deadLetters(FAILING_DATA_SOURCE).build().forName("q");
+
+        assertThatThrownBy(() -> dlq.purgeAll(0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> dlq.purgeAll(-1)).isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static final class FailingDataSource implements DataSource {
         @Override
         public Connection getConnection() {
