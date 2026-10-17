@@ -247,7 +247,7 @@ publisher.publish("hello".getBytes(), "greeting.v1", Duration.ofSeconds(10));
 
 ### Transactional Publish
 
-To publish messages within an existing JDBC transaction (e.g., alongside a business write), use the transactional publisher. The message is only visible to consumers after the transaction commits:
+To publish messages within an existing JDBC transaction (e.g., alongside a business write), use the transactional publisher. The message is only visible to consumers after the transaction commits. The connection must have `autoCommit` disabled - `transactional(connection)` throws `IllegalStateException` otherwise, since publishing on an autoCommit connection would commit each statement independently and silently break the atomicity guarantee:
 
 ```java
 QueuePublisher publisher = fencepost.forName("my-queue");
