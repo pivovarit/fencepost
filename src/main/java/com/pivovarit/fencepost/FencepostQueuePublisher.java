@@ -78,6 +78,15 @@ final class FencepostQueuePublisher implements QueuePublisher {
     @Override
     public TransactionalQueuePublisher transactional(Connection connection) {
         Objects.requireNonNull(connection, "connection must not be null");
+        try {
+            if (connection.getAutoCommit()) {
+                throw new IllegalStateException(
+                    "Connection has autoCommit=true - transactional publish requires an explicit transaction. "
+                        + "Call connection.setAutoCommit(false) before publisher.transactional(connection).");
+            }
+        } catch (SQLException e) {
+            throw new FencepostException("Failed to inspect connection autoCommit state for queue: " + queueName, e);
+        }
         return new FencepostTransactionalQueuePublisher(queueName, connection, sql);
     }
 }

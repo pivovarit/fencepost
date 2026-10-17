@@ -225,6 +225,19 @@ class QueuePublisherIntegrationTest {
             .isInstanceOf(NullPointerException.class);
     }
 
+    @Test
+    void transactionalShouldRejectAutoCommitConnection() throws SQLException {
+        QueuePublisher publisher = Fencepost.Queues.publisher(dataSource).build().forName("test-queue");
+
+        try (Connection conn = dataSource.getConnection()) {
+            assertThat(conn.getAutoCommit()).isTrue();
+
+            assertThatThrownBy(() -> publisher.transactional(conn))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("autoCommit");
+        }
+    }
+
     private Queue newQueue(String name) {
         return Fencepost.Queues.queue(dataSource)
             .visibilityTimeout(Duration.ofMinutes(5))
