@@ -40,6 +40,8 @@ public final class FencepostDashboard {
     }
 
     public FencepostDashboard(DataSource dataSource, String locksTable, String queueTable) {
+        Fencepost.validateTableName(locksTable);
+        Fencepost.validateTableName(queueTable);
         this.api = new DashboardApi(dataSource, locksTable, queueTable);
         this.listener = new ListenerConnection(dataSource, DASHBOARD_CHANNEL);
     }
