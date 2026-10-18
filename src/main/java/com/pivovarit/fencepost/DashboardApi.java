@@ -10,6 +10,8 @@ public final class DashboardApi {
     private final Queries queries;
 
     public DashboardApi(DataSource dataSource, String locksTable, String queueTable) {
+        Fencepost.validateTableName(locksTable);
+        Fencepost.validateTableName(queueTable);
         this.dataSource = dataSource;
         this.queries = new Queries(locksTable, queueTable);
     }
