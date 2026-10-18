@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 
 public class Factory<T> {
 
-    private static final Pattern VALID_NAME = Pattern.compile("[a-z0-9][a-z0-9_-]{0,48}");
+    static final Pattern VALID_NAME = Pattern.compile("[a-z0-9][a-z0-9_-]{0,48}");
 
     private final Function<String, T> factory;
 

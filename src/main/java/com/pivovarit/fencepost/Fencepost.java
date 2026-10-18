@@ -59,6 +59,9 @@ public final class Fencepost {
             if (electionName.isEmpty()) {
                 throw new IllegalArgumentException("electionName must not be empty");
             }
+            if (!Factory.VALID_NAME.matcher(electionName).matches()) {
+                throw new IllegalArgumentException("electionName must be 1-49 characters, lowercase alphanumeric, hyphens, and underscores: '" + electionName + "'");
+            }
             Objects.requireNonNull(leaseDuration, "leaseDuration must not be null");
             Durations.requireAtLeastOneMillisecond(leaseDuration, "leaseDuration");
             return new LeaderElectionBuilder(dataSource, electionName, leaseDuration);

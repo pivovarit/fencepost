@@ -53,6 +53,22 @@ class BuilderValidationTest {
     }
 
     @Test
+    void leaderElectionBuilderShouldRejectElectionNameWithInvalidCharacters() {
+        assertThatThrownBy(() -> Fencepost.Locks.leaderElection(FAILING_DATA_SOURCE, "Invalid-Name", Duration.ofSeconds(1)))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("lowercase alphanumeric");
+    }
+
+    @Test
+    void leaderElectionBuilderShouldRejectElectionNameLongerThan49Characters() {
+        String tooLong = "a".repeat(50);
+
+        assertThatThrownBy(() -> Fencepost.Locks.leaderElection(FAILING_DATA_SOURCE, tooLong, Duration.ofSeconds(1)))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("lowercase alphanumeric");
+    }
+
+    @Test
     void leaderElectionBuilderShouldRejectNullLeaseDuration() {
         assertThatThrownBy(() -> Fencepost.Locks.leaderElection(FAILING_DATA_SOURCE, "name", null))
           .isInstanceOf(NullPointerException.class);
