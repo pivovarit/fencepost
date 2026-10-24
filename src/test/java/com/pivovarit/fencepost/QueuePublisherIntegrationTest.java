@@ -218,6 +218,22 @@ class QueuePublisherIntegrationTest {
     }
 
     @Test
+    void shouldMeasureTransactionalDelayFromPublishTimeNotTransactionStart() throws Exception {
+        QueuePublisher publisher = Fencepost.Queues.publisher(dataSource).build().forName("test-queue");
+        Queue queue = newQueue("test-queue");
+
+        try (Connection conn = dataSource.getConnection()) {
+            conn.setAutoCommit(false);
+            conn.createStatement().execute("SELECT 1");
+            Thread.sleep(2_000);
+            publisher.transactional(conn).publish("late".getBytes(UTF_8), "test.v1", Duration.ofSeconds(1));
+            conn.commit();
+        }
+
+        assertThat(queue.tryDequeue()).isEmpty();
+    }
+
+    @Test
     void transactionalShouldRejectNullConnection() {
         QueuePublisher publisher = Fencepost.Queues.publisher(dataSource).build().forName("test-queue");
 
