@@ -34,6 +34,7 @@ final class FencepostQueue implements Queue {
 
     private volatile boolean closed;
     private volatile boolean polling;
+    private volatile boolean listenerDegraded;
 
     FencepostQueue(String queueName, DataSource dataSource, String tableName,
                    Duration visibilityTimeout, long pollIntervalMs, int maxDeliveries) {
@@ -183,10 +184,34 @@ final class FencepostQueue implements Queue {
                 waitMs = Math.min(waitMs, remainingMs);
             }
             try {
-                waitForNotification(listener.ensure(), waitMs);
+                Connection conn = listener.ensure();
+                if (listenerDegraded) {
+                    listenerDegraded = false;
+                    logger.info("LISTEN connection for queue '{}' re-acquired; notifications resumed", queueName);
+                }
+                waitForNotification(conn, waitMs);
             } catch (SQLException e) {
-                throw new FencepostException("Failed to set up listener for queue: " + queueName, e);
+                if (closed) {
+                    throw new FencepostException("Failed to set up listener for queue: " + queueName, e);
+                }
+                if (!listenerDegraded) {
+                    listenerDegraded = true;
+                    logger.warn("failed to acquire a LISTEN connection for queue '{}'; falling back to polling only "
+                      + "every {} ms until a connection becomes available (the connection pool may be undersized "
+                      + "for the number of active consumers)", queueName, pollIntervalMs, e);
+                } else {
+                    logger.debug("still unable to acquire a LISTEN connection for queue '{}'", queueName, e);
+                }
+                sleepBackstop(waitMs);
             }
+        }
+    }
+
+    private void sleepBackstop(long waitMs) {
+        try {
+            Thread.sleep(waitMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 

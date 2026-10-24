@@ -16,6 +16,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import javax.sql.DataSource;
 import java.io.PrintWriter;
 import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -798,6 +799,76 @@ class QueueIntegrationTest {
           .as("interrupt flag must be preserved for the caller")
           .isEqualTo(2);
         queue.close();
+    }
+
+    @Test
+    void dequeueShouldFallBackToPollingWhenListenerConnectionCannotBeAcquired() throws Exception {
+        DataSource listenerStarved = failingListenConnections(dataSource);
+        Queue queue = Fencepost.Queues.queue(listenerStarved)
+          .visibilityTimeout(Duration.ofMinutes(5))
+          .pollInterval(Duration.ofMillis(100))
+          .build()
+          .forName("listener-starved-queue");
+
+        AtomicReference<Message> received = new AtomicReference<>();
+        AtomicReference<Throwable> error = new AtomicReference<>();
+        Thread consumer = new Thread(() -> {
+            try {
+                received.set(queue.dequeue(Duration.ofSeconds(5)));
+            } catch (Throwable t) {
+                error.set(t);
+            }
+        }, "listener-starved-consumer");
+        consumer.start();
+
+        // let several listener-setup failures happen before the message ever becomes available
+        Thread.sleep(300);
+        queue.enqueue("late".getBytes(UTF_8), "test.v1", Map.of());
+
+        consumer.join(5000);
+
+        assertThat(consumer.isAlive()).isFalse();
+        assertThat(error.get())
+          .as("a listener connection failure must not abort dequeue(); the poll backstop should still deliver the message")
+          .isNull();
+        assertThat(received.get()).isNotNull();
+        assertThat(received.get().payload()).isEqualTo("late".getBytes(UTF_8));
+        received.get().ack();
+        queue.close();
+    }
+
+    private static DataSource failingListenConnections(DataSource real) {
+        return (DataSource) Proxy.newProxyInstance(
+          DataSource.class.getClassLoader(),
+          new Class<?>[]{DataSource.class},
+          (proxy, method, args) -> {
+              if ("getConnection".equals(method.getName()) && (args == null || args.length == 0)) {
+                  return connectionFailingOnListen(real.getConnection());
+              }
+              try {
+                  return method.invoke(real, args);
+              } catch (InvocationTargetException e) {
+                  throw e.getCause();
+              }
+          });
+    }
+
+    private static Connection connectionFailingOnListen(Connection real) {
+        return (Connection) Proxy.newProxyInstance(
+          Connection.class.getClassLoader(),
+          new Class<?>[]{Connection.class},
+          (proxy, method, args) -> {
+              if ("prepareStatement".equals(method.getName())
+                && args != null && args.length > 0 && args[0] instanceof String sql
+                && sql.startsWith("LISTEN ")) {
+                  throw new SQLException("simulated: no spare connection available for LISTEN");
+              }
+              try {
+                  return method.invoke(real, args);
+              } catch (InvocationTargetException e) {
+                  throw e.getCause();
+              }
+          });
     }
 
     private Queue newQueue() {
