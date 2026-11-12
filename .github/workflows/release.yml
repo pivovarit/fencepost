@@ -30,6 +30,9 @@ jobs:
           server-id: central
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
+          mvn-server-repository-origins: |
+            central:https://repo.maven.apache.org
+            central:https://central.sonatype.com
           gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
