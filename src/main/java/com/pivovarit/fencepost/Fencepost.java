@@ -34,6 +34,13 @@ public final class Fencepost {
         }
     }
 
+    static void requireNonEmpty(String value, String name) {
+        Objects.requireNonNull(value, name + " must not be null");
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException(name + " must not be empty");
+        }
+    }
+
     public static final class Locks {
 
         private Locks() {
@@ -55,10 +62,7 @@ public final class Fencepost {
 
         public static LeaderElectionBuilder leaderElection(DataSource dataSource, String electionName, Duration leaseDuration) {
             Objects.requireNonNull(dataSource, "dataSource must not be null");
-            Objects.requireNonNull(electionName, "electionName must not be null");
-            if (electionName.isEmpty()) {
-                throw new IllegalArgumentException("electionName must not be empty");
-            }
+            requireNonEmpty(electionName, "electionName");
             if (!Factory.VALID_NAME.matcher(electionName).matches()) {
                 throw new IllegalArgumentException("electionName must be 1-49 characters, lowercase alphanumeric, hyphens, and underscores: '" + electionName + "'");
             }
@@ -173,10 +177,7 @@ public final class Fencepost {
             }
 
             public LeaseBuilder withInstanceId(String instanceId) {
-                Objects.requireNonNull(instanceId, "instanceId must not be null");
-                if (instanceId.isEmpty()) {
-                    throw new IllegalArgumentException("instanceId must not be empty");
-                }
+                requireNonEmpty(instanceId, "instanceId");
                 this.instanceId = instanceId;
                 return this;
             }
@@ -250,10 +251,7 @@ public final class Fencepost {
             }
 
             public LeaderElectionBuilder withInstanceId(String instanceId) {
-                Objects.requireNonNull(instanceId, "instanceId must not be null");
-                if (instanceId.isEmpty()) {
-                    throw new IllegalArgumentException("instanceId must not be empty");
-                }
+                requireNonEmpty(instanceId, "instanceId");
                 this.instanceId = instanceId;
                 return this;
             }
@@ -324,10 +322,7 @@ public final class Fencepost {
 
         public static ConsumerBuilder consumer(DataSource dataSource, String queueName) {
             Objects.requireNonNull(dataSource, "dataSource must not be null");
-            Objects.requireNonNull(queueName, "queueName must not be null");
-            if (queueName.isEmpty()) {
-                throw new IllegalArgumentException("queueName must not be empty");
-            }
+            requireNonEmpty(queueName, "queueName");
             return new ConsumerBuilder(dataSource, queueName);
         }
 
