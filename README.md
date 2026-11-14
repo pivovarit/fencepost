@@ -305,25 +305,25 @@ QueueConsumer consumer = Fencepost.Queues.consumer(dataSource, "orders")
 consumer.start();
 ```
 
-Dead-lettered messages remain in the queue table with `dead_at` set; inspect, redrive, or drain them with SQL:
+Dead-lettered messages remain in the queue table with `dead_at` set. Inspect, redrive, or drain them with `DeadLetters`:
 
-```sql
--- inspect
-SELECT id, attempts, last_error, dead_at
-FROM fencepost_queue
-WHERE queue_name = 'orders' AND dead_at IS NOT NULL;
+```java
+DeadLetters dlq = Fencepost.Queues.deadLetters(dataSource).build().forName("orders");
 
--- redrive: clear the marker AND reset the delivery budget —
--- with attempts still >= maxDeliveries, the next failure would
--- instantly dead-letter the message again
-UPDATE fencepost_queue
-SET dead_at = NULL, last_error = NULL, attempts = 0
-WHERE queue_name = 'orders' AND id = 42;
+long dead = dlq.count();
+for (DeadMessage m : dlq.list(50)) {              // oldest first, payload included
+    log.warn("dead {} after {} attempts: {}", m.id(), m.attempts(), m.lastError().orElse("?"));
+}
 
--- drain
-DELETE FROM fencepost_queue
-WHERE queue_name = 'orders' AND dead_at IS NOT NULL;
+dlq.redrive(42);          // true if message 42 was dead-lettered in this queue
+dlq.redriveAll(100);      // redrive up to 100, oldest first; returns how many
+dlq.purge(42);            // permanently delete one dead message
+dlq.purgeAll(100);        // delete up to 100, oldest first; returns how many
 ```
+
+Redrive clears the dead marker and `last_error`, resets `attempts` to 0 (so the message gets a full `maxDeliveries` budget again), makes the message visible immediately, and wakes consumers blocked on the queue. Only dead-lettered messages are ever touched — a live message is never redriven or deleted, and unknown or foreign ids simply return `false`. `redriveAll` and `purgeAll` take a cap so one call can't flood consumers or delete an unbounded number of rows; call them in a loop until they return `0` to drain everything.
+
+The table is plain SQL too, if you prefer: dead messages are the rows with `dead_at IS NOT NULL`. If you redrive by hand, reset `attempts` as well as `dead_at`, or the next failure will dead-letter the message again immediately.
 
 ## Important: PostgreSQL Clock Behavior
 

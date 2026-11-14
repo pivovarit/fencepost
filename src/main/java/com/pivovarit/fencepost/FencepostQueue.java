@@ -42,7 +42,7 @@ final class FencepostQueue implements Queue {
         this.visibilityTimeoutMs = visibilityTimeout.toMillis();
         this.pollIntervalMs = pollIntervalMs;
         this.maxDeliveries = maxDeliveries;
-        var channelName = "fencepost_q_" + Long.toUnsignedString(HashUtils.fnv1a64("fencepost:" + queueName));
+        var channelName = QueueChannels.name(queueName);
         this.listener = new ListenerConnection(dataSource, channelName);
         this.sql = new Sql(tableName, channelName, maxDeliveries);
         this.ackSql = new AckableMessage.Sql(tableName);
